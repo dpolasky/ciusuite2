@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import os
 import numpy as np
+from Gaussian_Fitting import gaussfunc
 
 
 class CIUAnalysisObj(object):
@@ -50,10 +51,10 @@ class CIUAnalysisObj(object):
         :return: void
         """
         self.gauss_params = gauss_params
-        self.gauss_baselines = [x[0] for x in gauss_params]
-        self.gauss_amplitudes = [x[1] for x in gauss_params]
-        self.gauss_centroids = [x[2] for x in gauss_params]
-        self.gauss_widths = [x[3] for x in gauss_params]
+        self.gauss_baselines = [x[0::4] for x in gauss_params]
+        self.gauss_amplitudes = [x[1::4] for x in gauss_params]
+        self.gauss_centroids = [x[2::4] for x in gauss_params]
+        self.gauss_widths = [x[3::4] for x in gauss_params]
 
     def save_gaussfits_pdf(self, outputpath):
         """
@@ -71,8 +72,18 @@ class CIUAnalysisObj(object):
         intarray = np.swapaxes(self.ciu_data, 0, 1)
         for k in range(len(self.axes[1])):
             plt.figure()
+            # plot the original raw data as a scatter plot
             plt.scatter(self.axes[0], intarray[k])
+            # plot the fit data as a black dashed line
             plt.plot(self.axes[0], self.gauss_fits[k], ls='--', color='black')
+            # plot centroids of gaussians to overlay
+            index = 0
+            for centroid in self.gauss_centroids[k]:
+                fit = gaussfunc(self.axes[0], 0, self.gauss_amplitudes[k][index],
+                                self.gauss_centroids[k][index], self.gauss_widths[k][index])
+                plt.plot(self.axes[0], fit)
+                plt.plot(centroid, abs(self.gauss_amplitudes[k][index]), '+', color='red')
+                index += 1
             plt.title(self.axes[1][k])
             pdf_fig.savefig()
             plt.close()
@@ -86,7 +97,11 @@ class CIUAnalysisObj(object):
         :return: void
         """
         print('Saving TrapCVvsArrivtimecentroid ' + str(self.raw_obj.filename) + '_.png .....')
-        plt.scatter(self.axes[1], self.gauss_centroids)
+
+        # plot the centroid(s), including plotting multiple centroids at each voltage if present
+        for x, y in zip(self.axes[1], self.gauss_centroids):
+            plt.scatter([x] * len(y), y)
+        # plt.scatter(self.axes[1], self.gauss_centroids)
         plt.xlabel('Trap CV')
         plt.ylabel('ATD_centroid')
         plt.grid('on')
@@ -102,7 +117,9 @@ class CIUAnalysisObj(object):
         :return: void
         """
         print('Saving TrapcCVvsFWHM_' + str(self.raw_obj.filename) + '_.png .....')
-        plt.scatter(self.axes[1], self.gauss_fwhms)
+        for x, y in zip(self.axes[1], self.gauss_fwhms):
+            plt.scatter([x] * len(y), y)
+        # plt.scatter(self.axes[1], self.gauss_fwhms)
         plt.xlabel('Trap CV')
         plt.ylabel('ATD_FWHM')
         plt.grid('on')

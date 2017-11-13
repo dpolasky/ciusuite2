@@ -114,9 +114,13 @@ def check_next(feature_list, index):
     :param index: index at which to look
     :return:
     """
-    if feature_list[index].length == 1:
-        return True
-    else:
+    try:
+        if feature_list[index].length == 1:
+            return True
+        else:
+            return False
+    except IndexError:
+        # this is the last feature, ignore
         return False
 
 

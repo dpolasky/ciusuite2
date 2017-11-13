@@ -27,3 +27,15 @@ class CIURaw:
         self.filename = os.path.basename(filepath)
 
 
+def get_data(fname):
+    """
+    Read _raw.csv file and generate a CIURaw object containing its raw data and filename
+    :param fname: string - path to _raw.csv file to read
+    :return: CIURaw object with rawdata, axes, and filename initialized
+    """
+    rawdata = np.genfromtxt(fname, missing_values=[""], filling_values=[0], delimiter=",")
+    row_axis = rawdata[1:, 0]
+    col_axis = rawdata[0, 1:]
+    raw_obj = CIURaw(rawdata[1:, 1:], row_axis, col_axis, fname)
+    return raw_obj
+

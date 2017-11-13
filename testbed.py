@@ -11,7 +11,7 @@ import tkinter
 from tkinter import filedialog
 from CIU_raw import CIURaw
 import Raw_Processing
-import CIU_analysis
+import Gaussian_Fitting
 from CIU_analysis_obj import CIUAnalysisObj
 import Feature_Detection
 
@@ -19,7 +19,7 @@ import Feature_Detection
 titlex = "Trap Collision Voltage (V)"
 # titley = "Collision cross section (A2)"
 titley = 'Drift time (ms)'
-# default_smooth = 5
+# default_smooth = None
 default_smooth = 5
 # default_crop = [500, 570, 50, 60]     # [cv low, cv high, dt low, dt high]
 default_crop = None
@@ -28,6 +28,10 @@ plot_extension = '.png'
 save_output_csv = False
 output_title = None
 interp_bins = 0     # 0 for no interpolation, 200 is default to interpolate
+
+# gaussian peak fitting parameters
+gaussian_int_thr = 0.05      # intensity threshold for peak fitting. Default 0.1
+gaussian_min_spacing = 20   # Min spacing IN DRIFT BINS between peaks. Default 25 membrane stuff, 1 for non-noisy data
 
 
 def get_data(fname):
@@ -142,12 +146,12 @@ def ciu_plot_main(input_dir, output_dir, raw_file, smooth_window=None, crop_vals
         norm_data, axes = Raw_Processing.crop(norm_data, axes, crop_vals)
 
     analysis_obj = CIUAnalysisObj(raw_obj, norm_data, axes)
-    CIU_analysis.gaussian_fit_ciu(analysis_obj)
+    Gaussian_Fitting.gaussian_fit_ciu(analysis_obj, intensity_thr=gaussian_int_thr, min_spacing=gaussian_min_spacing)
 
-    features = Feature_Detection.feature_detect_gauss(analysis_obj, 0.02)
-    no_loners = Feature_Detection.remove_loner_features(features)
-    Feature_Detection.print_features_list(features, 'features.csv')
-    Feature_Detection.print_features_list(no_loners, 'no-loners.csv')
+    # features = Feature_Detection.feature_detect_gauss(analysis_obj, 0.02)
+    # no_loners = Feature_Detection.remove_loner_features(features)
+    # Feature_Detection.print_features_list(features, filename + '_features.csv')
+    # Feature_Detection.print_features_list(no_loners, filename + '_no-loners.csv')
 
     if save_csv:
         if save_title is not None:
