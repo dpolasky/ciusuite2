@@ -4,6 +4,7 @@ Author: Dan Polasky
 Date: 10/6/2017
 """
 import os
+import numpy as np
 
 
 class CIURaw:

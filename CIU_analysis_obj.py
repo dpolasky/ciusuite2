@@ -25,7 +25,7 @@ class CIUAnalysisObj(object):
         """
         self.raw_obj = ciu_raw_obj
         self.ciu_data = ciu_data
-        self.axes = axes
+        self.axes = axes            # convention: axis 0 = DT, axis 1 = CV
 
         # Gaussian fitting parameters - not always initialized with the object
         self.gauss_params = None
@@ -40,14 +40,15 @@ class CIUAnalysisObj(object):
         self.gauss_r2s = None
         self.gauss_resolutions = None
         self.gauss_fit_stats = None
+        self.gauss_filt_params = None
         if gauss_params is not None:
             # initialize param lists if parameters are provided
             self.init_gauss_lists(gauss_params)
 
     def init_gauss_lists(self, gauss_params):
         """
-        Initialize human readable lists of gaussian parameters
-        :param gauss_params: list of lists of gaussian parameters for each column of ciu array (each CV)
+        Initialize human readable lists of gaussian parameters (4 parameters per gaussian)
+        :param gauss_params: list of gaussian parameters for each column of ciu array (each CV)
         :return: void
         """
         self.gauss_params = gauss_params
@@ -79,12 +80,14 @@ class CIUAnalysisObj(object):
             # plot centroids of gaussians to overlay
             index = 0
             for centroid in self.gauss_centroids[k]:
+                # plot each fitted gaussian and centroid
                 fit = gaussfunc(self.axes[0], 0, self.gauss_amplitudes[k][index],
                                 self.gauss_centroids[k][index], self.gauss_widths[k][index])
                 plt.plot(self.axes[0], fit)
                 plt.plot(centroid, abs(self.gauss_amplitudes[k][index]), '+', color='red')
                 index += 1
-            plt.title(self.axes[1][k])
+            plt.title('CV: {}, R2: {:.3f}, stderr: {:.4f}'.format(self.axes[1][k], self.gauss_r2s[k],
+                                                                  self.gauss_fit_stats[k][5]))
             pdf_fig.savefig()
             plt.close()
         pdf_fig.close()
@@ -92,18 +95,20 @@ class CIUAnalysisObj(object):
 
     def plot_centroids(self, outputpath):
         """
-        Save a png image of the centroid DTs fit by gaussians
+        Save a png image of the centroid DTs fit by gaussians. USES FILTERED peak data
         :param outputpath: directory in which to save output
         :return: void
         """
         print('Saving TrapCVvsArrivtimecentroid ' + str(self.raw_obj.filename) + '_.png .....')
 
         # plot the centroid(s), including plotting multiple centroids at each voltage if present
-        for x, y in zip(self.axes[1], self.gauss_centroids):
+        filt_centroids = [x[2::4] for x in self.gauss_filt_params]
+        for x, y in zip(self.axes[1], filt_centroids):
             plt.scatter([x] * len(y), y)
         # plt.scatter(self.axes[1], self.gauss_centroids)
         plt.xlabel('Trap CV')
         plt.ylabel('ATD_centroid')
+        plt.title('Centroids filtered by peak width')
         plt.grid('on')
         plt.savefig(os.path.join(outputpath, 'TrapCVvsArrivtimecentroid_' + str(self.raw_obj.filename) + '_.png'),
                     dpi=500)
@@ -112,7 +117,7 @@ class CIUAnalysisObj(object):
 
     def plot_fwhms(self, outputpath):
         """
-        Save a png image of the FWHM (widths) fit by gaussians
+        Save a png image of the FWHM (widths) fit by gaussians.
         :param outputpath: directory in which to save output
         :return: void
         """
@@ -133,7 +138,7 @@ class CIUAnalysisObj(object):
         :param outputpath: directory in which to save output
         :return: void
         """
-        outarray = [self.axes[0], self.gauss_centroids, self.gauss_widths, self.gauss_fwhms,
+        outarray = [self.axes[1], self.gauss_centroids, self.gauss_widths, self.gauss_fwhms,
                     self.gauss_resolutions, self.gauss_r2s, self.gauss_adj_r2s]
         outarray = np.array(outarray[0], dtype='float')
         outarray2 = np.transpose(outarray)

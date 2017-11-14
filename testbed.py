@@ -13,25 +13,32 @@ from CIU_raw import CIURaw
 import Raw_Processing
 import Gaussian_Fitting
 from CIU_analysis_obj import CIUAnalysisObj
+import pickle
 import Feature_Detection
 
-# copied plot module from CIUPlot_DP as starting point
+
+# ********* PARAMETERS TO EDIT IN THE DEVELOPMENT/TESTING VERSION ***************
+
 titlex = "Trap Collision Voltage (V)"
-# titley = "Collision cross section (A2)"
 titley = 'Drift time (ms)'
-# default_smooth = None
-default_smooth = 5
+
+default_smooth = 7
+num_smooths = 1
+
 # default_crop = [500, 570, 50, 60]     # [cv low, cv high, dt low, dt high]
 default_crop = None
-# plot_extension = '.pdf'
+interp_bins = 0     # 0 for no interpolation, 200 is default to interpolate
+
 plot_extension = '.png'
 save_output_csv = False
 output_title = None
-interp_bins = 0     # 0 for no interpolation, 200 is default to interpolate
 
 # gaussian peak fitting parameters
-gaussian_int_thr = 0.05      # intensity threshold for peak fitting. Default 0.1
-gaussian_min_spacing = 20   # Min spacing IN DRIFT BINS between peaks. Default 25 membrane stuff, 1 for non-noisy data
+gaussian_int_thr = 0.1      # intensity threshold for peak fitting. Default 0.1
+gaussian_min_spacing = 10   # Min spacing IN DRIFT BINS between peaks. Default 25 membrane stuff, 1 for non-noisy data
+gaussian_width_max = 4      # maximum width to be considered a peak (used for filtering noise peaks) default 1.7
+
+# ********* END: PARAMETERS TO EDIT IN THE DEVELOPMENT/TESTING VERSION ***************
 
 
 def get_data(fname):
@@ -140,13 +147,25 @@ def ciu_plot_main(input_dir, output_dir, raw_file, smooth_window=None, crop_vals
         norm_data, axes = Raw_Processing.interpolate_cv(norm_data, axes, interpolate_bins)
 
     if smooth_window is not None:
-        norm_data = Raw_Processing.sav_gol_smooth(norm_data, smooth_window)
+        i = 0
+        while i < num_smooths:
+            norm_data = Raw_Processing.sav_gol_smooth(norm_data, smooth_window)
+            i += 1
 
     if crop_vals is not None:  # If no cropping, use the whole matrix
         norm_data, axes = Raw_Processing.crop(norm_data, axes, crop_vals)
 
     analysis_obj = CIUAnalysisObj(raw_obj, norm_data, axes)
-    Gaussian_Fitting.gaussian_fit_ciu(analysis_obj, intensity_thr=gaussian_int_thr, min_spacing=gaussian_min_spacing)
+    Gaussian_Fitting.gaussian_fit_ciu(analysis_obj,
+                                      intensity_thr=gaussian_int_thr,
+                                      min_spacing=gaussian_min_spacing,
+                                      filter_width_max=gaussian_width_max)
+
+    # save (pickle) the analysis object for later retrieval
+    picklefile = os.path.join(os.path.dirname(analysis_obj.raw_obj.filepath), filename.rstrip('_raw.csv') + '.pkl')
+
+    with open(picklefile, 'wb') as pkfile:
+        pickle.dump(analysis_obj, pkfile)
 
     # features = Feature_Detection.feature_detect_gauss(analysis_obj, 0.02)
     # no_loners = Feature_Detection.remove_loner_features(features)
@@ -168,8 +187,7 @@ def ciu_plot_main(input_dir, output_dir, raw_file, smooth_window=None, crop_vals
 
 
 if __name__ == '__main__':
-    """Default/legacy CIU_plot behavior: Asks user to select _raw.csv files and makes fingerprints of them 
-    (using 'default smooth' found in this file)"""
+    # browse for files to analyze
     root = tkinter.Tk()
     root.withdraw()
 
