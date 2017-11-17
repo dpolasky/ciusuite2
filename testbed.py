@@ -34,11 +34,11 @@ save_output_csv = False
 output_title = None
 
 # gaussian peak fitting parameters
-gaussian_int_thr = 0.1      # intensity threshold for peak fitting. Default 0.1
-gaussian_min_spacing = 10   # Min spacing IN DRIFT BINS between peaks.
+gaussian_int_thr = 0.1     # intensity threshold for peak fitting. Default 0.1
+gaussian_min_spacing = 5   # Min spacing IN DRIFT BINS between peaks.
 gaussian_width_max = 4      # maximum width to be considered a peak (used for filtering noise peaks) default 1.7
 centroid_bound_filter = None    # centroid bounds for filtering IN MS in the form [lower bound, upper bound]
-centroid_plot_bounds = [10, 20]     # plot y-axis bounds in ms for the centroid vs CV plot as [lower bound, upper bound]
+centroid_plot_bounds = None     # plot y-axis bounds in ms for the centroid vs CV plot as [lower bound, upper bound]
 
 # ********* END: PARAMETERS TO EDIT IN THE DEVELOPMENT/TESTING VERSION ***************
 

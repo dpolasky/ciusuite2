@@ -116,7 +116,7 @@ class CIUAnalysisObj(object):
             plt.ylim(y_bounds)
         plt.title('Centroids filtered by peak width')
         plt.grid('on')
-        plt.savefig(os.path.join(outputpath, str(self.raw_obj.filename) + '_centroids.png'),
+        plt.savefig(os.path.join(outputpath, str(self.raw_obj.filename.rstrip('_raw.csv')) + '_centroids.png'),
                     dpi=500)
         plt.close()
         print('Saving TrapCVvsArrivtimecentroid ' + str(self.raw_obj.filename) + '_.png DONE')
@@ -144,21 +144,25 @@ class CIUAnalysisObj(object):
         :param outputpath: directory in which to save output
         :return: void
         """
-        outarray = [self.axes[1], self.gauss_centroids, self.gauss_widths, self.gauss_fwhms,
-                    self.gauss_resolutions, self.gauss_r2s, self.gauss_adj_r2s]
-        outarray = np.array(outarray[0], dtype='float')
-        outarray2 = np.transpose(outarray)
+        with open(os.path.join(outputpath, str(self.raw_obj.filename.rstrip('_raw.csv')) + '_GaussFits.csv'), 'w') as output:
+            output.write('Filtered Gaussians\n')
+            output.write('Trap CV,Baseline(y0),Amplitude,Centroid,Peak Width\n')
+            index = 0
+            while index < len(self.axes[1]):
+                outputline = '{},'.format(self.axes[1][index])
+                outputline += ','.join(['{:.2f}'.format(x) for x in self.gauss_filt_params[index]])
+                output.write(outputline + '\n')
+                index += 1
 
-        print('Saving files ...')
-        np.save(os.path.join(outputpath, str(self.raw_obj.filename) + '_curvefit_popt.npy'), self.gauss_params)
-        print(str(self.raw_obj.filename) + '_curvefit_popt.npy')
-        np.save(os.path.join(outputpath, str(self.raw_obj.filename) + '_curvefit_pcov.npy'), self.gauss_covariances)
-        print(str(self.raw_obj.filename) + '_curvefit_pcov.npy')
-        np.save(os.path.join(outputpath, str(self.raw_obj.filename) + '_curvefit_stats.npy'), self.gauss_fit_stats)
-        print(str(self.raw_obj.filename) + '_curvefit_stats.npy')
-        np.savetxt(os.path.join(outputpath, str(self.raw_obj.filename) + '_outarraygaussfit.csv'), outarray2,
-                   delimiter=',', fmt='%s',
-                   header='TrapCV, ATD_centroid, ATD_width, ATD_FWHM, ATD_Resolution, R^2, Adj_R^2')
+            index = 0
+            output.write('All gaussians fit to data\n')
+            output.write('Trap CV,R^2,Adj R^2,Baseline(y0),Amplitude,Centroid,Peak Width\n')
+            while index < len(self.gauss_centroids):
+                gauss_line = '{},{:.3f},{:.3f},'.format(self.axes[1][index], self.gauss_r2s[index], self.gauss_adj_r2s[index])
+                gauss_line += ','.join(['{:.2f}'.format(x) for x in self.gauss_params[index]])
+                # gauss_line += ','.join([str(x) for x in self.gauss_params[index]])
+                output.write(gauss_line + '\n')
+                index += 1
 
 
 # testing
@@ -174,3 +178,4 @@ if __name__ == '__main__':
         with open(file, 'rb') as first_file:
             ciu1 = pickle.load(first_file)
         ciu1.plot_centroids(file_dir, [10, 20])
+        ciu1.save_gauss_params(file_dir)

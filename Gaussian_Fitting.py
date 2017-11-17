@@ -51,6 +51,7 @@ def estimate_multi_params(ciu_col, dt_axis, width_frac, peak_int_threshold=0.1, 
 
 
 def gaussfunc(x, y0, A, xc, w):
+    y0 = 0
     A = abs(A)
     w = abs(w)
     xc = abs(xc)
