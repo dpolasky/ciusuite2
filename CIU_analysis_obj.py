@@ -7,6 +7,9 @@ from matplotlib.backends.backend_pdf import PdfPages
 import os
 import numpy as np
 from Gaussian_Fitting import gaussfunc
+import tkinter
+from tkinter import filedialog
+import pickle
 
 
 class CIUAnalysisObj(object):
@@ -91,12 +94,13 @@ class CIUAnalysisObj(object):
             pdf_fig.savefig()
             plt.close()
         pdf_fig.close()
-        print('Saving Gausfitdata_' + str(self.raw_obj.filename) + '_.pdf DONE')
+        print('Saving Gausfitdata_' + str(self.raw_obj.filename) + '.pdf DONE')
 
-    def plot_centroids(self, outputpath):
+    def plot_centroids(self, outputpath, y_bounds=None):
         """
         Save a png image of the centroid DTs fit by gaussians. USES FILTERED peak data
         :param outputpath: directory in which to save output
+        :param y_bounds: [lower bound, upper bound] to crop the plot to (in y-axis units, typically ms)
         :return: void
         """
         print('Saving TrapCVvsArrivtimecentroid ' + str(self.raw_obj.filename) + '_.png .....')
@@ -108,9 +112,11 @@ class CIUAnalysisObj(object):
         # plt.scatter(self.axes[1], self.gauss_centroids)
         plt.xlabel('Trap CV')
         plt.ylabel('ATD_centroid')
+        if y_bounds is not None:
+            plt.ylim(y_bounds)
         plt.title('Centroids filtered by peak width')
         plt.grid('on')
-        plt.savefig(os.path.join(outputpath, 'TrapCVvsArrivtimecentroid_' + str(self.raw_obj.filename) + '_.png'),
+        plt.savefig(os.path.join(outputpath, str(self.raw_obj.filename) + '_centroids.png'),
                     dpi=500)
         plt.close()
         print('Saving TrapCVvsArrivtimecentroid ' + str(self.raw_obj.filename) + '_.png DONE')
@@ -128,9 +134,9 @@ class CIUAnalysisObj(object):
         plt.xlabel('Trap CV')
         plt.ylabel('ATD_FWHM')
         plt.grid('on')
-        plt.savefig(os.path.join(outputpath, 'TrapCVvsFWHM_' + str(self.raw_obj.filename) + '_.png'), dpi=500)
+        plt.savefig(os.path.join(outputpath, str(self.raw_obj.filename) + '_FWHM.png'), dpi=500)
         plt.close()
-        print('Saving TrapcCVvsFWHM_' + str(self.raw_obj.filename) + '_.png DONE')
+        print('Saving TrapCVvsFWHM_' + str(self.raw_obj.filename) + '_.png DONE')
 
     def save_gauss_params(self, outputpath):
         """
@@ -153,3 +159,18 @@ class CIUAnalysisObj(object):
         np.savetxt(os.path.join(outputpath, str(self.raw_obj.filename) + '_outarraygaussfit.csv'), outarray2,
                    delimiter=',', fmt='%s',
                    header='TrapCV, ATD_centroid, ATD_width, ATD_FWHM, ATD_Resolution, R^2, Adj_R^2')
+
+
+# testing
+if __name__ == '__main__':
+    root = tkinter.Tk()
+    root.withdraw()
+
+    files = filedialog.askopenfilenames(filetypes=[('pickled gaussian files', '.pkl')])
+    files = list(files)
+    file_dir = os.path.dirname(files[0])
+
+    for file in files:
+        with open(file, 'rb') as first_file:
+            ciu1 = pickle.load(first_file)
+        ciu1.plot_centroids(file_dir, [10, 20])

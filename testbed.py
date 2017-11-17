@@ -35,8 +35,10 @@ output_title = None
 
 # gaussian peak fitting parameters
 gaussian_int_thr = 0.1      # intensity threshold for peak fitting. Default 0.1
-gaussian_min_spacing = 10   # Min spacing IN DRIFT BINS between peaks. Default 25 membrane stuff, 1 for non-noisy data
+gaussian_min_spacing = 10   # Min spacing IN DRIFT BINS between peaks.
 gaussian_width_max = 4      # maximum width to be considered a peak (used for filtering noise peaks) default 1.7
+centroid_bound_filter = None    # centroid bounds for filtering IN MS in the form [lower bound, upper bound]
+centroid_plot_bounds = [10, 20]     # plot y-axis bounds in ms for the centroid vs CV plot as [lower bound, upper bound]
 
 # ********* END: PARAMETERS TO EDIT IN THE DEVELOPMENT/TESTING VERSION ***************
 
@@ -159,7 +161,17 @@ def ciu_plot_main(input_dir, output_dir, raw_file, smooth_window=None, crop_vals
     Gaussian_Fitting.gaussian_fit_ciu(analysis_obj,
                                       intensity_thr=gaussian_int_thr,
                                       min_spacing=gaussian_min_spacing,
-                                      filter_width_max=gaussian_width_max)
+                                      filter_width_max=gaussian_width_max,
+                                      centroid_bounds=centroid_bound_filter)
+    # save output
+    title = filename.rstrip('_raw.csv')
+    outputpath = os.path.join(os.path.dirname(analysis_obj.raw_obj.filepath), title)
+
+    analysis_obj.save_gaussfits_pdf(outputpath)
+    analysis_obj.plot_centroids(outputpath, centroid_plot_bounds)
+    analysis_obj.plot_fwhms(outputpath)
+    analysis_obj.save_gauss_params(outputpath)
+    print('Job completed')
 
     # save (pickle) the analysis object for later retrieval
     picklefile = os.path.join(os.path.dirname(analysis_obj.raw_obj.filepath), filename.rstrip('_raw.csv') + '.pkl')
@@ -182,7 +194,6 @@ def ciu_plot_main(input_dir, output_dir, raw_file, smooth_window=None, crop_vals
     # make the ciu plot
     if extension is None:
         extension = '.png'
-    title = filename.rstrip('_raw.csv')
     ciu_plot(norm_data, axes, output_dir, title, titlex, titley, extension)
 
 

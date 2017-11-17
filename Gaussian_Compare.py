@@ -14,8 +14,8 @@ import os
 import pickle
 import matplotlib.pyplot as plt
 
-width_compare = True
-height_compare = True
+width_compare = False
+height_compare = False
 
 
 def get_nearest_centroid(centroid, centroid_list):
@@ -69,8 +69,8 @@ def compute_rmsd(filt_gaussians1, filt_gaussians2, dt_axis, cv_index, ciu1_index
 
     elif compare_widths and not compare_heights:
         # do a difference score analysis assuming that the peak heights are identical
-        gauss1_params = filt_gaussians1[cv_index][ciu1_index:ciu1_index + 4]
-        gauss2_params = filt_gaussians2[cv_index][ciu2_index:ciu2_index + 4]
+        gauss1_params = filt_gaussians1[cv_index][ciu1_index * 4:ciu1_index * 4 + 4]
+        gauss2_params = filt_gaussians2[cv_index][ciu2_index * 4:ciu2_index * 4 + 4]
         # set both amplitudes to be 1
         gauss1_params[1] = 1
         gauss2_params[1] = 1
@@ -83,8 +83,8 @@ def compute_rmsd(filt_gaussians1, filt_gaussians2, dt_axis, cv_index, ciu1_index
 
     else:
         # do a difference score analysis using the actual peak amplitudes
-        gauss1_params = filt_gaussians1[cv_index][ciu1_index:ciu1_index + 4]
-        gauss2_params = filt_gaussians2[cv_index][ciu2_index:ciu2_index + 4]
+        gauss1_params = filt_gaussians1[cv_index][ciu1_index * 4:ciu1_index * 4 + 4]
+        gauss2_params = filt_gaussians2[cv_index][ciu2_index * 4:ciu2_index * 4 + 4]
         # zero the baseline
         gauss1_params[0] = 0
         gauss2_params[0] = 0
@@ -259,6 +259,7 @@ if __name__ == '__main__':
             # don't compare the file against itself
             skip_index = files.index(file)
             file_index = 0
+            print('processing file {} of {}'.format(file_index + 1, len(files)))
             while file_index < len(files):
                 if not file_index == skip_index:
                     # Read data and compute scores
@@ -272,3 +273,4 @@ if __name__ == '__main__':
         with open(os.path.join(file_dir, 'batch_RMSDs.csv'), 'w') as rmsd_file:
             for rmsd_string in rmsd_print_list:
                 rmsd_file.write(rmsd_string + '\n')
+    print('Done!')

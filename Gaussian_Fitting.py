@@ -81,30 +81,42 @@ def adjrsquared(r2, num):
     return y
 
 
-def filter_fits(params_list, peak_width_cutoff, intensity_cutoff):
+def filter_fits(params_list, peak_width_cutoff, intensity_cutoff, centroid_bounds=None):
     """
     Simple filter to remove any peaks with a width above a specified cutoff. Intended to separate
     noise 'peaks' from protein peaks as they differ in observed width
     :param params_list: list of optimized parameters from curve fit
     :param peak_width_cutoff: maximum allowed width for a peak to remain in the list
     :param intensity_cutoff: minimum relative intensity to remain in the list
+    :param centroid_bounds: list of [lower bound, upper bound] for peak centroid (in ms)
     :return: filtered params_list, with peaks above the width cutoff removed
     """
     index = 0
     filtered_list = []
     while index < len(params_list):
+        # test if the peak meets all conditions for inclusion
+        include_peak = False
+
         # ensure peak width is below the cutoff and above 0
         if 0 < params_list[index + 3] < peak_width_cutoff:
-            # also remove centroids < 0
-            if params_list[index + 2] > 0:
-                # also remove amplitdues below the intensity cutoff
-                if params_list[index + 1] > intensity_cutoff:
-                    filtered_list.extend(params_list[index:index + 4])
+            # also remove amplitdues below the intensity cutoff
+            if params_list[index + 1] > intensity_cutoff:
+                if centroid_bounds is not None:
+                    # centroid bounds provided - if matched, include the peak
+                    if centroid_bounds[0] < params_list[index + 2] < centroid_bounds[1]:
+                        include_peak = True
+                elif params_list[index + 2] > 0:
+                    # If no bounds provided lso remove centroids < 0
+                    include_peak = True
+
+        if include_peak:
+            filtered_list.extend(params_list[index:index + 4])
         index += 4
     return filtered_list
 
 
-def gaussian_fit_ciu(ciu_obj, widthfrac=0.01, intensity_thr=0.1, min_spacing=10, filter_width_max=None):
+def gaussian_fit_ciu(ciu_obj, widthfrac=0.01, intensity_thr=0.1, min_spacing=10, filter_width_max=None,
+                     centroid_bounds=None):
     """
     Gaussian fitting module for single-gaussian analysis of CIU-type data. Determines estimated
     initial parameters and fits a single Gaussian distribution to each column of the input ciu_data
@@ -117,6 +129,7 @@ def gaussian_fit_ciu(ciu_obj, widthfrac=0.01, intensity_thr=0.1, min_spacing=10,
     :param min_spacing: minimum spacing between fitted peaks IN DRIFT BINS. This should be adjusted
     to approximately the instrument resolution for a given max DT. (To be implemented in future)
     :param filter_width_max: maximum peak width to allow - peaks wider are considered noise and removed from features
+    :param centroid_bounds: optional filtering bounds for peak centroid (in form [lower bound, upper bound] in ms
     :return: saves all gaussian outputs into the ciu_obj and returns it
     """
     ciu_data = ciu_obj.ciu_data
@@ -159,7 +172,7 @@ def gaussian_fit_ciu(ciu_obj, widthfrac=0.01, intensity_thr=0.1, min_spacing=10,
         # filter peaks by width if desired
         filt_popt = popt
         if filter_width_max is not None:
-            filt_popt = filter_fits(popt, filter_width_max, intensity_thr)
+            filt_popt = filter_fits(popt, filter_width_max, intensity_thr, centroid_bounds)
         filtered_params.append(filt_popt)
 
         # extract individual gaussian function parameters and save information (and print diagnostics)
@@ -196,10 +209,4 @@ def gaussian_fit_ciu(ciu_obj, widthfrac=0.01, intensity_thr=0.1, min_spacing=10,
     ciu_obj.gauss_fit_stats = stats
     ciu_obj.gauss_filt_params = filtered_params
 
-    # save output
-    ciu_obj.save_gaussfits_pdf(outputpath)
-    ciu_obj.plot_centroids(outputpath)
-    ciu_obj.plot_fwhms(outputpath)
-    ciu_obj.save_gauss_params(outputpath)
-    print('Job completed')
     return ciu_obj
