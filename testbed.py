@@ -9,7 +9,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import tkinter
 from tkinter import filedialog
-from CIU_raw import CIURaw
 import Raw_Processing
 import Gaussian_Fitting
 from CIU_analysis_obj import CIUAnalysisObj
@@ -41,26 +40,6 @@ centroid_bound_filter = None    # centroid bounds for filtering IN MS in the for
 centroid_plot_bounds = None     # plot y-axis bounds in ms for the centroid vs CV plot as [lower bound, upper bound]
 
 # ********* END: PARAMETERS TO EDIT IN THE DEVELOPMENT/TESTING VERSION ***************
-
-
-def get_data(fname):
-    """
-    Read _raw.csv file and generate a CIURaw object containing its raw data and filename
-    :param fname: string - path to _raw.csv file to read
-    :return: CIURaw object with rawdata, axes, and filename initialized
-    """
-    rawdata = np.genfromtxt(fname, missing_values=[""], filling_values=[0], delimiter=",")
-    row_axis = rawdata[1:, 0]
-    col_axis = rawdata[0, 1:]
-    raw_obj = CIURaw(rawdata[1:, 1:], row_axis, col_axis, fname)
-    return raw_obj
-
-
-# Generate lists of trap collision energies and drift times used for the plots ###
-def get_axes(rawdata):
-    row_axis = rawdata[1:, 0]
-    col_axis = rawdata[0, 1:]
-    return row_axis, col_axis
 
 
 def write_ciu_csv(save_path, ciu_data, axes=None):
@@ -111,8 +90,8 @@ def ciu_plot(data, axes, output_dir, plot_title, x_title, y_title, extension):
     output_path = os.path.join(output_dir, plot_title + extension)
     plt.title(plot_title)
     plt.contourf(axes[1], axes[0], data, 100, cmap='jet')  # plot the data
-    plt.xlabel(titlex)
-    plt.ylabel(titley)
+    plt.xlabel(x_title)
+    plt.ylabel(y_title)
     plt.colorbar(ticks=[0, .25, .5, .75, 1])  # plot a colorbar
     plt.savefig(output_path)
     plt.close()
@@ -137,7 +116,7 @@ def ciu_plot_main(input_dir, output_dir, raw_file, smooth_window=None, crop_vals
     :return: none
     """
     os.chdir(input_dir)
-    raw_obj = get_data(raw_file)
+    raw_obj = Raw_Processing.get_data(raw_file)
     filename = raw_obj.filename
 
     # normalize, smooth, and crop data (if requested)
@@ -166,6 +145,22 @@ def ciu_plot_main(input_dir, output_dir, raw_file, smooth_window=None, crop_vals
     # save output
     title = filename.rstrip('_raw.csv')
     outputpath = os.path.join(os.path.dirname(analysis_obj.raw_obj.filepath), title)
+
+    analysis_obj.params.set_params({'cropping': crop_vals,
+                                    'gaussian_centroid_bound_filter': centroid_bound_filter,
+                                    'gaussian_centroid_plot_bounds': centroid_plot_bounds,
+                                    'gaussian_int_threshold': gaussian_int_thr,
+                                    'gaussian_min_spacing': gaussian_min_spacing,
+                                    'gaussian_width_max': gaussian_width_max,
+                                    'interpolation': interpolate_bins,
+                                    'output_save_csv': save_csv,
+                                    'output_title': title,
+                                    'plot_extension': extension,
+                                    'plot_x_title': titlex,
+                                    'plot_y_title': titley,
+                                    'smoothing_iterations': num_smooths,
+                                    'smoothing_method': 'Savitsky-Golay',
+                                    'smoothing_window': smooth_window})
 
     analysis_obj.save_gaussfits_pdf(outputpath)
     analysis_obj.plot_centroids(outputpath, centroid_plot_bounds)
@@ -211,3 +206,33 @@ if __name__ == '__main__':
                       save_csv=save_output_csv,
                       save_title=output_title)
 
+
+# testing 2
+# if __name__ == '__main__':
+#     # open pickled files
+#     root = tkinter.Tk()
+#     root.withdraw()
+#     files = filedialog.askopenfilenames(filetypes=[('pickled gaussian files', '.pkl')])
+#     files = list(files)
+#     file_dir = os.path.dirname(files[0])
+#
+#     all_ciu_data = []
+#     axes = []
+#     for file in files:
+#         with open(file, 'rb') as first_file:
+#             ciu1 = pickle.load(first_file)
+#
+#         data = ciu1.ciu_data
+#         all_ciu_data.append(data)
+#         axes = ciu1.axes
+#
+#     # average
+#     avg_data, std_devs = Raw_Processing.average_ciu(all_ciu_data)
+#
+#     # save output
+#     avg_name = os.path.join(file_dir, files[0].rstrip('_raw.csv') + '_avg.csv')
+#     std_name = os.path.join(file_dir, files[0].rstrip('_raw.csv') + '_std.csv')
+#     write_ciu_csv(avg_name, avg_data, axes)
+#     write_ciu_csv(std_name, std_devs, axes)
+#     ciu_plot(avg_data, axes, file_dir, 'average', 'CV', 'DT', '.png')
+#     ciu_plot(std_devs, axes, file_dir, 'stdev', 'CV', 'DT', '.png')

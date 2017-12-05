@@ -10,6 +10,7 @@ from Gaussian_Fitting import gaussfunc
 import tkinter
 from tkinter import filedialog
 import pickle
+from CIU_Params import Parameters
 
 
 class CIUAnalysisObj(object):
@@ -29,6 +30,7 @@ class CIUAnalysisObj(object):
         self.raw_obj = ciu_raw_obj
         self.ciu_data = ciu_data
         self.axes = axes            # convention: axis 0 = DT, axis 1 = CV
+        self.params = Parameters()
 
         # Gaussian fitting parameters - not always initialized with the object
         self.gauss_params = None

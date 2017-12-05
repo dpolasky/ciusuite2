@@ -7,6 +7,27 @@ Date: 10/6/2017
 import numpy as np
 import scipy.signal
 import scipy.interpolate
+from CIU_raw import CIURaw
+
+
+def get_data(fname):
+    """
+    Read _raw.csv file and generate a CIURaw object containing its raw data and filename
+    :param fname: string - path to _raw.csv file to read
+    :return: CIURaw object with rawdata, axes, and filename initialized
+    """
+    rawdata = np.genfromtxt(fname, missing_values=[""], filling_values=[0], delimiter=",")
+    row_axis = rawdata[1:, 0]
+    col_axis = rawdata[0, 1:]
+    raw_obj = CIURaw(rawdata[1:, 1:], row_axis, col_axis, fname)
+    return raw_obj
+
+
+# Generate lists of trap collision energies and drift times used for the plots ###
+def get_axes(rawdata):
+    row_axis = rawdata[1:, 0]
+    col_axis = rawdata[0, 1:]
+    return row_axis, col_axis
 
 
 def normalize_by_col(raw_data_matrix):
@@ -115,3 +136,18 @@ def interpolate_cv(norm_data, axes, num_bins=200):
         interpolated_data.append(new_intensities)
 
     return interpolated_data, newaxes
+
+
+def average_ciu(list_of_data_matrices):
+    """
+    Average CIU fingerprints and return the averaged and standard deviation matrices (SD only
+    if n >= 3).
+    :param list_of_data_matrices: List of CIU data matrices (2D numpy array with no axes label info)
+    :return: averaged_matrix, std_dev_matrix as 2D numpy arrays of same shape as input
+    """
+    avg_matrix = np.mean(list_of_data_matrices, axis=0)
+    std_matrix = np.std(list_of_data_matrices, axis=0)
+
+    return avg_matrix, std_matrix
+
+
