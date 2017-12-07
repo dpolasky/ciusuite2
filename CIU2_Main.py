@@ -20,6 +20,7 @@ import CIU_Params
 
 hard_file_path_ui = r"C:\Users\dpolasky\Desktop\CIUSuite2.ui"
 hard_params_file = r"C:\Users\dpolasky\Desktop\CIU_params.txt"
+hard_output_default = r"C:\Users\dpolasky\Desktop\test"
 
 
 class CIUSuite2(object):
@@ -40,15 +41,27 @@ class CIUSuite2(object):
         self.mainwindow = builder.get_object('CIU_app_top', master_window)
 
         callbacks = {
-            'on_button_rawfile_clicked': self.on_button_rawfile_clicked
+            'on_button_rawfile_clicked': self.on_button_rawfile_clicked,
+            'on_button_analysisfile_clicked': self.on_button_analysisfile_clicked,
+            'on_button_printparams_clicked': self.on_button_printparams_clicked,
+            'on_button_changedir_clicked': self.on_button_changedir_clicked,
+            'on_button_oldplot_clicked': self.on_button_oldplot_clicked,
+            # 'on_button_oldcompare_clicked': self.on_button_oldcompare_clicked,
+            # 'on_button_oldavg_clicked': self.on_button_oldavg_clicked,
+            # 'on_button_olddeltadt_clicked': self.on_button_olddeltadt_clicked
         }
         builder.connect_callbacks(callbacks)
 
         # load parameter file
-        self.params_obj = CIU_Params.parse_params_file(hard_params_file)
+        self.params_obj = CIU_Params.Parameters()
+        self.params_obj.set_params(CIU_Params.parse_params_file(hard_params_file))
+
         params_text = self.builder.get_object('Text_params')
         params_text.delete(1.0, tk.END)
         params_text.insert(tk.INSERT, 'Parameters loaded from hard file')
+
+        self.analysis_file_list = []
+        self.output_dir = hard_output_default
 
     def on_button_rawfile_clicked(self):
         """
@@ -56,10 +69,106 @@ class CIUSuite2(object):
         :return:
         """
         raw_files = open_files([('_raw.csv', '_raw.csv')])
-        filestring = '\n'.join([os.path.basename(x).rstrip('_raw.csv') for x in raw_files])
+
+        # run raw processing
+        for raw_file in raw_files:
+            raw_obj = generate_raw_obj(raw_file)
+            analysis_obj = process_raw_obj(raw_obj, self.params_obj)
+            analysis_filename = save_analysis_obj(analysis_obj)
+            self.analysis_file_list.append(analysis_filename)
+
+        # update the list of analysis files to display
+        self.display_analysis_files()
+
+    def on_button_analysisfile_clicked(self):
+        """
+        Open a filechooser for the user to select previously process analysis (.ciu) files
+        :return:
+        """
+        analysis_files = open_files([('CIU files', '.ciu')])
+        self.analysis_file_list = analysis_files
+        self.display_analysis_files()
+
+    def display_analysis_files(self):
+        """
+        Write analysis filenames to the main text window and update associated controls. References
+        self.analysis_list for filenames
+        :return: void
+        """
+        displaystring = ''
+        index = 1
+        for file in self.analysis_file_list:
+            displaystring += '{}: {}\n'.format(index, os.path.basename(file).rstrip('.ciu'))
+            index += 1
+
         # clear any existing text, then write the list of files to the display
         self.builder.get_object('Text_analysis_list').delete(1.0, tk.END)
-        self.builder.get_object('Text_analysis_list').insert(tk.INSERT, filestring)
+        self.builder.get_object('Text_analysis_list').insert(tk.INSERT, displaystring)
+
+        # update total file number counter
+        # self.builder.get_object('Entry_num_files').textvariable.set(str(len(self.analysis_file_list)))
+        self.builder.get_object('Entry_num_files').config(state=tk.NORMAL)
+        self.builder.get_object('Entry_num_files').delete(0, tk.END)
+        self.builder.get_object('Entry_num_files').insert(0, str(len(self.analysis_file_list)))
+        self.builder.get_object('Entry_num_files').config(state=tk.DISABLED)
+
+    def on_button_printparams_clicked(self):
+        """
+        print parameters from selected files (or all files) to console
+        :return: void
+        """
+        # Determine if a file range has been specified
+        files_to_read = self.check_file_range_entries()
+
+        for file in files_to_read:
+            # load analysis obj and print params
+            analysis_obj = load_analysis_obj(file)
+            print('\nParameters used in file {}:'.format(os.path.basename(file)))
+            analysis_obj.params.print_params_to_console()
+
+    def check_file_range_entries(self):
+        """
+        Check to see if user has entered a valid range in either of the file range entries
+        and return the range if so, or return the default range (all files) if not.
+        :return: sublist of self.analysis_file_list bounded by ranges
+        """
+        try:
+            start_file = int(self.builder.get_object('Entry_start_files').get())
+        except ValueError:
+            # no number was entered or an invalid number - use default start location (0)
+            start_file = 0
+        try:
+            end_file = int(self.builder.get_object('Entry_end_files').get())
+        except ValueError:
+            end_file = len(self.analysis_file_list)
+
+        files_to_read = self.analysis_file_list[start_file: end_file]
+        return files_to_read
+
+    def on_button_changedir_clicked(self):
+        """
+        Open a file chooser to change the output directory and update the display
+        :return: void
+        """
+        newdir = filedialog.askdirectory()
+        self.output_dir = newdir
+        self.update_dir_entry()
+
+    def update_dir_entry(self):
+        """
+        Update the graphical display of the output directory
+        :return: void
+        """
+        self.builder.get_object('Text_outputdir').config(state=tk.NORMAL)
+        self.builder.get_object('Text_outputdir').delete(1.0, tk.INSERT)
+        self.builder.get_object('Text_outputdir').insert(tk.INSERT, self.output_dir)
+        self.builder.get_object('Text_outputdir').config(state=tk.DISABLED)
+
+    def on_button_oldplot_clicked(self):
+        """
+        Run old CIU plot method to generate a plot in the output directory
+        :return:
+        """
 
 
 # ****** CIU Main I/O methods ******
@@ -152,7 +261,7 @@ def process_raw_obj(raw_obj, params_obj):
 
     # interpolate data
     axes = (raw_obj.dt_axis, raw_obj.cv_axis)
-    if params_obj.interpolation_bins > 0:
+    if params_obj.interpolation_bins is not None:
         norm_data, axes = Raw_Processing.interpolate_cv(norm_data, axes, params_obj.interpolation_bins)
 
     if params_obj.smoothing_window is not None:
@@ -203,7 +312,7 @@ def save_analysis_obj(analysis_obj, outputdir=None):
     Pickle the CIUAnalysisObj for later retrieval
     :param analysis_obj: CIUAnalysisObj to save
     :param outputdir: (optional) directory in which to save. Default = raw file directory
-    :return: void
+    :return: full path to save location
     """
     file_extension = '.ciu'
 
@@ -215,6 +324,19 @@ def save_analysis_obj(analysis_obj, outputdir=None):
 
     with open(picklefile, 'wb') as pkfile:
         pickle.dump(analysis_obj, pkfile)
+
+    return picklefile
+
+
+def load_analysis_obj(analysis_filename):
+    """
+    Load a pickled analysis object back into program memory
+    :param analysis_filename: full path to file location to load
+    :return: CIUAnalysisObj
+    """
+    with open(analysis_filename, 'rb') as analysis_file:
+        analysis_obj = pickle.load(analysis_file)
+    return analysis_obj
 
 
 if __name__ == '__main__':

@@ -75,7 +75,20 @@ def parse_params_file(params_file):
                 if line.startswith('#') or line.startswith('\n'):
                     continue
                 splits = line.rstrip('\n').split('=')
-                param_dict[splits[0].strip()] = splits[1].strip()
+                value = splits[1].strip()
+                # catch 'None' values and convert to None
+                if value == 'None':
+                    param_dict[splits[0].strip()] = None
+                else:
+                    try:
+                        # try parsing to number
+                        try:
+                            param_dict[splits[0].strip()] = int(value)
+                        except ValueError:
+                            param_dict[splits[0].strip()] = float(value)
+                    except ValueError:
+                        # string value - leave as a string
+                        param_dict[splits[0].strip()] = splits[1].strip()
         return param_dict
     except FileNotFoundError:
         print('params file not found!')
