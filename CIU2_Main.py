@@ -16,6 +16,8 @@ import Gaussian_Fitting
 from CIU_analysis_obj import CIUAnalysisObj
 import pickle
 import CIU_Params
+import Original_CIU
+import numpy as np
 
 
 hard_file_path_ui = r"C:\Users\dpolasky\Desktop\CIUSuite2.ui"
@@ -46,9 +48,9 @@ class CIUSuite2(object):
             'on_button_printparams_clicked': self.on_button_printparams_clicked,
             'on_button_changedir_clicked': self.on_button_changedir_clicked,
             'on_button_oldplot_clicked': self.on_button_oldplot_clicked,
-            # 'on_button_oldcompare_clicked': self.on_button_oldcompare_clicked,
-            # 'on_button_oldavg_clicked': self.on_button_oldavg_clicked,
-            # 'on_button_olddeltadt_clicked': self.on_button_olddeltadt_clicked
+            'on_button_oldcompare_clicked': self.on_button_oldcompare_clicked,
+            'on_button_oldavg_clicked': self.on_button_oldavg_clicked,
+            'on_button_olddeltadt_clicked': self.on_button_olddeltadt_clicked
         }
         builder.connect_callbacks(callbacks)
 
@@ -80,6 +82,10 @@ class CIUSuite2(object):
         # update the list of analysis files to display
         self.display_analysis_files()
 
+        # update directory to match the loaded files
+        self.output_dir = os.path.dirname(self.analysis_file_list[0])
+        self.update_dir_entry()
+
     def on_button_analysisfile_clicked(self):
         """
         Open a filechooser for the user to select previously process analysis (.ciu) files
@@ -88,6 +94,10 @@ class CIUSuite2(object):
         analysis_files = open_files([('CIU files', '.ciu')])
         self.analysis_file_list = analysis_files
         self.display_analysis_files()
+
+        # update directory to match the loaded files
+        self.output_dir = os.path.dirname(self.analysis_file_list[0])
+        self.update_dir_entry()
 
     def display_analysis_files(self):
         """
@@ -167,6 +177,63 @@ class CIUSuite2(object):
     def on_button_oldplot_clicked(self):
         """
         Run old CIU plot method to generate a plot in the output directory
+        :return: void (saves to output dir)
+        """
+        for analysis_file in self.analysis_file_list:
+            analysis_obj = load_analysis_obj(analysis_file)
+            Original_CIU.ciu_plot(analysis_obj, self.params_obj, self.output_dir)
+
+    def on_button_oldcompare_clicked(self):
+        """
+        Run old (batched) RMSD-based CIU plot comparison on selected files
+        :return: void (saves to output dir)
+        """
+        if len(self.analysis_file_list) == 1:
+            # re-open filechooser to get second file
+            self.analysis_file_list.append(filedialog.askopenfilename(filetypes=[('_raw.csv', '_raw.csv')]))
+
+        if len(self.analysis_file_list) == 2:
+            # compare_basic_raw(test_file1, test_file2, test_dir, test_smooth, test_crop)
+            Original_CIU.compare_basic_raw(self.analysis_file_list[0], self.analysis_file_list[1],
+                                           self.params_obj, self.output_dir)
+
+        elif len(self.analysis_file_list) > 2:
+            rmsd_print_list = ['File 1, File 2, RMSD (%)']
+            # batch compare - compare all against all.
+            for file in self.analysis_file_list:
+                # don't compare the file against itself
+                skip_index = self.analysis_file_list.index(file)
+                index = 0
+                while index < len(self.analysis_file_list):
+                    if not index == skip_index:
+                        ciu1 = load_analysis_obj(file)
+                        ciu2 = load_analysis_obj(self.analysis_file_list[index])
+                        rmsd = Original_CIU.compare_basic_raw(ciu1, ciu2, self.params_obj, self.output_dir)
+                        rmsd_print_list.append('{},{},{:.2f}'.format(os.path.basename(file).rstrip('.ciu'),
+                                                                     os.path.basename(self.analysis_file_list[index]).rstrip('.ciu'),
+                                                                     rmsd))
+                    index += 1
+
+            # print output to csv
+            with open(os.path.join(self.output_dir, 'batch_RMSDs.csv'), 'w') as rmsd_file:
+                for rmsd_string in rmsd_print_list:
+                    rmsd_file.write(rmsd_string + '\n')
+
+    def on_button_oldavg_clicked(self):
+        """
+        Average several processed files into a replicate object and save it for further
+        replicate processing methods
+        :return:
+        """
+        analysis_obj_list = [load_analysis_obj(x) for x in self.analysis_file_list]
+        averaged_obj = average_ciu(analysis_obj_list, self.params_obj, self.output_dir)
+        self.analysis_file_list = [averaged_obj.filename]
+        self.display_analysis_files()
+
+    def on_button_olddeltadt_clicked(self):
+        """
+        Edit files to align initial CV's with each other for difference analyses. Designed
+        (originally) to output updated _raw.csv for processing, but might change.
         :return:
         """
 
@@ -180,61 +247,6 @@ def open_files(filetype):
     """
     files = filedialog.askopenfilenames(filetype=filetype)
     return files
-
-
-def write_ciu_csv(save_path, ciu_data, axes=None):
-    """
-    Method to write an _raw.csv file for CIU data. If 'axes' is provided, assumes that the ciu_data
-    array does NOT contain axes and if 'axes' is None, assumes ciu_data contains axes.
-    :param save_path: Full path to save location (SHOULD end in _raw.csv)
-    :param ciu_data: 2D numpy array containing CIU data in standard format (rows = DT bins, cols = CV)
-    :param axes: (optional) axes labels, provided as (row axis, col axis). if provided, assumes the data array does not contain axes labels.
-    :return: void
-    """
-    with open(save_path, 'w') as outfile:
-        if axes is not None:
-            # write axes first if they're provided
-            args = ['{}'.format(x) for x in axes[1]]    # get the cv-axis now to write to the header
-            line = ','.join(args)
-            line = ',' + line
-            outfile.write(line + '\n')
-
-            index = 0
-            for row in ciu_data:
-                # insert the axis label at the start of each row
-                args = ['{}'.format(x) for x in row]
-                args.insert(0, str(axes[0][index]))
-                index += 1
-                line = ','.join(args)
-                outfile.write(line + '\n')
-        else:
-            # axes are included, so just write everything to file with comma separation
-            args = ['{}'.format(x) for x in ciu_data]
-            line = ','.join(args)
-            outfile.write(line + '\n')
-
-
-def ciu_plot(data, axes, output_dir, plot_title, x_title, y_title, extension):
-    """
-    Generate a CIU plot in the provided directory
-    :param data: 2D numpy array with rows = DT, columns = CV
-    :param axes: axis labels (list of [DT-labels, CV-labels]
-    :param output_dir: directory in which to save the plot
-    :param plot_title: filename and plot title, INCLUDING file extension (e.g. .png, .pdf, etc)
-    :param x_title: x-axis title
-    :param y_title: y-axis title
-    :param extension: file extension for plotting, default png. Must be image format (.png, .pdf, .jpeg, etc)
-    :return: void
-    """
-    plt.clf()
-    output_path = os.path.join(output_dir, plot_title + extension)
-    plt.title(plot_title)
-    plt.contourf(axes[1], axes[0], data, 100, cmap='jet')  # plot the data
-    plt.xlabel(x_title)
-    plt.ylabel(y_title)
-    plt.colorbar(ticks=[0, .25, .5, .75, 1])  # plot a colorbar
-    plt.savefig(output_path)
-    plt.close()
 
 
 def generate_raw_obj(raw_file):
@@ -279,6 +291,32 @@ def process_raw_obj(raw_obj, params_obj):
     return analysis_obj
 
 
+def average_ciu(analysis_obj_list, params_obj, output_dir):
+    """
+    Generate and save replicate object (a CIUAnalysisObj with averaged ciu_data and a list
+    of raw_objs) that can be used for further analysis
+    :param analysis_obj_list: list of CIUAnalysisObj's to average
+    :param params_obj: Parameters object with options
+    :param output_dir: directory in which to save output
+    :return: averaged analysis object
+    """
+    raw_obj_list = []
+    ciu_data_list = []
+    for analysis_obj in analysis_obj_list:
+        raw_obj_list.append(analysis_obj.raw_obj)
+        ciu_data_list.append(analysis_obj.ciu_data)
+
+    # generate the average object
+    avg_data = np.mean(ciu_data_list, axis=0)
+    averaged_obj = CIUAnalysisObj(raw_obj_list[0], avg_data, analysis_obj_list[0].axes)
+    averaged_obj.params = analysis_obj_list[0].params
+    averaged_obj.raw_obj_list = raw_obj_list
+    averaged_obj.filename = save_analysis_obj(averaged_obj, filename_append='_Avg')
+
+    # save averaged object to file and return it
+    return averaged_obj
+
+
 def run_gaussian_fitting(analysis_obj):
     """
     Perform gaussian fitting on an analysis object. NOTE: object must have initial raw processing
@@ -307,21 +345,24 @@ def save_gaussian_outputs(analysis_obj, outputpath):
     analysis_obj.save_gauss_params(outputpath)
 
 
-def save_analysis_obj(analysis_obj, outputdir=None):
+def save_analysis_obj(analysis_obj, filename_append='', outputdir=None):
     """
     Pickle the CIUAnalysisObj for later retrieval
     :param analysis_obj: CIUAnalysisObj to save
+    :param filename_append: Addtional filename to append to the raw_obj name (e.g. 'AVG')
     :param outputdir: (optional) directory in which to save. Default = raw file directory
     :return: full path to save location
     """
     file_extension = '.ciu'
 
     if outputdir is not None:
-        picklefile = os.path.join(outputdir, analysis_obj.raw_obj.filename.rstrip('_raw.csv') + file_extension)
+        picklefile = os.path.join(outputdir, analysis_obj.raw_obj.filename.rstrip('_raw.csv')
+                                  + filename_append + file_extension)
     else:
         picklefile = os.path.join(os.path.dirname(analysis_obj.raw_obj.filepath),
-                                  analysis_obj.raw_obj.filename.rstrip('_raw.csv') + file_extension)
+                                  analysis_obj.raw_obj.filename.rstrip('_raw.csv') + filename_append + file_extension)
 
+    analysis_obj.filename = picklefile
     with open(picklefile, 'wb') as pkfile:
         pickle.dump(analysis_obj, pkfile)
 

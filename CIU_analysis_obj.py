@@ -28,9 +28,11 @@ class CIUAnalysisObj(object):
         params are [baseline height, amplitude, centroid, width]
         """
         self.raw_obj = ciu_raw_obj
+        self.raw_obj_list = None    # used for replicates (averaged fingerprints) only
         self.ciu_data = ciu_data
         self.axes = axes            # convention: axis 0 = DT, axis 1 = CV
         self.params = Parameters()
+        self.filename = None        # filename of .ciu file saved
 
         # Gaussian fitting parameters - not always initialized with the object
         self.gauss_params = None
