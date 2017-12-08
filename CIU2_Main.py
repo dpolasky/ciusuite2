@@ -7,9 +7,7 @@ a (very) basic GUI of some kind.
 # GUI test
 import tkinter as tk
 import pygubu
-from tkinter import messagebox
 from tkinter import filedialog
-import matplotlib.pyplot as plt
 import os
 import Raw_Processing
 import Gaussian_Fitting
@@ -19,9 +17,8 @@ import CIU_Params
 import Original_CIU
 import numpy as np
 
-
-hard_file_path_ui = r"C:\Users\dpolasky\Desktop\CIUSuite2.ui"
-hard_params_file = r"C:\Users\dpolasky\Desktop\CIU_params.txt"
+hard_file_path_ui = r"C:\CIUSuite2\CIUSuite2.ui"
+hard_params_file = r"C:\CIUSuite2\CIU_params.txt"
 hard_output_default = r"C:\Users\dpolasky\Desktop\test"
 
 
@@ -29,10 +26,9 @@ class CIUSuite2(object):
     """
 
     """
-    def __init__(self, master_window):
+    def __init__(self):
         """
 
-        :param master_window:
         """
         # create a Pygubu builder
         self.builder = builder = pygubu.Builder()
@@ -40,17 +36,23 @@ class CIUSuite2(object):
         # load the UI file
         builder.add_from_file(hard_file_path_ui)
         # create widget using provided root (Tk) window
-        self.mainwindow = builder.get_object('CIU_app_top', master_window)
+        # self.mainwindow = builder.get_object('CIU_app_top', master_window)
+        self.mainwindow = builder.get_object('CIU_app_top')
+
+        self.mainwindow.protocol('WM_DELETE_WINDOW', self.on_close_window)
 
         callbacks = {
             'on_button_rawfile_clicked': self.on_button_rawfile_clicked,
             'on_button_analysisfile_clicked': self.on_button_analysisfile_clicked,
+            'on_button_paramload_clicked': self.on_button_paramload_clicked,
             'on_button_printparams_clicked': self.on_button_printparams_clicked,
             'on_button_changedir_clicked': self.on_button_changedir_clicked,
             'on_button_oldplot_clicked': self.on_button_oldplot_clicked,
             'on_button_oldcompare_clicked': self.on_button_oldcompare_clicked,
             'on_button_oldavg_clicked': self.on_button_oldavg_clicked,
-            'on_button_olddeltadt_clicked': self.on_button_olddeltadt_clicked
+            'on_button_olddeltadt_clicked': self.on_button_olddeltadt_clicked,
+            'on_button_gaussfit_clicked': self.on_button_gaussfit_clicked,
+            'on_button_gauss_compare_clicked': self.on_button_gauss_compare_clicked
         }
         builder.connect_callbacks(callbacks)
 
@@ -65,6 +67,12 @@ class CIUSuite2(object):
         self.analysis_file_list = []
         self.output_dir = hard_output_default
 
+    def run(self):
+        self.mainwindow.mainloop()
+
+    def on_close_window(self):
+        self.mainwindow.destroy()
+
     def on_button_rawfile_clicked(self):
         """
         Open a filechooser for the user to select raw files, then process them
@@ -74,6 +82,8 @@ class CIUSuite2(object):
 
         # run raw processing
         for raw_file in raw_files:
+            self.update_progress(raw_files.index(raw_file), len(raw_files))
+
             raw_obj = generate_raw_obj(raw_file)
             analysis_obj = process_raw_obj(raw_obj, self.params_obj)
             analysis_filename = save_analysis_obj(analysis_obj)
@@ -85,6 +95,7 @@ class CIUSuite2(object):
         # update directory to match the loaded files
         self.output_dir = os.path.dirname(self.analysis_file_list[0])
         self.update_dir_entry()
+        self.progress_done()
 
     def on_button_analysisfile_clicked(self):
         """
@@ -98,6 +109,22 @@ class CIUSuite2(object):
         # update directory to match the loaded files
         self.output_dir = os.path.dirname(self.analysis_file_list[0])
         self.update_dir_entry()
+
+    def on_button_paramload_clicked(self):
+        """
+        Open a user chosen parameter file into self.params
+        :return: void
+        """
+        new_param_file = open_files([('params file', '.txt')])[0]
+        new_param_obj = CIU_Params.Parameters()
+        new_param_obj.set_params(CIU_Params.parse_params_file(new_param_file))
+        self.params_obj = new_param_obj
+
+        # update parameter location display
+        new_text = 'Parameters loaded from {}'.format(os.path.basename(new_param_file))
+        params_text = self.builder.get_object('Text_params')
+        params_text.delete(1.0, tk.END)
+        params_text.insert(tk.INSERT, new_text)
 
     def display_analysis_files(self):
         """
@@ -140,10 +167,11 @@ class CIUSuite2(object):
         """
         Check to see if user has entered a valid range in either of the file range entries
         and return the range if so, or return the default range (all files) if not.
+        Note: subtracts 1 from file numbers because users count from 1, not 0
         :return: sublist of self.analysis_file_list bounded by ranges
         """
         try:
-            start_file = int(self.builder.get_object('Entry_start_files').get())
+            start_file = int(self.builder.get_object('Entry_start_files').get()) - 1
         except ValueError:
             # no number was entered or an invalid number - use default start location (0)
             start_file = 0
@@ -179,45 +207,61 @@ class CIUSuite2(object):
         Run old CIU plot method to generate a plot in the output directory
         :return: void (saves to output dir)
         """
-        for analysis_file in self.analysis_file_list:
+        # Determine if a file range has been specified
+        files_to_read = self.check_file_range_entries()
+
+        for analysis_file in files_to_read:
+            self.update_progress(files_to_read.index(analysis_file), len(files_to_read))
+
             analysis_obj = load_analysis_obj(analysis_file)
             Original_CIU.ciu_plot(analysis_obj, self.params_obj, self.output_dir)
+        self.progress_done()
 
     def on_button_oldcompare_clicked(self):
         """
         Run old (batched) RMSD-based CIU plot comparison on selected files
         :return: void (saves to output dir)
         """
-        if len(self.analysis_file_list) == 1:
+        # Determine if a file range has been specified
+        files_to_read = self.check_file_range_entries()
+
+        if len(files_to_read) == 1:
             # re-open filechooser to get second file
-            self.analysis_file_list.append(filedialog.askopenfilename(filetypes=[('_raw.csv', '_raw.csv')]))
+            newfile = filedialog.askopenfilename(filetypes=[('_raw.csv', '_raw.csv')])
+            self.analysis_file_list.append(newfile)
+            files_to_read.append(newfile)
 
-        if len(self.analysis_file_list) == 2:
+        if len(files_to_read) == 2:
             # compare_basic_raw(test_file1, test_file2, test_dir, test_smooth, test_crop)
-            Original_CIU.compare_basic_raw(self.analysis_file_list[0], self.analysis_file_list[1],
-                                           self.params_obj, self.output_dir)
+            ciu1 = load_analysis_obj(files_to_read[0])
+            ciu2 = load_analysis_obj(files_to_read[1])
+            Original_CIU.compare_basic_raw(ciu1, ciu2, self.params_obj, self.output_dir)
 
-        elif len(self.analysis_file_list) > 2:
+        elif len(files_to_read) > 2:
             rmsd_print_list = ['File 1, File 2, RMSD (%)']
             # batch compare - compare all against all.
-            for file in self.analysis_file_list:
+            for file in files_to_read:
+                self.update_progress(files_to_read.index(file), len(files_to_read))
+
                 # don't compare the file against itself
-                skip_index = self.analysis_file_list.index(file)
+                skip_index = files_to_read.index(file)
                 index = 0
-                while index < len(self.analysis_file_list):
+                while index < len(files_to_read):
                     if not index == skip_index:
                         ciu1 = load_analysis_obj(file)
-                        ciu2 = load_analysis_obj(self.analysis_file_list[index])
+                        ciu2 = load_analysis_obj(files_to_read[index])
                         rmsd = Original_CIU.compare_basic_raw(ciu1, ciu2, self.params_obj, self.output_dir)
-                        rmsd_print_list.append('{},{},{:.2f}'.format(os.path.basename(file).rstrip('.ciu'),
-                                                                     os.path.basename(self.analysis_file_list[index]).rstrip('.ciu'),
-                                                                     rmsd))
+                        printstring = '{},{},{:.2f}'.format(os.path.basename(file).rstrip('.ciu'),
+                                                            os.path.basename(files_to_read[index]).rstrip('.ciu'),
+                                                            rmsd)
+                        rmsd_print_list.append(printstring)
                     index += 1
 
             # print output to csv
             with open(os.path.join(self.output_dir, 'batch_RMSDs.csv'), 'w') as rmsd_file:
                 for rmsd_string in rmsd_print_list:
                     rmsd_file.write(rmsd_string + '\n')
+        self.progress_done()
 
     def on_button_oldavg_clicked(self):
         """
@@ -225,17 +269,96 @@ class CIUSuite2(object):
         replicate processing methods
         :return:
         """
-        analysis_obj_list = [load_analysis_obj(x) for x in self.analysis_file_list]
+        # Determine if a file range has been specified
+        files_to_read = self.check_file_range_entries()
+
+        analysis_obj_list = [load_analysis_obj(x) for x in files_to_read]
         averaged_obj = average_ciu(analysis_obj_list, self.params_obj, self.output_dir)
         self.analysis_file_list = [averaged_obj.filename]
         self.display_analysis_files()
+        self.progress_done()
 
     def on_button_olddeltadt_clicked(self):
         """
-        Edit files to align initial CV's with each other for difference analyses. Designed
-        (originally) to output updated _raw.csv for processing, but might change.
+        Edit files to a delta DT axis. x-axis will be adjusted so that the maximum y-value
+        in the first column of the 2D CIU matrix (or first centroid if gaussian fitting
+        has been performed) will be set to an x-value of 0, and all other x-values will
+        be adjusted accordingly.
+        :return: saves new .ciu file
+        """
+        # Determine if a file range has been specified
+        files_to_read = self.check_file_range_entries()
+
+        new_file_list = []
+        for file in files_to_read:
+            self.update_progress(files_to_read.index(file), len(files_to_read))
+
+            analysis_obj = load_analysis_obj(file)
+            shifted_obj = Original_CIU.delta_dt(analysis_obj)
+            newfile = save_analysis_obj(shifted_obj, filename_append='_delta', outputdir=self.output_dir)
+            new_file_list.append(newfile)
+            # also save _raw.csv output if desired
+            if self.params_obj.save_output_csv:
+                save_path = file.rstrip('.ciu') + '_delta_raw.csv'
+                Original_CIU.write_ciu_csv(save_path, shifted_obj.ciu_data, shifted_obj.axes)
+        self.analysis_file_list = new_file_list
+        self.display_analysis_files()
+        self.progress_done()
+
+    def on_button_gaussfit_clicked(self):
+        """
+        Run Gaussian fitting on the analysis object list (updating the objects and leaving
+        the current list in place). Saves Gaussian diagnostics/info to file in self.output_dir
+        :return: void
+        """
+        # Determine if a file range has been specified
+        files_to_read = self.check_file_range_entries()
+
+        new_file_list = []
+        for file in files_to_read:
+            self.update_progress(files_to_read.index(file), len(files_to_read))
+
+            analysis_obj = load_analysis_obj(file)
+            analysis_obj = Gaussian_Fitting.gaussian_fit_ciu(analysis_obj, self.params_obj)
+
+            filename = save_analysis_obj(analysis_obj, outputdir=self.output_dir)
+            new_file_list.append(filename)
+        self.display_analysis_files()
+        self.progress_done()
+
+    def on_button_gauss_compare_clicked(self):
+        """
+
         :return:
         """
+
+    def update_progress(self, current_analysis, num_analyses):
+        """
+        Update the progress bar to display the current progress through the analysis list
+        :param current_analysis: the file NUMBER currently being worked on by the program
+        :param num_analyses: the total number of files in the current analysis
+        :return: void
+        """
+        current_prog = (current_analysis + 1) / float(num_analyses) * 100
+        prog_string = 'Processing {} of {}'.format(current_analysis + 1, num_analyses)
+
+        progress_bar = self.builder.get_object('Progressbar_main')
+        progress_bar['value'] = current_prog
+
+        self.builder.get_object('Entry_progress').config(state=tk.NORMAL)
+        self.builder.get_object('Entry_progress').delete(0, tk.END)
+        self.builder.get_object('Entry_progress').insert(0, prog_string)
+        self.builder.get_object('Entry_progress').config(state=tk.DISABLED)
+        self.mainwindow.update()
+
+    def progress_done(self):
+        self.builder.get_object('Entry_progress').config(state=tk.NORMAL)
+        self.builder.get_object('Entry_progress').delete(0, tk.END)
+        self.builder.get_object('Entry_progress').insert(0, 'Done!')
+        self.builder.get_object('Entry_progress').config(state=tk.DISABLED)
+
+        # added to keep program from exiting when run from command line - not sure if there's a better fix
+        self.run()
 
 
 # ****** CIU Main I/O methods ******
@@ -317,34 +440,6 @@ def average_ciu(analysis_obj_list, params_obj, output_dir):
     return averaged_obj
 
 
-def run_gaussian_fitting(analysis_obj):
-    """
-    Perform gaussian fitting on an analysis object. NOTE: object must have initial raw processing
-    already performed and a parameters object instantiated. Updates the analysis object.
-    :param analysis_obj: CIUAnalysisObj with normalized data and parameters obj already present
-    :return: void (updates the analysis_obj)
-    """
-    params = analysis_obj.params
-    Gaussian_Fitting.gaussian_fit_ciu(analysis_obj,
-                                      intensity_thr=params.gaussian_int_threshold,
-                                      min_spacing=params.gaussian_min_spacing,
-                                      filter_width_max=params.gaussian_width_max,
-                                      centroid_bounds=params.gaussian_centroid_bound_filter)
-
-
-def save_gaussian_outputs(analysis_obj, outputpath):
-    """
-    Write Gaussian output data and diagnostics to file location specified by outputpath
-    :param analysis_obj: CIUAnalysisObj with gaussian fitting previously performed
-    :param outputpath: directory in which to save output
-    :return: void
-    """
-    analysis_obj.save_gaussfits_pdf(outputpath)
-    analysis_obj.plot_centroids(outputpath, analysis_obj.params.gaussian_centroid_plot_bounds)
-    analysis_obj.plot_fwhms(outputpath)
-    analysis_obj.save_gauss_params(outputpath)
-
-
 def save_analysis_obj(analysis_obj, filename_append='', outputdir=None):
     """
     Pickle the CIUAnalysisObj for later retrieval
@@ -383,5 +478,7 @@ def load_analysis_obj(analysis_filename):
 if __name__ == '__main__':
     root = tk.Tk()
     root.withdraw()
-    ciu_app = CIUSuite2(root)
-    root.mainloop()
+    # ciu_app = CIUSuite2(root)
+    ciu_app = CIUSuite2()
+    ciu_app.run()
+    # root.mainloop()

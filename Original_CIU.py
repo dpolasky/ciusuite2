@@ -6,6 +6,7 @@ with CIUAnalysisObj objects providing the primary basis for handling data.
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+from CIU_analysis_obj import CIUAnalysisObj
 
 
 rmsd_plot_scaling = 1
@@ -41,6 +42,8 @@ def ciu_plot(analysis_obj, params_obj, output_dir):
         save_path += '_raw.csv'
         write_ciu_csv(save_path, analysis_obj.ciu_data, analysis_obj.axes)
 
+    return 'hi'
+
 
 def rmsd_difference(data_1, data_2):
     """
@@ -58,7 +61,8 @@ def rmsd_difference(data_1, data_2):
     return dif, rmsd
 
 
-def rmsd_plot(title, difference_matrix, axes, x_label, y_label, contour_scale, tick_scale, rtext, outputdir, extension='.png'):
+def rmsd_plot(title, difference_matrix, axes, x_label, y_label, contour_scale, tick_scale, rtext, outputdir,
+              extension='.png'):
     """
     Make a CIUSuite comparison RMSD plot with provided parameters
     :param title: plot title
@@ -149,13 +153,45 @@ def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir):
     return rmsd
 
 
+def delta_dt(analysis_obj):
+    """
+    Converts a CIU dataset to delta-drift time by moving the x-axis (DT) so that the max value
+    (or centroid if gaussian fitting has been performed) of the first CV column is at 0.
+    :param analysis_obj: CIUAnalysisObj to be shifted
+    :return: new CIUAnalysisObj with shifted data
+    """
+    # Determine location of max in 1st CV column
+    # if analysis_obj.gauss_params is not None:
+    #     # gaussian fitting has been done, use first centroid in first CV column as center
+    #     filt_centroids = [x[2::4] for x in analysis_obj.gauss_filt_params]
+    #     centroid_xval = filt_centroids[0]
+    # else:
+    # gaussian fitting not done, simply use max of first column
+    first_col = analysis_obj.ciu_data[:, 0]
+    index_of_max = np.argmax(first_col)
+    centroid_xval = analysis_obj.axes[0][index_of_max]
+
+    # Shift the DT axis (ONLY) so that the max value of the column is at DT = 0
+    old_dt_axis = analysis_obj.axes[0]
+    new_dt_axis = old_dt_axis - centroid_xval
+    new_axes = [new_dt_axis, analysis_obj.axes[1]]
+
+    # create new CIUAnalysisObj with the new axis and return it
+    shift_analysis_obj = CIUAnalysisObj(analysis_obj.raw_obj, analysis_obj.ciu_data, new_axes,
+                                        analysis_obj.gauss_params)
+    shift_analysis_obj.params = analysis_obj.params
+    shift_analysis_obj.raw_obj_list = analysis_obj.raw_obj_list
+    return shift_analysis_obj
+
+
 def write_ciu_csv(save_path, ciu_data, axes=None):
     """
     Method to write an _raw.csv file for CIU data. If 'axes' is provided, assumes that the ciu_data
     array does NOT contain axes and if 'axes' is None, assumes ciu_data contains axes.
     :param save_path: Full path to save location (SHOULD end in _raw.csv)
     :param ciu_data: 2D numpy array containing CIU data in standard format (rows = DT bins, cols = CV)
-    :param axes: (optional) axes labels, provided as (row axis, col axis). if provided, assumes the data array does not contain axes labels.
+    :param axes: (optional) axes labels, provided as (row axis, col axis). if provided,
+    assumes the data array does not contain axes labels.
     :return: void
     """
     with open(save_path, 'w') as outfile:

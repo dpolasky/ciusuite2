@@ -50,13 +50,22 @@ def estimate_multi_params(ciu_col, dt_axis, width_frac, peak_int_threshold=0.1, 
     return params_lists
 
 
-def gaussfunc(x, y0, A, xc, w):
+def gaussfunc(x, y0, a, xc, w):
+    """
+    Gaussian function with constraints applied for CIU data
+    :param x: x
+    :param y0: baseline (set to 0)
+    :param a: gaussian amplitude (constrained to be positive)
+    :param xc: gaussian centroid
+    :param w: gaussian width
+    :return: y = f(x)
+    """
     y0 = 0
-    A = abs(A)
+    a = abs(a)
     w = abs(w)
     xc = abs(xc)
     rxc = ((x-xc)**2)/(2*(w**2))
-    y = y0 + A*(np.exp(-rxc))
+    y = y0 + a*(np.exp(-rxc))
     return y
 
 
@@ -116,8 +125,112 @@ def filter_fits(params_list, peak_width_cutoff, intensity_cutoff, centroid_bound
     return filtered_list
 
 
-def gaussian_fit_ciu(ciu_obj, widthfrac=0.01, intensity_thr=0.1, min_spacing=10, filter_width_max=None,
-                     centroid_bounds=None):
+def gaussian_fit_ciu(analysis_obj, params_obj):
+    """
+    Gaussian fitting module for single-gaussian analysis of CIU-type data. Determines estimated
+    initial parameters and fits a single Gaussian distribution to each column of the input ciu_data
+    matrix. Saves all output into a subfolder of filepath titled 'gausfitoutput'
+    :param analysis_obj: ciu analysis object in which to save all data. Uses obj.ciu_data, axes, etc
+     (ciu_data is 2D numpy, axis 0 = DT, axis 1 = CV) for all data handling
+     Smoothing, interpolation, cropping, etc should be done prior to running this method.
+    :param params_obj: Parameters object with gaussian parameter information
+    :return: saves all gaussian outputs into the ciu_obj and returns it
+    """
+    ciu_data = analysis_obj.ciu_data
+    dt_axis = analysis_obj.axes[0]    # drift time (DT) - x axis for fitting, y axis for final CIU plot
+    filename = analysis_obj.raw_obj.filename
+
+    widthfrac = params_obj.gaussian_width_fraction
+    min_spacing = params_obj.gaussian_min_spacing
+    filter_width_max = params_obj.gaussian_width_max
+    intensity_thr = params_obj.gaussian_int_threshold
+    centroid_bounds = params_obj.gaussian_centroid_bound_filter
+    centroid_plot_bounds = params_obj.gaussian_centroid_plot_bounds
+
+    outputpathdir = filename.rstrip('_raw.csv')
+    outputpath = os.path.join(os.path.dirname(analysis_obj.raw_obj.filepath), outputpathdir)
+    if not os.path.isdir(outputpath):
+        os.makedirs(outputpath)
+
+    intarray = np.swapaxes(ciu_data, 0, 1)
+    popt_arr, pcov_arr, fwhm_arr, res_arr, arrivtime_centroid, stats,  = [], [], [], [], [], []
+    filtered_params, arrivtime_gausfit, width_gausfit, rsq_arr, adjrsq_arr = [], [], [], [], []
+
+    # for each CV column in the file, perform a multi-gaussian fitting and save information generated
+    print('\nFile ' + str(filename))
+    for i, array in enumerate(intarray):
+        print(i + 1)
+        # use peak detection to estimate initial 'guess' parameters for fitting
+        param_guesses_multiple = estimate_multi_params(array, dt_axis, widthfrac, peak_int_threshold=intensity_thr,
+                                                       min_spacing_bins=min_spacing)
+
+        # perform a curve fit using the multiple gaussian function
+        try:
+            popt, pcov = curve_fit(multi_gauss_func, dt_axis, array, method='lm',
+                                   p0=param_guesses_multiple, maxfev=5000)
+        except RuntimeError:
+            # no convergence within specified max iterations. Try again with fewer peaks
+            param_guesses_multiple = estimate_multi_params(array, dt_axis, widthfrac, peak_int_threshold=intensity_thr,
+                                                           min_spacing_bins=int(min_spacing * 2))
+            try:
+                popt, pcov = curve_fit(multi_gauss_func, dt_axis, array, method='lm',
+                                       p0=param_guesses_multiple, maxfev=5000)
+            except RuntimeError:
+                # failed again
+                popt = []
+                pcov = []
+
+        # filter peaks by width if desired
+        filt_popt = popt
+        if filter_width_max is not None:
+            filt_popt = filter_fits(popt, filter_width_max, intensity_thr, centroid_bounds)
+        filtered_params.append(filt_popt)
+
+        # extract individual gaussian function parameters and save information (and print diagnostics)
+        centroids = popt[2::4]
+        widths = popt[3::4]
+
+        yfit = multi_gauss_func(dt_axis, *popt)
+        fwhm, res = resandfwhm(centroids, widths)
+        print('Arrival time | Width\n', centroids, ' | ', widths)
+        print('FWHM | Resolution\n', fwhm, ' | ', res)
+        slope, intercept, rvalue, pvalue, stderr = linregress(array, yfit)
+        adjrsq = adjrsquared(rvalue ** 2, len(array))
+        print('Slope | intercept | r^2 | adjr^2 | pvalue | stderr')
+        print('%.4f | %.4f | %.4f | %.4f | %.4e | %.4f' % (slope, intercept, rvalue ** 2, adjrsq, pvalue, stderr))
+        rsq_arr.append(rvalue ** 2)
+        adjrsq_arr.append(adjrsq)
+        arrivtime_gausfit.append(yfit)
+        arrivtime_centroid.append(centroids)
+        width_gausfit.append(widths)
+        fwhm_arr.append(fwhm)
+        res_arr.append(res)
+        stats.append([slope, intercept, rvalue ** 2, adjrsq, pvalue, stderr])
+        popt_arr.append(popt)
+        pcov_arr.append(pcov)
+
+    # save fit information to the analysis object and return it
+    analysis_obj.init_gauss_lists(popt_arr)
+    analysis_obj.gauss_adj_r2s = adjrsq_arr
+    analysis_obj.gauss_fwhms = fwhm_arr
+    analysis_obj.gauss_fits = arrivtime_gausfit
+    analysis_obj.gauss_resolutions = res_arr
+    analysis_obj.gauss_r2s = rsq_arr
+    analysis_obj.gauss_covariances = pcov_arr
+    analysis_obj.gauss_fit_stats = stats
+    analysis_obj.gauss_filt_params = filtered_params
+
+    if params_obj.gaussian_save_diagnostics:
+        analysis_obj.save_gaussfits_pdf(outputpath)
+        analysis_obj.plot_centroids(outputpath, centroid_plot_bounds)
+        analysis_obj.plot_fwhms(outputpath)
+        analysis_obj.save_gauss_params(outputpath)
+
+    return analysis_obj
+
+
+def gaussian_fit_ciu_old(ciu_obj, widthfrac=0.01, intensity_thr=0.1, min_spacing=10, filter_width_max=None,
+                         centroid_bounds=None):
     """
     Gaussian fitting module for single-gaussian analysis of CIU-type data. Determines estimated
     initial parameters and fits a single Gaussian distribution to each column of the input ciu_data

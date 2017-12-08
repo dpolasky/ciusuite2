@@ -137,11 +137,11 @@ def ciu_plot_main(input_dir, output_dir, raw_file, smooth_window=None, crop_vals
         norm_data, axes = Raw_Processing.crop(norm_data, axes, crop_vals)
 
     analysis_obj = CIUAnalysisObj(raw_obj, norm_data, axes)
-    Gaussian_Fitting.gaussian_fit_ciu(analysis_obj,
-                                      intensity_thr=gaussian_int_thr,
-                                      min_spacing=gaussian_min_spacing,
-                                      filter_width_max=gaussian_width_max,
-                                      centroid_bounds=centroid_bound_filter)
+    Gaussian_Fitting.gaussian_fit_ciu_old(analysis_obj,
+                                          intensity_thr=gaussian_int_thr,
+                                          min_spacing=gaussian_min_spacing,
+                                          filter_width_max=gaussian_width_max,
+                                          centroid_bounds=centroid_bound_filter)
     # save output
     title = filename.rstrip('_raw.csv')
     outputpath = os.path.join(os.path.dirname(analysis_obj.raw_obj.filepath), title)

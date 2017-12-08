@@ -26,6 +26,8 @@ class Parameters(object):
         self.gaussian_width_max = None
         self.gaussian_centroid_bound_filter = None
         self.gaussian_centroid_plot_bounds = None
+        self.gaussian_width_fraction = None
+        self.gaussian_save_diagnostics = None
 
         # Plotting and saving output parameters
         self.plot_extension = None
@@ -76,19 +78,25 @@ def parse_params_file(params_file):
                     continue
                 splits = line.rstrip('\n').split('=')
                 value = splits[1].strip()
+
                 # catch 'None' values and convert to None
                 if value == 'None':
                     param_dict[splits[0].strip()] = None
                 else:
+                    # try parsing numbers
                     try:
-                        # try parsing to number
                         try:
                             param_dict[splits[0].strip()] = int(value)
                         except ValueError:
                             param_dict[splits[0].strip()] = float(value)
                     except ValueError:
-                        # string value - leave as a string
-                        param_dict[splits[0].strip()] = splits[1].strip()
+                        # string value - try parsing booleans or leave as a string
+                        if value in ['True', 'true', 'yes', 'Yes', 'Y', 'y']:
+                            param_dict[splits[0].strip()] = True
+                        elif value in ['False', 'false', 'no', 'No', 'N', 'n']:
+                            param_dict[splits[0].strip()] = False
+                        else:
+                            param_dict[splits[0].strip()] = splits[1].strip()
         return param_dict
     except FileNotFoundError:
         print('params file not found!')
@@ -100,4 +108,3 @@ if __name__ == '__main__':
     mydict = parse_params_file(r"C:\Users\dpolasky\Desktop\CIU_params.txt")
     myparams.set_params(mydict)
     myparams.print_params_to_console()
-
