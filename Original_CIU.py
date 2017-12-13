@@ -52,6 +52,11 @@ def rmsd_difference(data_1, data_2):
     :param data_2: matrix 2 (numpy.ndarray) - MUST be same shape as matrix 1
     :return: difference matrix (ndarray), rmsd (float) in percent
     """
+    # data_1[data_1 < 0.1] = 0.1
+    # num_entries_1 = np.count_nonzero(data_1)
+    # data_2[data_2 < 0.1] = 0.1
+    # num_entries_2 = np.count_nonzero(data_2)
+
     data_1[data_1 < 0.1] = 0
     num_entries_1 = np.count_nonzero(data_1)
     data_2[data_2 < 0.1] = 0
@@ -138,7 +143,7 @@ def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir):
     title = '{}-{}'.format(analysis_obj1.raw_obj.filename.rstrip('_raw.csv'),
                            analysis_obj2.raw_obj.filename.rstrip('_raw.csv'))
 
-    contour_scaling = np.linspace(-rmsd_plot_scaling, rmsd_plot_scaling, 100, endpoint=True)
+    contour_scaling = np.linspace(-rmsd_plot_scaling, rmsd_plot_scaling, 50, endpoint=True)
     colorbar_scaling = np.linspace(-rmsd_plot_scaling, rmsd_plot_scaling, 6, endpoint=True)
     rmsd_plot(title, dif, axes, params_obj.plot_x_title, params_obj.plot_y_title,
               contour_scaling, colorbar_scaling, rtext, outputdir, params_obj.plot_extension)

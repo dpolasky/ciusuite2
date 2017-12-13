@@ -78,6 +78,9 @@ class CIUSuite2(object):
         Open a filechooser for the user to select raw files, then process them
         :return:
         """
+        # clear analysis list
+        self.analysis_file_list = []
+
         raw_files = open_files([('_raw.csv', '_raw.csv')])
 
         # run raw processing
@@ -107,8 +110,12 @@ class CIUSuite2(object):
         self.display_analysis_files()
 
         # update directory to match the loaded files
-        self.output_dir = os.path.dirname(self.analysis_file_list[0])
-        self.update_dir_entry()
+        try:
+            self.output_dir = os.path.dirname(self.analysis_file_list[0])
+            self.update_dir_entry()
+        except IndexError:
+            # no files selected (user probably hit 'cancel' - ignore
+            pass
 
     def on_button_paramload_clicked(self):
         """

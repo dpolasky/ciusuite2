@@ -13,6 +13,8 @@ from tkinter import filedialog
 import os
 import pickle
 import matplotlib.pyplot as plt
+import scipy.interpolate
+import scipy.spatial.distance
 
 width_compare = False
 height_compare = False
@@ -79,7 +81,7 @@ def compute_rmsd(filt_gaussians1, filt_gaussians2, dt_axis, cv_index, ciu1_index
         gauss2_params[0] = 0
 
         # construct the specified gaussians to compute a shared area score
-        return shared_area_score(dt_axis, gauss1_params, gauss2_params)
+        return shared_area_gauss(dt_axis, gauss1_params, gauss2_params)
 
     else:
         # do a difference score analysis using the actual peak amplitudes
@@ -90,10 +92,68 @@ def compute_rmsd(filt_gaussians1, filt_gaussians2, dt_axis, cv_index, ciu1_index
         gauss2_params[0] = 0
 
         # construct the specified gaussians to compute a shared area score
-        return shared_area_score(dt_axis, gauss1_params, gauss2_params)
+        return shared_area_gauss(dt_axis, gauss1_params, gauss2_params)
 
 
-def shared_area_score(dt_axis, gauss1_params, gauss2_params):
+def shared_area_interp(dt_axis, data1, data2):
+    """
+    Shared area score computation for data rather than gaussian functions. Uses interpolation
+    to generate a function for each dataset, then compares using same shared area score
+    calculation as gaussian version
+    :param dt_axis: the DT axis (x-axis) on which to plot the data
+    :param data1: first set of data (y) to compare - single CV column only
+    :param data2: second set of data to compare - single CV coliumn only
+    :return: shared area score (float)
+    """
+    # interpolate data to generate functions to integrate
+    # interp1 = scipy.interpolate.interp1d(dt_axis, data1)
+    # interp2 = scipy.interpolate.interp1d(dt_axis, data2)
+    shared_area_arr = []
+
+    # for each point along the x (DT) axis, determine the amount of shared area
+    for index in np.arange(0, len(dt_axis)):
+        if data1[index] > data2[index]:
+            shared_area_arr.append(data2[index])
+        elif data1[index] < data2[index]:
+            shared_area_arr.append(data1[index])
+        elif data1[index] == data2[index]:
+            shared_area_arr.append(0)
+
+    # integrate each peak and the shared area array to get total areas
+    area1 = scipy.integrate.trapz(data1, dt_axis)
+    area2 = scipy.integrate.trapz(data2, dt_axis)
+    shared_area = scipy.integrate.trapz(shared_area_arr, dt_axis)
+
+    # return the area score
+    area_score = (np.max([area1, area2]) - shared_area) / np.max([area1, area2]) * 100
+    unnormed = shared_area
+
+    dif = data1 - data2
+    rmsd = ((np.sum(dif ** 2) / (len(data1) + len(data2))) ** 0.5) * 100
+
+    plt.plot(dt_axis, shared_area_arr)
+    plt.plot(dt_axis, data1, 'r--')
+    plt.plot(dt_axis, data2, 'g--')
+    plt.plot(dt_axis, dif)
+    plt.title('Scaled area score: {:.2f}, RMSD: {:.2f}, non-normed area: {:.2f}'.format(area_score,
+                                                                                        rmsd,
+                                                                                        unnormed))
+    plt.show()
+
+    return area_score
+
+
+def bh_compare(ciu1, ciu2):
+    """
+    Perform a Bhattacharyya distance comparison between gaussians of CIU datasets 1 and 2
+    :param ciu1: CIUAnalysisObj with dataset 1, with Gaussians previously fitted
+    :param ciu2: CIUAnalysisObj with dataset 2, with Gaussians previously fitted
+    :return:
+    """
+    # comparison will be done CV col by CV col
+
+
+def shared_area_gauss(dt_axis, gauss1_params, gauss2_params):
     """
     Compute a "shared area score" (shared area normalized against the area of the smaller peak being compared)
     and return it.
@@ -236,21 +296,50 @@ def compare_main(file1, file2, compare_width, compare_height):
     return average_score
 
 
+def compare_shared_area(file1, file2, gaussians):
+    """
+    Shared area based comparison testing
+    :param file1: .ciu file
+    :param file2: .ciu file
+    :param gaussians: boolean - whether to run gaussian mode or simple area computation
+    :return: average score
+    """
+    # testing methods - accessed by loading analysis object stored with pickle
+    with open(file1, 'rb') as first_file:
+        ciu1 = pickle.load(first_file)
+    with open(file2, 'rb') as second_file:
+        ciu2 = pickle.load(second_file)
+
+    ciu1_cols = np.swapaxes(ciu1.ciu_data, 0, 1)
+    ciu2_cols = np.swapaxes(ciu2.ciu_data, 0, 1)
+    col_index = 0
+    scores = []
+    while col_index < len(ciu1_cols):
+        shared_score = shared_area_interp(ciu1.axes[0], ciu1_cols[col_index], ciu2_cols[col_index])
+        scores.append([shared_score])
+        col_index += 1
+
+    file_names = [os.path.basename(file1).rstrip('.ciu'), os.path.basename(file2).rstrip('.ciu')]
+    average_score = np.average(scores)
+    plot_comparisons_by_cv(ciu1.axes[1], scores, average_score, file_dir, file_names)
+
+
 if __name__ == '__main__':
     # testing methods - accessed by loading analysis object stored with pickle
     root = tkinter.Tk()
     root.withdraw()
 
-    files = filedialog.askopenfilenames(filetypes=[('pickled gaussian files', '.pkl')])
+    files = filedialog.askopenfilenames(filetypes=[('CIU files', '.ciu')])
     files = list(files)
     file_dir = os.path.dirname(files[0])
     if len(files) == 1:
         # re-open filechooser to get second file
-        files.append(filedialog.askopenfilename(filetypes=[('pickled gaussian files', '.pkl')]))
+        files.append(filedialog.askopenfilename(filetypes=[('CIU files', '.ciu')]))
 
     if len(files) == 2:
         # Read data and compute scores
-        compare_main(files[0], files[1], width_compare, height_compare)
+        # compare_main(files[0], files[1], width_compare, height_compare)
+        compare_shared_area(files[0], files[1], False)
 
     elif len(files) > 2:
         rmsd_print_list = ['File 1, File 2, RMSD (%)']
