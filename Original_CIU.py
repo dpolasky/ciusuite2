@@ -42,7 +42,7 @@ def ciu_plot(analysis_obj, params_obj, output_dir):
         save_path += '_raw.csv'
         write_ciu_csv(save_path, analysis_obj.ciu_data, analysis_obj.axes)
 
-    return 'hi'
+    return 'returning a value so that the mainloop doesnt stop'
 
 
 def rmsd_difference(data_1, data_2):
