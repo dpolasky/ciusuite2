@@ -36,6 +36,11 @@ class Parameters(object):
         self.plot_x_title = None
         self.plot_y_title = None
 
+        # Feature detection/CIU-50 parameters
+        self.min_feature_length = None
+        self.flat_width_tolerance = None
+        self.combine_output_file = None
+
     def set_params(self, params_dict):
         """
         Set a series of parameters given a dictionary of (parameter name, value) pairs

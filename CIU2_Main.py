@@ -16,6 +16,7 @@ import pickle
 import CIU_Params
 import Original_CIU
 import numpy as np
+import Feature_Detection
 
 hard_file_path_ui = r"C:\CIUSuite2\CIUSuite2.ui"
 hard_params_file = r"C:\CIUSuite2\CIU_params.txt"
@@ -52,7 +53,7 @@ class CIUSuite2(object):
             'on_button_oldavg_clicked': self.on_button_oldavg_clicked,
             'on_button_olddeltadt_clicked': self.on_button_olddeltadt_clicked,
             'on_button_gaussfit_clicked': self.on_button_gaussfit_clicked,
-            'on_button_gauss_compare_clicked': self.on_button_gauss_compare_clicked
+            'on_button_feature_detect_clicked': self.on_button_feature_detect_clicked
         }
         builder.connect_callbacks(callbacks)
 
@@ -82,7 +83,6 @@ class CIUSuite2(object):
         self.analysis_file_list = []
 
         raw_files = open_files([('_raw.csv', '_raw.csv')])
-
         # run raw processing
         for raw_file in raw_files:
             self.update_progress(raw_files.index(raw_file), len(raw_files))
@@ -95,10 +95,11 @@ class CIUSuite2(object):
         # update the list of analysis files to display
         self.display_analysis_files()
 
-        # update directory to match the loaded files
-        self.output_dir = os.path.dirname(self.analysis_file_list[0])
-        self.update_dir_entry()
-        self.progress_done()
+        if len(raw_files) > 0:
+            # update directory to match the loaded files
+            self.output_dir = os.path.dirname(self.analysis_file_list[0])
+            self.update_dir_entry()
+            self.progress_done()
 
     def on_button_analysisfile_clicked(self):
         """
@@ -333,11 +334,43 @@ class CIUSuite2(object):
         self.display_analysis_files()
         self.progress_done()
 
-    def on_button_gauss_compare_clicked(self):
+    def on_button_feature_detect_clicked(self):
         """
+        Run feature detection workflow to generate CIU-50 (transition) outputs for selected
+        files
+        :return: void
+        """
+        files_to_read = self.check_file_range_entries()
+        new_file_list = []
 
-        :return:
-        """
+        all_outputs = ''
+        filename = ''
+        combine_flag = False
+        for file in files_to_read:
+            # update progress and load file
+            self.update_progress(files_to_read.index(file), len(files_to_read))
+            analysis_obj = load_analysis_obj(file)
+
+            # run feature detection
+            analysis_obj = Feature_Detection.feature_detect_main(analysis_obj, outputdir=self.output_dir)
+            filename = save_analysis_obj(analysis_obj, outputdir=self.output_dir)
+            new_file_list.append(filename)
+
+            if not analysis_obj.params.combine_output_file:
+                analysis_obj.save_feature_outputs(self.output_dir)
+                combine_flag = False
+            else:
+                file_string = os.path.basename(filename).rstrip('.ciu') + '\n'
+                all_outputs += file_string
+                all_outputs += analysis_obj.save_feature_outputs(self.output_dir, True)
+                combine_flag = True
+
+        if combine_flag:
+            outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_features.csv')
+            save_existing_output_string(outputpath, all_outputs)
+
+        self.display_analysis_files()
+        self.progress_done()
 
     def update_progress(self, current_analysis, num_analyses):
         """
@@ -377,6 +410,17 @@ def open_files(filetype):
     """
     files = filedialog.askopenfilenames(filetype=filetype)
     return files
+
+
+def save_existing_output_string(full_output_path, string_to_save):
+    """
+    Write an existing (e.g. combined from several objects) string to file
+    :param full_output_path: full path filename in which to save output
+    :param string_to_save: string to save
+    :return: void
+    """
+    with open(full_output_path, 'w') as outfile:
+        outfile.write(string_to_save)
 
 
 def generate_raw_obj(raw_file):

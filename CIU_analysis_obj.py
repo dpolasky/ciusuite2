@@ -11,6 +11,7 @@ import tkinter
 from tkinter import filedialog
 import pickle
 from CIU_Params import Parameters
+import scipy.stats
 
 
 class CIUAnalysisObj(object):
@@ -27,12 +28,23 @@ class CIUAnalysisObj(object):
         :param gauss_params: List of lists of parameters for gaussians fitted to each CV (column of ciu_data)
         params are [baseline height, amplitude, centroid, width]
         """
+        # basic information and objects
         self.raw_obj = ciu_raw_obj
         self.raw_obj_list = None    # used for replicates (averaged fingerprints) only
         self.ciu_data = ciu_data
         self.axes = axes            # convention: axis 0 = DT, axis 1 = CV
         self.params = Parameters()
         self.filename = None        # filename of .ciu file saved
+
+        # CIU data manipulations for common use
+        self.bin_spacing = self.axes[0][1] - self.axes[0][0]    # distance between two adjacent DT bins (in ms)
+        self.col_maxes = np.argmax(self.ciu_data, axis=0)       # Index of maximum value in each CV column (in DT bins)
+        self.col_max_dts = [self.axes[0][0] + (x - 1) * self.bin_spacing for x in self.col_maxes]  # DT of maximum value
+
+        # Feature detection results
+        self.changepoint_cvs = []
+        self.features = []
+        self.transitions = []
 
         # Gaussian fitting parameters - not always initialized with the object
         self.gauss_params = None
@@ -167,6 +179,40 @@ class CIUAnalysisObj(object):
                 # gauss_line += ','.join([str(x) for x in self.gauss_params[index]])
                 output.write(gauss_line + '\n')
                 index += 1
+
+    def save_feature_outputs(self, outputpath, combine=False):
+        """
+        Print feature detection outputs to file. Must have feature detection already performed.
+        **NOTE: currently, feature plot is still in the feature detect module, but could (should?)
+        be moved here eventually.
+        :return: void
+        """
+        output_name = os.path.join(outputpath, self.filename + '_features.csv')
+        output_string = ''
+
+        # assemble the output
+        output_string += 'Features:, CV_lower (V),CV_upper (V),DT mode,DT_lower,DT_upper\n'
+        feat_index = 1
+        for feature in self.features:
+            output_string += 'Feature {},'.format(feat_index)
+            output_string += '{},{},'.format(feature.start_cv_val, feature.end_cv_val)
+            output_string += '{:.2f},'.format(scipy.stats.mode(feature.dt_max_vals)[0][0])
+            output_string += '{:.2f},{:.2f}\n'.format(np.min(feature.dt_max_vals),
+                                                      np.max(feature.dt_max_vals))
+            feat_index += 1
+        output_string += 'Transitions:,y0 (ms),ymax (ms),CIU-50 (V),k (steepness)\n'
+        trans_index = 1
+        for transition in self.transitions:
+            output_string += 'transition {} -> {},'.format(trans_index, trans_index + 1)
+            output_string += '{:.2f},{:.2f},{:.2f},{:.2f}\n'.format(*transition.fit_params)
+            trans_index += 1
+
+        if combine:
+            # return the output string to be written together with many files
+            return output_string
+        else:
+            with open(output_name, 'w') as outfile:
+                outfile.write(output_string)
 
 
 # testing
