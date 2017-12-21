@@ -214,9 +214,13 @@ class Transition(object):
         # guess steepness by getting distance between feature1 end and feature2 start
         feat_distance = self.feature2.start_cv_val - self.feature1.end_cv_val
         steepness_guess = feat_distance / 100.0
-        steepness_guess = 0.15
-        popt, pcov = fit_logistic(self.combined_x_axis, self.combined_y_vals, center_guess, min_guess, max_guess,
-                                  steepness_guess)
+        # steepness_guess = 0.15
+        try:
+            popt, pcov = fit_logistic(self.combined_x_axis, self.combined_y_vals, center_guess, min_guess, max_guess,
+                                      steepness_guess)
+        except RuntimeError:
+            print('fitting FAILED!')
+            popt = [0, 0, 0, 0]
         if popt[2] < 0:
             print("""WARNING: poor performance from logistic fitting. This can happen if
                 the transitions are """)
