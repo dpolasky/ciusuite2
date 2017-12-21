@@ -429,6 +429,8 @@ def feature_detect_main(analysis_obj, outputdir):
                                           analysis_obj.params.min_feature_length,
                                           analysis_obj.params.flat_width_tolerance)
     transitions_list = compute_transitions(analysis_obj, features_list)
+    if len(transitions_list) == 0:
+        print('No transitions found for file {}' + os.path.basename(analysis_obj.filename).rstrip('.ciu'))
     for transition in transitions_list:
         transition.plot_transition(analysis_obj, outputdir)
     plt.clf()
