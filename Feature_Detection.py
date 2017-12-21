@@ -221,6 +221,7 @@ class Transition(object):
         except RuntimeError:
             print('fitting FAILED!')
             popt = [0, 0, 0, 0]
+            pcov = []
         if popt[2] < 0:
             print("""WARNING: poor performance from logistic fitting. This can happen if
                 the transitions are """)
