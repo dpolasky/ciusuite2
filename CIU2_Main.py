@@ -8,6 +8,7 @@ a (very) basic GUI of some kind.
 import tkinter as tk
 import pygubu
 from tkinter import filedialog
+from tkinter import simpledialog
 import os
 import Raw_Processing
 import Gaussian_Fitting
@@ -17,6 +18,7 @@ import CIU_Params
 import Original_CIU
 import numpy as np
 import Feature_Detection
+import Classification
 
 hard_file_path_ui = r"C:\CIUSuite2\CIUSuite2.ui"
 hard_params_file = r"C:\CIUSuite2\CIU_params.txt"
@@ -53,7 +55,8 @@ class CIUSuite2(object):
             'on_button_oldavg_clicked': self.on_button_oldavg_clicked,
             'on_button_olddeltadt_clicked': self.on_button_olddeltadt_clicked,
             'on_button_gaussfit_clicked': self.on_button_gaussfit_clicked,
-            'on_button_feature_detect_clicked': self.on_button_feature_detect_clicked
+            'on_button_feature_detect_clicked': self.on_button_feature_detect_clicked,
+            'on_button_classification_supervised_clicked': self.on_button_classification_supervised_clicked
         }
         builder.connect_callbacks(callbacks)
 
@@ -372,6 +375,59 @@ class CIUSuite2(object):
         self.display_analysis_files()
         self.progress_done()
 
+    def on_button_classification_supervised_clicked(self):
+        """
+        Run supervised classification from Classification module. Currently set up to use file dialogs
+        to ask for user specified class labels and data files, but may change in future.
+        :return: void
+        """
+        num_classes = simpledialog.askinteger('Class Number', 'Into how many classes do you want to group?')
+
+        data_labels = []
+        obj_list_by_label = []
+        endfile = ''
+        for index in range(0, num_classes):
+            # Read in the .CIU files and labels for each class
+            label = simpledialog.askstring('Class Name', 'What is the name of this class?')
+            files = filedialog.askopenfilenames(filetypes=[('CIU', '.ciu')])
+
+            obj_list = []
+            for file in files:
+                with open(file, 'rb') as analysis_file:
+                    obj = pickle.load(analysis_file)
+                obj_list.append(obj)
+                endfile = file
+            data_labels.append(label)
+            obj_list_by_label.append(obj_list)
+
+        # If no data has been loaded, use file location as default output dir
+        current_dir_text = self.builder.get_object('Text_outputdir').get(1.0, tk.END).rstrip('\n')
+        if current_dir_text == '(No files loaded yet)':
+            self.output_dir = os.path.dirname(endfile)
+
+        # Run the classification
+        self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
+        Classification.class_comparison_lda(data_labels, obj_list_by_label, self.output_dir)
+        self.progress_done()
+
+    def progress_print_text(self, text_to_print, prog_percent):
+        """
+        Set the progress bar to print text (e.g. 'analysis in progress...')
+        :param text_to_print: text to display in the progress bar
+        :param prog_percent: percent to fill the progress bar
+        :return: void
+        """
+        # update progress
+        progress_bar = self.builder.get_object('Progressbar_main')
+        progress_bar['value'] = prog_percent
+        # display text
+        self.builder.get_object('Entry_progress').config(state=tk.NORMAL)
+        self.builder.get_object('Entry_progress').delete(0, tk.END)
+        self.builder.get_object('Entry_progress').insert(0, text_to_print)
+        self.builder.get_object('Entry_progress').config(state=tk.DISABLED)
+        # refresh display
+        self.mainwindow.update()
+
     def update_progress(self, current_analysis, num_analyses):
         """
         Update the progress bar to display the current progress through the analysis list
@@ -397,6 +453,7 @@ class CIUSuite2(object):
         self.builder.get_object('Entry_progress').insert(0, 'Done!')
         self.builder.get_object('Entry_progress').config(state=tk.DISABLED)
 
+        self.builder.get_object('Progressbar_main')['value'] = 100
         # added to keep program from exiting when run from command line - not sure if there's a better fix
         self.run()
 

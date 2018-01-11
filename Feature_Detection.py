@@ -362,7 +362,7 @@ def fit_flat_feature(data_segment, x_axis_data, starting_index, bin_tolerance):
     :param bin_tolerance: distance (in bins) a point is allowed to deviate from mode and remain in the feature
     :return: list of features
     """
-    # mode_bin = scipy.stats.mode(data_segment)[0][0]     # mode returns [[modes], [counts]] so [0][0] is the acutal mode
+    # mode_bin = scipy.stats.mode(data_segment)[0][0]    # mode returns [[modes], [counts]] so [0][0] is the acutal mode
     med_bin = np.median(data_segment)
     feature_values = []
     feature_cvs = []
