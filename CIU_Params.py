@@ -102,6 +102,16 @@ def parse_params_file(params_file):
                             param_dict[splits[0].strip()] = False
                         else:
                             param_dict[splits[0].strip()] = splits[1].strip()
+        # parse crop_values into list
+        if param_dict['cropping_window_values'] is not None:
+            # parse the list
+            string_val = param_dict['cropping_window_values'].replace('[', '')
+            string_val = string_val.replace(']', '')
+            try:
+                crop_list = [float(x) for x in string_val.split(',')]
+                param_dict['cropping_window_values'] = crop_list
+            except ValueError:
+                print('Invalid cropping values: must be in form [float,float,float,float]')
         return param_dict
     except FileNotFoundError:
         print('params file not found!')

@@ -8,6 +8,7 @@ import numpy as np
 import scipy.signal
 import scipy.interpolate
 from CIU_raw import CIURaw
+from CIU_analysis_obj import CIUAnalysisObj
 
 
 def get_data(fname):
@@ -85,7 +86,7 @@ def find_nearest(array, value):
     return idx
 
 
-def crop(ciu_data_matrix, axes, crop_vals):
+def crop(analysis_obj, crop_vals):
     """
     Crops the data and axes arrays to the nearest values specified in the crop vals list
     :param ciu_data_matrix: input data as 2D numpy array, with rows = DT and cols = collision voltage
@@ -94,14 +95,15 @@ def crop(ciu_data_matrix, axes, crop_vals):
     :return: cropped 2D numpy array in same format as input
     """
     # Determine the indices corresponding to the values nearest to those entered by the user
-    dt_axis = axes[0]
-    cv_axis = axes[1]
+    dt_axis = analysis_obj.axes[0]
+    cv_axis = analysis_obj.axes[1]
     cv_low = find_nearest(cv_axis, crop_vals[0])
     cv_high = find_nearest(cv_axis, crop_vals[1])
     dt_low = find_nearest(dt_axis, crop_vals[2])
     dt_high = find_nearest(dt_axis, crop_vals[3])
 
     # crop the data and axes
+    ciu_data_matrix = analysis_obj.ciu_data
     ciu_data_matrix = ciu_data_matrix[dt_low:dt_high + 1]  # crop the rows
     ciu_data_matrix = np.swapaxes(ciu_data_matrix, 0, 1)
     ciu_data_matrix = ciu_data_matrix[cv_low:cv_high + 1]  # crop the columns
@@ -109,8 +111,13 @@ def crop(ciu_data_matrix, axes, crop_vals):
 
     cv_axis = cv_axis[cv_low:cv_high + 1]
     dt_axis = dt_axis[dt_low:dt_high + 1]
-    new_axes = [cv_axis, dt_axis]
-    return ciu_data_matrix, new_axes
+    new_axes = [dt_axis, cv_axis]
+
+    crop_obj = CIUAnalysisObj(analysis_obj.raw_obj, ciu_data_matrix, new_axes,
+                              analysis_obj.gauss_params)
+    crop_obj.params = analysis_obj.params
+    crop_obj.raw_obj_list = analysis_obj.raw_obj_list
+    return crop_obj
 
 
 def interpolate_cv(norm_data, axes, num_bins=200):

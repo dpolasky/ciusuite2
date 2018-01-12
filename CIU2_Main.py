@@ -9,6 +9,7 @@ import tkinter as tk
 import pygubu
 from tkinter import filedialog
 from tkinter import simpledialog
+from tkinter import messagebox
 import os
 import Raw_Processing
 import Gaussian_Fitting
@@ -23,6 +24,8 @@ import Classification
 hard_file_path_ui = r"C:\CIUSuite2\CIUSuite2.ui"
 hard_params_file = r"C:\CIUSuite2\CIU_params.txt"
 hard_output_default = r"C:\Users\dpolasky\Desktop\test"
+hard_params_ui = r"C:\CIUSuite2\Param_editor.ui"
+hard_crop_ui = r"C:\CIUSuite2\Crop_vals.ui"
 
 
 class CIUSuite2(object):
@@ -54,6 +57,7 @@ class CIUSuite2(object):
             'on_button_oldcompare_clicked': self.on_button_oldcompare_clicked,
             'on_button_oldavg_clicked': self.on_button_oldavg_clicked,
             'on_button_olddeltadt_clicked': self.on_button_olddeltadt_clicked,
+            'on_button_crop_clicked': self.on_button_crop_clicked,
             'on_button_gaussfit_clicked': self.on_button_gaussfit_clicked,
             'on_button_feature_detect_clicked': self.on_button_feature_detect_clicked,
             'on_button_classification_supervised_clicked': self.on_button_classification_supervised_clicked
@@ -316,6 +320,34 @@ class CIUSuite2(object):
         self.display_analysis_files()
         self.progress_done()
 
+    def on_button_crop_clicked(self):
+        """
+        Open a dialog to ask user for crop inputs, then crop selected data accordingly
+        :return: saves new .ciu files (with _crop)
+        """
+        # run the cropping UI
+        # crop_ui = CropUI()
+        # crop_ui.run()
+        # vals = crop_ui.crop_vals
+        # print(vals)
+        files_to_read = self.check_file_range_entries()
+
+        new_file_list = []
+        for file in files_to_read:
+            self.update_progress(files_to_read.index(file), len(files_to_read))
+
+            analysis_obj = load_analysis_obj(file)
+            crop_obj = Raw_Processing.crop(analysis_obj, self.params_obj.cropping_window_values)
+            newfile = save_analysis_obj(crop_obj, filename_append='_crop', outputdir=self.output_dir)
+            new_file_list.append(newfile)
+            # also save _raw.csv output if desired
+            if self.params_obj.save_output_csv:
+                save_path = file.rstrip('.ciu') + '_crop_raw.csv'
+                Original_CIU.write_ciu_csv(save_path, crop_obj.ciu_data, crop_obj.axes)
+        self.analysis_file_list = new_file_list
+        self.display_analysis_files()
+        self.progress_done()
+
     def on_button_gaussfit_clicked(self):
         """
         Run Gaussian fitting on the analysis object list (updating the objects and leaving
@@ -347,6 +379,7 @@ class CIUSuite2(object):
         new_file_list = []
 
         all_outputs = ''
+        short_outputs = ''
         filename = ''
         combine_flag = False
         for file in files_to_read:
@@ -361,16 +394,21 @@ class CIUSuite2(object):
 
             if not analysis_obj.params.combine_output_file:
                 analysis_obj.save_feature_outputs(self.output_dir)
+                analysis_obj.save_features_short(self.output_dir)
                 combine_flag = False
             else:
                 file_string = os.path.basename(filename).rstrip('.ciu') + '\n'
                 all_outputs += file_string
                 all_outputs += analysis_obj.save_feature_outputs(self.output_dir, True)
+                short_outputs += os.path.basename(filename).rstrip('.ciu')
+                short_outputs += analysis_obj.save_features_short(self.output_dir, True)
                 combine_flag = True
 
         if combine_flag:
             outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_features.csv')
+            outputpath_short = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_features-short.csv')
             save_existing_output_string(outputpath, all_outputs)
+            save_existing_output_string(outputpath_short, short_outputs)
 
         self.display_analysis_files()
         self.progress_done()
@@ -581,6 +619,83 @@ def load_analysis_obj(analysis_filename):
     with open(analysis_filename, 'rb') as analysis_file:
         analysis_obj = pickle.load(analysis_file)
     return analysis_obj
+
+
+class CropUI(object):
+    """
+    Simple dialog with several fields build with Pygubu for inputting crop values
+    """
+    def __init__(self):
+        # Get crop input from the Crop_vals UI form
+        self.builder = pygubu.Builder()
+
+        # load the UI file
+        self.builder.add_from_file(hard_crop_ui)
+        # create widget using provided root (Tk) window
+        self.mainwindow = self.builder.get_object('Crop_toplevel')
+        self.mainwindow.protocol('WM_DELETE_WINDOW', self.on_close_window)
+
+        callbacks = {
+            'on_button_cancel_clicked': self.on_button_cancel_clicked,
+            'on_button_crop_clicked': self.on_button_crop_clicked
+        }
+        self.builder.connect_callbacks(callbacks)
+        self.crop_vals = []
+
+    def run(self):
+        self.mainwindow.mainloop()
+
+    def on_close_window(self):
+        self.mainwindow.destroy()
+
+    def on_button_cancel_clicked(self):
+        # close the window without changing anything
+        self.on_close_window()
+
+    def on_button_crop_clicked(self):
+        """
+        Return the cropping values entered in the fields, after checking for invalid values.
+        If any values are invalid, returns without setting the crop_vals list
+        :return: sets crop_vals list [dt_low, dt_high, cv_low, cv_high] to the object's field for retrieval
+        """
+        dt_low = self.builder.get_object('Entry_dt_start').get()
+        dt_high = self.builder.get_object('Entry_dt_end').get()
+        cv_low = self.builder.get_object('Entry_cv_start').get()
+        cv_high = self.builder.get_object('Entry_cv_end').get()
+        try:
+            dt_low = float(dt_low)
+        except ValueError:
+            messagebox.showwarning('Error', 'Invalid starting DT: must be a number (decimals OK)')
+            return -1
+        try:
+            dt_high = float(dt_high)
+        except ValueError:
+            messagebox.showwarning('Error', 'Invalid ending DT: must be a number (decimals OK)')
+            return -1
+        try:
+            cv_low = float(cv_low)
+        except ValueError:
+            messagebox.showwarning('Error', 'Invalid starting CV: must be a number (decimals OK)')
+            return -1
+        try:
+            cv_high = float(cv_high)
+        except ValueError:
+            messagebox.showwarning('Error', 'Invalid ending CV: must be a number (decimals OK)')
+            return -1
+
+        # if all values are valid, save the list and close the window
+        self.crop_vals = [dt_low, dt_high, cv_low, cv_high]
+        self.on_close_window()
+
+    def return_values(self):
+        """
+        Returns the crop_values if they are specified
+        :return: crop_vals list [dt_low, dt_high, cv_low, cv_high] or None if they're not set
+        """
+        if len(self.crop_vals) > 0:
+            return self.crop_vals
+        else:
+            return None
 
 
 if __name__ == '__main__':

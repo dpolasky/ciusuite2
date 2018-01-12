@@ -214,6 +214,27 @@ class CIUAnalysisObj(object):
             with open(output_name, 'w') as outfile:
                 outfile.write(output_string)
 
+    def save_features_short(self, outputpath, combine=False):
+        """
+        Helper method to also save a shortened version of feature information
+        :param outputpath:
+        :return:
+        """
+        output_name = os.path.join(outputpath, self.filename + '_features-short.csv')
+        output_string = ''
+
+        # assemble the output
+        for transition in self.transitions:
+            output_string += ',{:.2f}'.format(transition.fit_params[2])
+        output_string += '\n'
+
+        if combine:
+            # return the output string to be written together with many files
+            return output_string
+        else:
+            with open(output_name, 'w') as outfile:
+                outfile.write(output_string)
+
 
 # testing
 if __name__ == '__main__':
