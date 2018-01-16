@@ -551,10 +551,11 @@ def process_raw_obj(raw_obj, params_obj):
             norm_data = Raw_Processing.sav_gol_smooth(norm_data, params_obj.smoothing_window)
             i += 1
 
-    if params_obj.cropping_window_values is not None:  # If no cropping, use the whole matrix
-        norm_data, axes = Raw_Processing.crop(norm_data, axes, params_obj.cropping_window_values)
-
     analysis_obj = CIUAnalysisObj(raw_obj, norm_data, axes)
+
+    if params_obj.cropping_window_values is not None:  # If no cropping, use the whole matrix
+        analysis_obj = Raw_Processing.crop(analysis_obj, params_obj.cropping_window_values)
+
     analysis_obj.params = params_obj
 
     return analysis_obj
