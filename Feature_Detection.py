@@ -11,6 +11,7 @@ import pickle
 import matplotlib.pyplot as plt
 import scipy.stats
 import scipy.optimize
+import scipy.interpolate
 import os
 
 
@@ -182,7 +183,7 @@ class Transition(object):
     their combined CV/index range and DT data, and fitted logistic function parameters
     and CIU50.
     """
-    def __init__(self, feature1, feature2, whole_cv_axis, whole_dt_maxes):
+    def __init__(self, feature1, feature2, analysis_obj):
         """
         Create a combined Transition object from two identified features. Features MUST be
         adjacent in CV space for this to make sense.
@@ -191,6 +192,12 @@ class Transition(object):
         :param whole_cv_axis:
         :param whole_dt_maxes:
         """
+        # initialize data from analysis_obj
+        whole_cv_axis = analysis_obj.axes[1]
+        dt_axis = analysis_obj.axes[0]
+        whole_dt_maxes = analysis_obj.col_max_dts
+        ciu_data = analysis_obj.ciu_data
+
         self.feature1 = feature1
         self.feature2 = feature2
 
@@ -202,29 +209,94 @@ class Transition(object):
         self.combined_x_axis = whole_cv_axis[self.start_index: self.end_index]
         self.combined_y_vals = whole_dt_maxes[self.start_index: self.end_index]
 
+        # Raw y data for final transition fitting
+        y_col_data = np.swapaxes(ciu_data, 0, 1)
+        y_wtd_avg_cols = []
+        y_median_cols = []
+        for cv_col in y_col_data:
+            # the weighted sum of a column is the product of intensity * drift time for each bin
+            wtd_sum_dt = 0
+            int_sum = 0
+            wtd_sum_dts = []
+            for i in range(len(cv_col)):
+                # cv_col[i] is the intensity at drift bin i; axes[0][i] is the drift time at bin i
+                wtd_value = cv_col[i] * dt_axis[i]
+                wtd_sum_dt += wtd_value
+                int_sum += cv_col[i]
+                wtd_sum_dts.append(wtd_sum_dt)
+            # spectral centroid (average) = (sum of (DT_value * intensity)) / (sum of intensity)
+            y_wtd_avg_cols.append(wtd_sum_dt / int_sum)
+            med_value = wtd_sum_dt / 2.0
+            wtd_sum_dts = np.asarray(wtd_sum_dts)
+            med_index = (np.abs(wtd_sum_dts - med_value)).argmin()
+            med_dt = dt_axis[med_index]
+            y_median_cols.append(med_dt)
+        # y_avg_cols = np.average(y_col_data, axis=1)
+        self.combined_y_avg_raw = y_wtd_avg_cols[self.start_index: self.end_index]
+        self.combined_y_median_raw = y_median_cols[self.start_index: self.end_index]
+
         self.ciu50 = None
         self.fit_params = None
         self.fit_covariances = None
 
     def fit_transition(self, bin_spacing, dt_min):
+        """
+        Fit a logistic function to the transition using the feature information. Requires
+        bin_spacing and dt_min to do conversion to DT space from bin space for plotting.
+        :param bin_spacing: spacing between drift bins (float)
+        :param dt_min: minimum/starting DT for this transition
+        :return: void (saves fit parameters to object)
+        """
         # initial fitting guesses: center is in between the features, min/max are median DTs of features 1 and 2
-        center_guess = self.feature2.start_cv_val  # first value of second feature
+        feat_distance = self.feature2.start_cv_val - self.feature1.end_cv_val
+        # center_guess = self.feature2.start_cv_val  # first value of second feature
+        center_guess = self.feature2.start_cv_val - (feat_distance / 2.0)   # halfway between features
+
         min_guess = dt_min + (np.median(self.feature1.dt_max_bins) - 1) * bin_spacing
         max_guess = dt_min + (np.median(self.feature2.dt_max_bins) - 1) * bin_spacing
         # guess steepness by getting distance between feature1 end and feature2 start
-        feat_distance = self.feature2.start_cv_val - self.feature1.end_cv_val
-        steepness_guess = feat_distance / 100.0
+
+        steepness_guess = feat_distance / 10.0
         # steepness_guess = 0.15
+
+        # interpolate data to get higher resolution fitting of transition point
+        new_x_axis = np.linspace(self.combined_x_axis[0], self.combined_x_axis[len(self.combined_x_axis) - 1],
+                                 len(self.combined_x_axis) * 10)
+        interp_function = scipy.interpolate.interp1d(self.combined_x_axis, self.combined_y_vals)
+        interp_yvals = interp_function(new_x_axis)
+        interp_function_raw = scipy.interpolate.interp1d(self.combined_x_axis, self.combined_y_median_raw)
+        interp_yvals_raw = interp_function_raw(new_x_axis)
+
+        # selective interpolation - only in the transition region itself
+        pad_len = 0     # number of index positions on CV axis to pad around transition
+        pad_cv = self.combined_x_axis[pad_len] - self.combined_x_axis[0]    # converted from index to actual CV
+        trans_start_cv = self.feature1.end_cv_val - pad_cv
+        trans_end_cv = self.feature2.start_cv_val + pad_cv
+        transition_x_vals = np.linspace(trans_start_cv, trans_end_cv, feat_distance * 10)
+        transition_y_vals = interp_function_raw(transition_x_vals)
+
+        # assemble the x and y arrays (standard res start/end and interpolated high-res transition)
+        final_x_vals = self.combined_x_axis[0: self.feature1.end_cv_index - pad_len]
+        final_x_vals = np.append(final_x_vals, transition_x_vals)
+        second_half_xvals = self.combined_x_axis[self.feature2.start_cv_index + 1 + pad_len: len(self.combined_x_axis) - 1]
+        final_x_vals = np.append(final_x_vals, second_half_xvals)
+
+        final_y_vals = self.combined_y_vals[0: self.feature1.end_cv_index - pad_len]
+        final_y_vals = np.append(final_y_vals, transition_y_vals)
+        second_half_yvals = self.combined_y_vals[self.feature2.start_cv_index + 1 + pad_len: len(self.combined_y_vals) - 1]
+        final_y_vals = np.append(final_y_vals, second_half_yvals)
+
         try:
-            popt, pcov = fit_logistic(self.combined_x_axis, self.combined_y_vals, center_guess, min_guess, max_guess,
+            # popt, pcov = fit_logistic(self.combined_x_axis, self.combined_y_vals, center_guess, min_guess, max_guess,
+            #                           steepness_guess)
+            popt, pcov = fit_logistic(final_x_vals, final_y_vals, center_guess, min_guess, max_guess,
                                       steepness_guess)
         except RuntimeError:
             print('fitting FAILED!')
             popt = [0, 0, 0, 0]
             pcov = []
         if popt[2] < 0:
-            print("""WARNING: poor performance from logistic fitting. This can happen if
-                the transitions are """)
+            print("""WARNING: poor performance from logistic fitting.""")
         self.ciu50 = popt[2]
         self.fit_params = popt
         self.fit_covariances = pcov
@@ -342,8 +414,7 @@ def compute_transitions(analysis_obj, features):
     while index < len(features) - 1:
         current_transition = Transition(features[index],
                                         features[index + 1],
-                                        analysis_obj.axes[1],
-                                        analysis_obj.col_max_dts)
+                                        analysis_obj)
         current_transition.fit_transition(analysis_obj.bin_spacing, dt_min=analysis_obj.axes[0][0])
         transition_list.append(current_transition)
         index += 1

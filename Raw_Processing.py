@@ -88,11 +88,10 @@ def find_nearest(array, value):
 
 def crop(analysis_obj, crop_vals):
     """
-    Crops the data and axes arrays to the nearest values specified in the crop vals list
-    :param ciu_data_matrix: input data as 2D numpy array, with rows = DT and cols = collision voltage
-    :param axes: axes list of axis values in form [DT_axis, CV_axis]
+    Crops the data and axes arrays to the nearest values specified in the crop vals list.
+    :param analysis_obj: CIUAnalysisObj with data to crop
     :param crop_vals: list of values to crop to in form [cv_low, cv_high, dt_low, dt_high]
-    :return: cropped 2D numpy array in same format as input
+    :return: New CIUAnalysisObj with cropped data and new axes
     """
     # Determine the indices corresponding to the values nearest to those entered by the user
     dt_axis = analysis_obj.axes[0]
