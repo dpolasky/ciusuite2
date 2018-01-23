@@ -40,6 +40,7 @@ class Parameters(object):
         self.min_feature_length = None
         self.flat_width_tolerance = None
         self.combine_output_file = None
+        self.ciu50_mode = None
 
     def set_params(self, params_dict):
         """
