@@ -96,8 +96,9 @@ def classification_lda_maxvals(labels, analysis_obj_list_by_label, output_dir):
 def run_lda_raw(inarray_list, inlabel_list, label_list, output_dir, cv_labels):
     # create the dictionary needed to create the data and target array
     dict_init = createdict(inarray_list, inlabel_list)  # dictionary
-    X_ = transformrawdataforclf.transformdata_rawdata(dict_init)  # data
-    y_, target_label = transformrawdataforclf.createtargetarray_rawdata(dict_init)  # target
+    transform_obj = RawTransformer(dict_init)  # data
+    X_ = transform_obj.raw_x_array
+    y_, target_label = transform_obj.createtargetarray_rawdata()  # target
 
     print(np.shape(X_))
 
@@ -158,7 +159,7 @@ def run_lda_raw(inarray_list, inlabel_list, label_list, output_dir, cv_labels):
         for k in inarray_list:
             arr.append(k[i])
         arr = np.array(arr)  # X array
-        y_, target_label = transformrawdataforclf.createtargetarray_featureselect(inlabel_list)  # target array
+        y_, target_label = createtargetarray_featureselect(inlabel_list)  # target array
 
         # initiate LDA. The solver is now changed to SVD from eigen. For some reason, scikitlearn cannot compute eigen values. Not sure exactly what causes it. There are some posts online refering to internal bug. Anyway, svd creates very similar results. I personally like eigen solver because I understand that better.
         # n_components is n_classes - 1. Since we have only 2 classes, we'll only obtain 1 component. However, with classes > 2 its necessary to evaluate the explained variance ratio for each component in order to properly assess the transformation.
@@ -187,7 +188,7 @@ def run_lda_raw(inarray_list, inlabel_list, label_list, output_dir, cv_labels):
             lr = LogisticRegression()
             lr = lr.fit(x_lda, y_)
 
-            plot_decision_regions(x_lda, y_, target_label, classifier=lr)
+            plot_sklearn_lda_3ld(x_lda, y_, target_label)
         plt.title(str(cv_labels[i]))
         pdf_fig.savefig()
         plt.close()
@@ -195,15 +196,30 @@ def run_lda_raw(inarray_list, inlabel_list, label_list, output_dir, cv_labels):
     pdf_fig.close()
 
 
-class transformrawdataforclf():
+class RawTransformer(object):
+    """
+    modified from Suggie
+    """
+    def __init__(self, initial_dict):
+        """
 
-    def transformdata_rawdata(dict):
-        arr = np.hstack((dict.values())).T
+        :param initial_dict:
+        """
+        self.raw_dict = initial_dict
+        self.raw_x_array = self.transformdata_rawdata()
+        self.decoded_array = []
+
+    def transformdata_rawdata(self):
+        """
+
+        :return:
+        """
+        arr = np.hstack((self.raw_dict.values())).T
         return arr
 
-    def createtargetarray_rawdata(dict):
+    def createtargetarray_rawdata(self):
         arr = []
-        for i, (keys, values) in enumerate(zip(dict.keys(), dict.values())):
+        for i, (keys, values) in enumerate(zip(self.raw_dict.keys(), self.raw_dict.values())):
             arr.append(np.repeat(str(keys).split('_')[0], len(values[0])))
         arr = np.concatenate(arr)
         enc = LabelEncoder()
@@ -212,15 +228,16 @@ class transformrawdataforclf():
         arr_decode = label.inverse_transform((arr - 1))
         return arr, arr_decode
 
-    def createtargetarray_featureselect(inputlabel):
-        arr = []
-        for i in inputlabel:
-            arr.append(i.split('_')[0])
-        enc = LabelEncoder()
-        label = enc.fit(arr)
-        arr = label.transform(arr) + 1
-        arr_decode = label.inverse_transform((arr - 1))
-        return arr, arr_decode
+
+def createtargetarray_featureselect(inputlabel):
+    arr = []
+    for i in inputlabel:
+        arr.append(i.split('_')[0])
+    enc = LabelEncoder()
+    label = enc.fit(arr)
+    arr = label.transform(arr) + 1
+    arr_decode = label.inverse_transform((arr - 1))
+    return arr, arr_decode
 
 
 def createdict(list, labels):
@@ -334,7 +351,7 @@ if __name__ == '__main__':
         # Read in the .CIU files and labels for each class
         label = simpledialog.askstring('Class Name', 'What is the name of this class?')
         files = filedialog.askopenfilenames(filetypes=[('CIU', '.ciu')])
-        main_dir = os.path.dirname(files[0])    # TODO: adjust to actual obj outputdir once synched
+        main_dir = os.path.dirname(files[0])
 
         obj_list = []
         for file in files:

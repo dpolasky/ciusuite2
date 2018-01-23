@@ -56,7 +56,19 @@ class Feature(object):
         self.finish()
 
 
-def feature_detect_gauss(ciu_obj, ratio_change):
+def feature_detect_gaussians(analysis_obj):
+    """
+    Uses fitted (and filtered) multi-gaussians to assign flat features to data. Should be roughly
+    analogous to the changepoint detection + flat features from column maxes in CIU-50 analysis,
+    but using gaussian data enables seeing all features instead only the most intense one(s).
+    :param analysis_obj: CIUAnalysisObj with Gaussians previously fitted
+    :return:
+    """
+    filtered_centroids = [x[2::4] for x in analysis_obj.gauss_filt_params]
+
+
+
+def feature_detect_gauss_old(ciu_obj, ratio_change):
     """
     Used fitted gaussians to determine the locations of CIU features in the provided data.
     :param ciu_obj: CIUAnalysisObj with gaussian data previously calculated
@@ -189,13 +201,12 @@ class Transition(object):
         adjacent in CV space for this to make sense.
         :param feature1: Lower CV ("earlier/starting") Feature object
         :param feature2: Higher CV ("later/ending") Feature object
-        :param whole_cv_axis:
-        :param whole_dt_maxes:
+        :param analysis_obj: CIUAnalysisObj with data being analyzed
         """
         # initialize data from analysis_obj
-        whole_cv_axis = analysis_obj.axes[1]
+        self.whole_cv_axis = analysis_obj.axes[1]
         dt_axis = analysis_obj.axes[0]
-        whole_dt_maxes = analysis_obj.col_max_dts
+        self.whole_dt_maxes = analysis_obj.col_max_dts
         ciu_data = analysis_obj.ciu_data
 
         self.feature1 = feature1
@@ -206,8 +217,8 @@ class Transition(object):
         self.start_index = feature1.start_cv_index
         self.end_index = feature2.end_cv_index
 
-        self.combined_x_axis = whole_cv_axis[self.start_index: self.end_index]
-        self.combined_y_vals = whole_dt_maxes[self.start_index: self.end_index]
+        self.combined_x_axis = self.whole_cv_axis[self.start_index: self.end_index]
+        self.combined_y_vals = self.whole_dt_maxes[self.start_index: self.end_index]
 
         # Raw y data for final transition fitting
         y_col_data = np.swapaxes(ciu_data, 0, 1)
@@ -249,23 +260,14 @@ class Transition(object):
         """
         # initial fitting guesses: center is in between the features, min/max are median DTs of features 1 and 2
         feat_distance = self.feature2.start_cv_val - self.feature1.end_cv_val
-        # center_guess = self.feature2.start_cv_val  # first value of second feature
         center_guess = self.feature2.start_cv_val - (feat_distance / 2.0)   # halfway between features
-
         min_guess = dt_min + (np.median(self.feature1.dt_max_bins) - 1) * bin_spacing
         max_guess = dt_min + (np.median(self.feature2.dt_max_bins) - 1) * bin_spacing
-        # guess steepness by getting distance between feature1 end and feature2 start
-
+        # guess steepness by the distance between feature start/end
         steepness_guess = feat_distance / 10.0
-        # steepness_guess = 0.15
 
         # interpolate data to get higher resolution fitting of transition point
-        new_x_axis = np.linspace(self.combined_x_axis[0], self.combined_x_axis[len(self.combined_x_axis) - 1],
-                                 len(self.combined_x_axis) * 10)
-        interp_function = scipy.interpolate.interp1d(self.combined_x_axis, self.combined_y_vals)
-        interp_yvals = interp_function(new_x_axis)
-        interp_function_raw = scipy.interpolate.interp1d(self.combined_x_axis, self.combined_y_median_raw)
-        interp_yvals_raw = interp_function_raw(new_x_axis)
+        interp_function_raw = scipy.interpolate.interp1d(self.combined_x_axis, self.combined_y_avg_raw)
 
         # selective interpolation - only in the transition region itself
         pad_len = 0     # number of index positions on CV axis to pad around transition
@@ -276,16 +278,17 @@ class Transition(object):
         transition_y_vals = interp_function_raw(transition_x_vals)
 
         # assemble the x and y arrays (standard res start/end and interpolated high-res transition)
-        final_x_vals = self.combined_x_axis[0: self.feature1.end_cv_index - pad_len]
+        final_x_vals = self.whole_cv_axis[self.feature1.start_cv_index: self.feature1.end_cv_index - pad_len]
         final_x_vals = np.append(final_x_vals, transition_x_vals)
-        second_half_xvals = self.combined_x_axis[self.feature2.start_cv_index + 1 + pad_len: len(self.combined_x_axis) - 1]
+        second_half_xvals = self.whole_cv_axis[self.feature2.start_cv_index + 1 + pad_len: self.feature2.end_cv_index]
         final_x_vals = np.append(final_x_vals, second_half_xvals)
 
-        final_y_vals = self.combined_y_vals[0: self.feature1.end_cv_index - pad_len]
+        final_y_vals = self.whole_dt_maxes[self.feature1.start_cv_index: self.feature1.end_cv_index - pad_len]
         final_y_vals = np.append(final_y_vals, transition_y_vals)
-        second_half_yvals = self.combined_y_vals[self.feature2.start_cv_index + 1 + pad_len: len(self.combined_y_vals) - 1]
+        second_half_yvals = self.whole_dt_maxes[self.feature2.start_cv_index + 1 + pad_len: self.feature2.end_cv_index]
         final_y_vals = np.append(final_y_vals, second_half_yvals)
 
+        # run the logistic fitting
         try:
             # popt, pcov = fit_logistic(self.combined_x_axis, self.combined_y_vals, center_guess, min_guess, max_guess,
             #                           steepness_guess)

@@ -503,7 +503,7 @@ def open_files(filetype):
     :param filetype: filetype filter in form [(name, extension)]
     :return: list of selected files
     """
-    files = filedialog.askopenfilenames(filetype=filetype)
+    files = filedialog.askopenfilenames(filetypes=filetype)
     return files
 
 
@@ -537,27 +537,30 @@ def process_raw_obj(raw_obj, params_obj):
     :param params_obj: Parameters object containing processing parameters
     :return: CIUAnalysisObj with processed data
     """
-    # normalize, smooth, and crop data (if requested)
+    # normalize data and save axes information
     norm_data = Raw_Processing.normalize_by_col(raw_obj.rawdata)
-
-    # interpolate data
     axes = (raw_obj.dt_axis, raw_obj.cv_axis)
+
+    # interpolate data if desired
     if params_obj.interpolation_bins is not None:
         norm_data, axes = Raw_Processing.interpolate_cv(norm_data, axes, params_obj.interpolation_bins)
 
+    # Smooth data if desired (column-by-column)
     if params_obj.smoothing_window is not None:
         i = 0
         while i < params_obj.smoothing_iterations:
             norm_data = Raw_Processing.sav_gol_smooth(norm_data, params_obj.smoothing_window)
             i += 1
 
+    # save a CIUAnalysisObj with the information above
     analysis_obj = CIUAnalysisObj(raw_obj, norm_data, axes)
 
+    # crop if desired and update the analysis_obj
     if params_obj.cropping_window_values is not None:  # If no cropping, use the whole matrix
         analysis_obj = Raw_Processing.crop(analysis_obj, params_obj.cropping_window_values)
 
+    # save parameters and return
     analysis_obj.params = params_obj
-
     return analysis_obj
 
 

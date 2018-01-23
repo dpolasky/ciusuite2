@@ -47,34 +47,36 @@ class CIUAnalysisObj(object):
         self.transitions = []
 
         # Gaussian fitting parameters - not always initialized with the object
-        self.gauss_params = None
-        self.gauss_baselines = None
-        self.gauss_amplitudes = None
-        self.gauss_centroids = None
-        self.gauss_widths = None
-        self.gauss_fwhms = None
+        # self.gauss_baselines = None
+        # self.gauss_amplitudes = None
+        # self.gauss_centroids = None
+        # self.gauss_widths = None
+        # self.gauss_fwhms = None
+        self.gaussians = None
+        self.filtered_gaussians = None
         self.gauss_adj_r2s = None
         self.gauss_fits = None
         self.gauss_covariances = None
         self.gauss_r2s = None
-        self.gauss_resolutions = None
+        # self.gauss_resolutions = None
         self.gauss_fit_stats = None
-        self.gauss_filt_params = None
-        if gauss_params is not None:
+        # self.gauss_params = None
+        # self.gauss_filt_params = None
+        # if gauss_params is not None:
             # initialize param lists if parameters are provided
-            self.init_gauss_lists(gauss_params)
+            # self.init_gauss_lists(gauss_params)
 
-    def init_gauss_lists(self, gauss_params):
-        """
-        Initialize human readable lists of gaussian parameters (4 parameters per gaussian)
-        :param gauss_params: list of gaussian parameters for each column of ciu array (each CV)
-        :return: void
-        """
-        self.gauss_params = gauss_params
-        self.gauss_baselines = [x[0::4] for x in gauss_params]
-        self.gauss_amplitudes = [x[1::4] for x in gauss_params]
-        self.gauss_centroids = [x[2::4] for x in gauss_params]
-        self.gauss_widths = [x[3::4] for x in gauss_params]
+    # def init_gauss_lists(self, gauss_params):
+    #     """
+    #     Initialize human readable lists of gaussian parameters (4 parameters per gaussian)
+    #     :param gauss_params: list of gaussian parameters for each column of ciu array (each CV)
+    #     :return: void
+    #     """
+    #     self.gauss_params = gauss_params
+    #     self.gauss_baselines = [x[0::4] for x in gauss_params]
+    #     self.gauss_amplitudes = [x[1::4] for x in gauss_params]
+    #     self.gauss_centroids = [x[2::4] for x in gauss_params]
+    #     self.gauss_widths = [x[3::4] for x in gauss_params]
 
     def save_gaussfits_pdf(self, outputpath):
         """
@@ -90,27 +92,24 @@ class CIUAnalysisObj(object):
         print('Saving Gausfitdata_' + str(self.raw_obj.filename) + '_.pdf .....')
         pdf_fig = PdfPages(os.path.join(outputpath, 'Gausfitdata_' + str(self.raw_obj.filename) + '_.pdf'))
         intarray = np.swapaxes(self.ciu_data, 0, 1)
-        for k in range(len(self.axes[1])):
+        for cv_index in range(len(self.axes[1])):
             plt.figure()
             # plot the original raw data as a scatter plot
-            plt.scatter(self.axes[0], intarray[k])
+            plt.scatter(self.axes[0], intarray[cv_index])
             # plot the fit data as a black dashed line
-            plt.plot(self.axes[0], self.gauss_fits[k], ls='--', color='black')
-            # plot centroids of gaussians to overlay
-            index = 0
-            for centroid in self.gauss_centroids[k]:
-                # plot each fitted gaussian and centroid
-                fit = gaussfunc(self.axes[0], 0, self.gauss_amplitudes[k][index],
-                                self.gauss_centroids[k][index], self.gauss_widths[k][index])
+            plt.plot(self.axes[0], self.gauss_fits[cv_index], ls='--', color='black')
+
+            # plot each fitted gaussian and centroid
+            for gaussian in self.gaussians[cv_index]:
+                fit = gaussfunc(self.axes[0], 0, gaussian.amplitude, gaussian.centroid, gaussian.width)
                 plt.plot(self.axes[0], fit)
-                plt.plot(centroid, abs(self.gauss_amplitudes[k][index]), '+', color='red')
-                index += 1
-            plt.title('CV: {}, R2: {:.3f}, stderr: {:.4f}'.format(self.axes[1][k], self.gauss_r2s[k],
-                                                                  self.gauss_fit_stats[k][5]))
+                plt.plot(gaussian.centroid, abs(gaussian.amplitude), '+', color='red')
+            plt.title('CV: {}, R2: {:.3f}, stderr: {:.4f}'.format(self.axes[1][cv_index], self.gauss_r2s[cv_index],
+                                                                  self.gauss_fit_stats[cv_index][5]))
             pdf_fig.savefig()
             plt.close()
         pdf_fig.close()
-        print('Saving Gausfitdata_' + str(self.raw_obj.filename) + '.pdf DONE')
+        print('Saving Gausfitdata_' + str(self.raw_obj.filename) + '.pdf')
 
     def plot_centroids(self, outputpath, y_bounds=None):
         """
@@ -122,7 +121,13 @@ class CIUAnalysisObj(object):
         print('Saving TrapCVvsArrivtimecentroid ' + str(self.raw_obj.filename) + '_.png .....')
 
         # plot the centroid(s), including plotting multiple centroids at each voltage if present
-        filt_centroids = [x[2::4] for x in self.gauss_filt_params]
+        # filt_centroids = [x[2::4] for x in self.gauss_filt_params]
+
+        # Get a list of centroids, sorted by collision voltage
+        filt_centroids = []
+        for cv_sublist in self.filtered_gaussians:
+            filt_centroids.append([gaussian.centroid for gaussian in cv_sublist])
+
         for x, y in zip(self.axes[1], filt_centroids):
             plt.scatter([x] * len(y), y)
         # plt.scatter(self.axes[1], self.gauss_centroids)
@@ -135,7 +140,7 @@ class CIUAnalysisObj(object):
         plt.savefig(os.path.join(outputpath, str(self.raw_obj.filename.rstrip('_raw.csv')) + '_centroids.png'),
                     dpi=500)
         plt.close()
-        print('Saving TrapCVvsArrivtimecentroid ' + str(self.raw_obj.filename) + '_.png DONE')
+        print('Saving TrapCVvsArrivtimecentroid ' + str(self.raw_obj.filename) + '_.png')
 
     def plot_fwhms(self, outputpath):
         """
@@ -144,7 +149,11 @@ class CIUAnalysisObj(object):
         :return: void
         """
         print('Saving TrapcCVvsFWHM_' + str(self.raw_obj.filename) + '_.png .....')
-        for x, y in zip(self.axes[1], self.gauss_fwhms):
+        gauss_fwhms = []
+        for cv_sublist in self.filtered_gaussians:
+            gauss_fwhms.append([gaussian.fwhm for gaussian in cv_sublist])
+
+        for x, y in zip(self.axes[1], gauss_fwhms):
             plt.scatter([x] * len(y), y)
         # plt.scatter(self.axes[1], self.gauss_fwhms)
         plt.xlabel('Trap CV')
@@ -152,7 +161,7 @@ class CIUAnalysisObj(object):
         plt.grid('on')
         plt.savefig(os.path.join(outputpath, str(self.raw_obj.filename) + '_FWHM.png'), dpi=500)
         plt.close()
-        print('Saving TrapCVvsFWHM_' + str(self.raw_obj.filename) + '_.png DONE')
+        print('Saving TrapCVvsFWHM_' + str(self.raw_obj.filename) + '_.png')
 
     def save_gauss_params(self, outputpath):
         """
@@ -162,20 +171,23 @@ class CIUAnalysisObj(object):
         """
         with open(os.path.join(outputpath, str(self.raw_obj.filename.rstrip('_raw.csv')) + '_GaussFits.csv'), 'w') as output:
             output.write('Filtered Gaussians\n')
-            output.write('Trap CV,Baseline(y0),Amplitude,Centroid,Peak Width\n')
+            output.write('Trap CV,Centroid,Amplitude,Peak Width,Baseline(y0),FWHM,Resolution\n')
             index = 0
             while index < len(self.axes[1]):
-                outputline = '{},'.format(self.axes[1][index])
-                outputline += ','.join(['{:.2f}'.format(x) for x in self.gauss_filt_params[index]])
+                # outputline = '{},'.format(self.axes[1][index])
+                outputline = ','.join([gaussian.print_info() for gaussian in self.filtered_gaussians[index]])
+                # outputline += ','.join(['{:.2f}'.format(x) for x in self.gauss_filt_params[index]])
                 output.write(outputline + '\n')
                 index += 1
 
             index = 0
             output.write('All gaussians fit to data\n')
-            output.write('Trap CV,R^2,Adj R^2,Baseline(y0),Amplitude,Centroid,Peak Width\n')
-            while index < len(self.gauss_centroids):
-                gauss_line = '{},{:.3f},{:.3f},'.format(self.axes[1][index], self.gauss_r2s[index], self.gauss_adj_r2s[index])
-                gauss_line += ','.join(['{:.2f}'.format(x) for x in self.gauss_params[index]])
+            output.write('R^2,Adj R^2,Trap CV,Centroid,Amplitude,Peak Width,Baseline(y0),FWHM,Resolution\n')
+            while index < len(self.axes[1]):
+                gauss_line = '{:.3f},{:.3f},'.format(self.gauss_r2s[index], self.gauss_adj_r2s[index])
+                # gauss_line += ','.join(['{:.2f}'.format(x) for x in self.gauss_params[index]])
+                gauss_line += ','.join([gaussian.print_info() for gaussian in self.gaussians[index]])
+
                 # gauss_line += ','.join([str(x) for x in self.gauss_params[index]])
                 output.write(gauss_line + '\n')
                 index += 1
