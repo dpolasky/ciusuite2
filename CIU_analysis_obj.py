@@ -47,36 +47,47 @@ class CIUAnalysisObj(object):
         self.transitions = []
 
         # Gaussian fitting parameters - not always initialized with the object
-        # self.gauss_baselines = None
-        # self.gauss_amplitudes = None
-        # self.gauss_centroids = None
-        # self.gauss_widths = None
-        # self.gauss_fwhms = None
         self.gaussians = None
         self.filtered_gaussians = None
         self.gauss_adj_r2s = None
         self.gauss_fits = None
         self.gauss_covariances = None
         self.gauss_r2s = None
-        # self.gauss_resolutions = None
         self.gauss_fit_stats = None
-        # self.gauss_params = None
-        # self.gauss_filt_params = None
-        # if gauss_params is not None:
-            # initialize param lists if parameters are provided
-            # self.init_gauss_lists(gauss_params)
 
-    # def init_gauss_lists(self, gauss_params):
-    #     """
-    #     Initialize human readable lists of gaussian parameters (4 parameters per gaussian)
-    #     :param gauss_params: list of gaussian parameters for each column of ciu array (each CV)
-    #     :return: void
-    #     """
-    #     self.gauss_params = gauss_params
-    #     self.gauss_baselines = [x[0::4] for x in gauss_params]
-    #     self.gauss_amplitudes = [x[1::4] for x in gauss_params]
-    #     self.gauss_centroids = [x[2::4] for x in gauss_params]
-    #     self.gauss_widths = [x[3::4] for x in gauss_params]
+        self.features_gaussian = None
+
+    def get_attribute_by_cv(self, attribute, filtered):
+        """
+        Return a list of lists of the specified attribute at each collision voltage (i.e. [[centroid 1], [centroid 1,
+        centroid 2], ..]. Attributes must be exact string matches for the attribute name in the Gaussian object
+        :param attribute: Name (string) of the gaussian attribute to get. Options = 'centroid', 'amplitude', 'width',
+        etc. See Gaussian class for details.
+        :param filtered: if True, returns from filtered_gaussians instead of gaussians
+        :return: CV-sorted list of centroid lists
+        """
+        attribute_list = []
+        if filtered:
+            for cv_sublist in self.filtered_gaussians:
+                attribute_list.append([getattr(gaussian, attribute) for gaussian in cv_sublist])
+        else:
+            for cv_sublist in self.gaussians:
+                attribute_list.append([getattr(gaussian, attribute) for gaussian in cv_sublist])
+        return attribute_list
+
+    def get_attribute_flat(self, attribute, filtered_bool):
+        """
+        Return a flattened list (not sorted by CV) of all attributes from a list of Gaussian objects.
+        Attribute string must exactly match attribute name in Gaussian object.
+        :param attribute: Name (string) of the gaussian attribute to get. Options = 'centroid', 'amplitude', 'width',
+        etc. See Gaussian class for details.
+        :param filtered_bool: if True, returns from filtered_gaussians instead of gaussians
+        :return: list of attribute values
+        """
+        if filtered_bool:
+            return [getattr(gaussian, attribute) for cv_sublist in self.filtered_gaussians for gaussian in cv_sublist]
+        else:
+            return [getattr(gaussian, attribute) for cv_sublist in self.gaussians for gaussian in cv_sublist]
 
     def save_gaussfits_pdf(self, outputpath):
         """
@@ -118,15 +129,8 @@ class CIUAnalysisObj(object):
         :param y_bounds: [lower bound, upper bound] to crop the plot to (in y-axis units, typically ms)
         :return: void
         """
-        print('Saving TrapCVvsArrivtimecentroid ' + str(self.raw_obj.filename) + '_.png .....')
-
-        # plot the centroid(s), including plotting multiple centroids at each voltage if present
-        # filt_centroids = [x[2::4] for x in self.gauss_filt_params]
-
         # Get a list of centroids, sorted by collision voltage
-        filt_centroids = []
-        for cv_sublist in self.filtered_gaussians:
-            filt_centroids.append([gaussian.centroid for gaussian in cv_sublist])
+        filt_centroids = self.get_attribute_by_cv('centroid', True)
 
         for x, y in zip(self.axes[1], filt_centroids):
             plt.scatter([x] * len(y), y)
@@ -140,7 +144,7 @@ class CIUAnalysisObj(object):
         plt.savefig(os.path.join(outputpath, str(self.raw_obj.filename.rstrip('_raw.csv')) + '_centroids.png'),
                     dpi=500)
         plt.close()
-        print('Saving TrapCVvsArrivtimecentroid ' + str(self.raw_obj.filename) + '_.png')
+        print('Saved TrapCVvsArrivtimecentroid ' + str(self.raw_obj.filename) + '_.png')
 
     def plot_fwhms(self, outputpath):
         """
@@ -149,9 +153,7 @@ class CIUAnalysisObj(object):
         :return: void
         """
         print('Saving TrapcCVvsFWHM_' + str(self.raw_obj.filename) + '_.png .....')
-        gauss_fwhms = []
-        for cv_sublist in self.filtered_gaussians:
-            gauss_fwhms.append([gaussian.fwhm for gaussian in cv_sublist])
+        gauss_fwhms = self.get_attribute_by_cv('fwhm', False)
 
         for x, y in zip(self.axes[1], gauss_fwhms):
             plt.scatter([x] * len(y), y)

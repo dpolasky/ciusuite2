@@ -36,6 +36,14 @@ class Feature(object):
         if centroids is not None:
             self.centroids = []
 
+        self.gauss_median_centroid = None
+        self.gaussians = []
+
+    def __str__(self):
+        # display the gaussian version data, including median and length of list
+        return 'Median: {:.1f} Length: {}'.format(self.gauss_median_centroid, len(self.gaussians))
+    __repr__ = __str__
+
     def finish(self):
         """
         Method to compute mean centroid and length once all cv and centroid information has been added to
@@ -55,6 +63,25 @@ class Feature(object):
         self.centroids.extend(feature_to_absorb.centroids)
         self.finish()
 
+    def refresh_gauss_centroid(self):
+        """
+        Refresh the centroid median using the gaussians that have been added to the feature
+        :return: void
+        """
+        self.gauss_median_centroid = np.median([x.centroid for x in self.gaussians])
+
+    def accept_centroid(self, centroid, width_tol):
+        """
+        Determine whether the provided centroid is within tolerance of the feature or not. Uses
+        feature detection parameters (flat width tolerance) to decide.
+        :param centroid: the centroid (float) to compare against Feature
+        :param width_tol: tolerance in DT units (float) to compare to centroid
+        :return: boolean
+        """
+        # Refresh current median in case more gaussians have been added since last calculation
+        self.refresh_gauss_centroid()
+        return abs(self.gauss_median_centroid - centroid) < width_tol
+
 
 def feature_detect_gaussians(analysis_obj):
     """
@@ -64,8 +91,75 @@ def feature_detect_gaussians(analysis_obj):
     :param analysis_obj: CIUAnalysisObj with Gaussians previously fitted
     :return:
     """
-    filtered_centroids = [x[2::4] for x in analysis_obj.gauss_filt_params]
+    features = []
+    # compute width tolerance in DT units
+    width_tol_dt = analysis_obj.params.flat_width_tolerance * analysis_obj.bin_spacing
 
+    # Search each gaussian for features it matches (based on centroid)
+    # get the flat list of filtered gaussians
+    flat_gauss_list = [x for cv_list in analysis_obj.filtered_gaussians for x in cv_list]
+    for gaussian in flat_gauss_list:
+        # check if any current features will accept the Gaussian
+        found_feature = False
+        for feature in features:
+            if feature.accept_centroid(gaussian.centroid, width_tol_dt):
+                feature.gaussians.append(gaussian)
+                found_feature = True
+                break
+
+        if not found_feature:
+            # no feature was found for this Gaussian, so create a new feature
+            new_feature = Feature()
+            new_feature.gaussians.append(gaussian)
+            features.append(new_feature)
+    # filter features to remove 'loners' without a sufficient number of points
+    filtered_features = filter_features(features, analysis_obj.params.min_feature_length)
+    return filtered_features
+
+
+def filter_features(features, min_feature_length):
+    """
+    Remove any features below the specified minimum feature length from the feature list
+    :param features: list of Features
+    :param min_feature_length: minimum length (number of gaussians) to be included in a feature
+    :return: filtered feature list with too-small features removed
+    """
+    filtered_list = []
+    for feature in features:
+        if len(feature.gaussians) >= min_feature_length:
+            filtered_list.append(feature)
+    return filtered_list
+
+
+def plot_feature_gaussians(analysis_obj, outputdir):
+    """
+    Generate a plot of features using gaussian-based feature fitting data previously saved
+    to a CIUAnalysisObj.
+    :param analysis_obj: CIUAnalysisObj with fitting data previously saved to obj.features_gaussian
+    :param outputdir: directory in which to save output
+    :return: void
+    """
+    # plot the initial CIU contour plot for reference
+    plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap='Blues')
+
+    # plot blue circles of the gaussian centroids found
+    # filt_centroids = analysis_obj.get_attribute_by_cv('centroid', True)
+    # for x, y in zip(x_axis, filt_centroids):
+    #     plt.scatter([x] * len(y), y)
+
+    # prepare and plot the actual transition using fitted parameters
+    feature_index = 1
+
+    for feature in analysis_obj.features_gaussian:
+        feature_x = [gaussian.cv for gaussian in feature.gaussians]
+        feature_y = [feature.gauss_median_centroid for gaussian in feature.gaussians]
+        lines = plt.plot(feature_x, feature_y, label='Feature {} median: {:.2f}'.format(feature_index,
+                                                                                        feature.gauss_median_centroid))
+        feature_index += 1
+        plt.setp(lines, linewidth=3, linestyle='--')
+    plt.legend(loc='best')
+    output_path = os.path.join(outputdir, analysis_obj.filename + '_features' + analysis_obj.params.plot_extension)
+    plt.savefig(output_path)
 
 
 def feature_detect_gauss_old(ciu_obj, ratio_change):
@@ -559,5 +653,7 @@ if __name__ == '__main__':
     for file in files:
         with open(file, 'rb') as analysis_file:
             obj = pickle.load(analysis_file)
-        feature_detect_main(obj, main_dir)
+        # feature_detect_main(obj, main_dir)
+        obj.features_gaussian = feature_detect_gaussians(obj)
+        plot_feature_gaussians(obj, main_dir)
 
