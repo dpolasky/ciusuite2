@@ -37,7 +37,8 @@ class CIUAnalysisObj(object):
         self.filename = None        # filename of .ciu file saved
 
         # CIU data manipulations for common use
-        self.bin_spacing = self.axes[0][1] - self.axes[0][0]    # distance between two adjacent DT bins (in ms)
+        self.bin_spacing = self.axes[0][1] - self.axes[0][0]    # distance between two adjacent DT bins
+        self.cv_spacing = self.axes[1][1] - self.axes[1][0]     # distance between two adjacent CV columns
         self.col_maxes = np.argmax(self.ciu_data, axis=0)       # Index of maximum value in each CV column (in DT bins)
         self.col_max_dts = [self.axes[0][0] + (x - 1) * self.bin_spacing for x in self.col_maxes]  # DT of maximum value
 

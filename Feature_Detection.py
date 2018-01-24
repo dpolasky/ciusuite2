@@ -63,24 +63,32 @@ class Feature(object):
         self.centroids.extend(feature_to_absorb.centroids)
         self.finish()
 
-    def refresh_gauss_centroid(self):
+    def refresh(self):
         """
-        Refresh the centroid median using the gaussians that have been added to the feature
+        Refresh the centroid median and cvs using the gaussians that have been added to the feature
         :return: void
         """
         self.gauss_median_centroid = np.median([x.centroid for x in self.gaussians])
+        self.cvs = [x.cv for x in self.gaussians]
 
-    def accept_centroid(self, centroid, width_tol):
+    def accept_centroid(self, centroid, width_tol, collision_voltage, cv_tol):
         """
         Determine whether the provided centroid is within tolerance of the feature or not. Uses
         feature detection parameters (flat width tolerance) to decide.
         :param centroid: the centroid (float) to compare against Feature
         :param width_tol: tolerance in DT units (float) to compare to centroid
+        :param collision_voltage: CV position of the gaussian to compare against feature for gaps
+        :param cv_tol: distance in collision voltage space that can be skipped and still accept a gaussian
         :return: boolean
         """
-        # Refresh current median in case more gaussians have been added since last calculation
-        self.refresh_gauss_centroid()
-        return abs(self.gauss_median_centroid - centroid) < width_tol
+        # Refresh current median and cvs in case more gaussians have been added since last calculation
+        self.refresh()
+        if abs(self.gauss_median_centroid - centroid) < width_tol:
+            # centroid is within the Feature's bounds, check for gaps
+            nearest_cv_index = (np.abs(self.cvs - collision_voltage)).argmin()
+            nearest_cv = self.cvs[nearest_cv_index]
+            # if collision voltage is within tolerance of the nearest CV in the feature already, return True
+            return abs(collision_voltage - nearest_cv) <= cv_tol
 
 
 def feature_detect_gaussians(analysis_obj):
@@ -89,11 +97,12 @@ def feature_detect_gaussians(analysis_obj):
     analogous to the changepoint detection + flat features from column maxes in CIU-50 analysis,
     but using gaussian data enables seeing all features instead only the most intense one(s).
     :param analysis_obj: CIUAnalysisObj with Gaussians previously fitted
-    :return:
+    :return: list of assigned Features
     """
     features = []
     # compute width tolerance in DT units
     width_tol_dt = analysis_obj.params.flat_width_tolerance * analysis_obj.bin_spacing
+    gap_tol_cv = analysis_obj.params.cv_gap_tolerance  # * analysis_obj.cv_spacing
 
     # Search each gaussian for features it matches (based on centroid)
     # get the flat list of filtered gaussians
@@ -102,7 +111,7 @@ def feature_detect_gaussians(analysis_obj):
         # check if any current features will accept the Gaussian
         found_feature = False
         for feature in features:
-            if feature.accept_centroid(gaussian.centroid, width_tol_dt):
+            if feature.accept_centroid(gaussian.centroid, width_tol_dt, gaussian.cv, gap_tol_cv):
                 feature.gaussians.append(gaussian)
                 found_feature = True
                 break
@@ -144,7 +153,7 @@ def plot_feature_gaussians(analysis_obj, outputdir):
 
     # plot blue circles of the gaussian centroids found
     # filt_centroids = analysis_obj.get_attribute_by_cv('centroid', True)
-    # for x, y in zip(x_axis, filt_centroids):
+    # for x, y in zip(analysis_obj.axes[1], filt_centroids):
     #     plt.scatter([x] * len(y), y)
 
     # prepare and plot the actual transition using fitted parameters
@@ -158,7 +167,7 @@ def plot_feature_gaussians(analysis_obj, outputdir):
         feature_index += 1
         plt.setp(lines, linewidth=3, linestyle='--')
     plt.legend(loc='best')
-    output_path = os.path.join(outputdir, analysis_obj.filename + '_features' + analysis_obj.params.plot_extension)
+    output_path = os.path.join(outputdir, analysis_obj.filename.rstrip('.ciu') + '_features' + analysis_obj.params.plot_extension)
     plt.savefig(output_path)
 
 
@@ -456,7 +465,7 @@ class Transition(object):
         y_fit = logistic_func(interp_x, *self.fit_params)
         plt.plot(interp_x, y_fit, 'white', label='CIU50 = {:.2f}, k= {:.2f}'.format(self.ciu50, self.fit_params[3]))
         plt.legend(loc='best')
-        output_path = os.path.join(outputdir, analysis_obj.filename + '_transition' + analysis_obj.params.plot_extension)
+        output_path = os.path.join(outputdir, analysis_obj.filename.rstrip('.ciu') + '_transition' + analysis_obj.params.plot_extension)
         plt.savefig(output_path)
         # print('c (max): {:.2f}, y0 (min): {:.2f}, x0: {:.2f}, k: {:.2f}'.format(*self.fit_params))
 

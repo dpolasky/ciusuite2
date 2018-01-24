@@ -12,6 +12,7 @@ import peakutils
 import pickle
 import tkinter
 from tkinter import filedialog
+import scipy.signal
 
 
 class Gaussian(object):
@@ -88,6 +89,34 @@ def estimate_multi_params(ciu_col, dt_axis, width_frac, peak_int_threshold=0.1, 
     return params_lists
 
 
+def estimate_multi_params_all(ciu_col, dt_axis, width_frac):
+    """
+    Make initial guesses for a sum of gaussians fitting
+    :param ciu_col: 1D numpy array representing the DT spectrum in a given column (CV)
+    :param dt_axis: drift time data (x axis to the fitted gaussian's y) for peak indexing
+    :param width_frac: estimation of peak width (DT * fraction), typically 10% has been found to work well
+    :param peak_int_threshold: Minimum intensity threshold to detect a peak for fitting
+    :param min_spacing_bins: Minimum distance between peaks IN BINS - should be about instrument resolution
+    :return: list of [centroid, width, amplitude] initial guesses
+    """
+    # estimate the number of components by doing a simple peak finding using PeakUtils
+    peak_indices = peakutils.indexes(ciu_col, thres=0.05, min_dist=1)
+    peak_ind_scipy = scipy.signal.find_peaks_cwt(ciu_col, np.arange(1, 5))
+
+    params_lists = []
+    # for each estimated peak/component, compute initial guess parameters for gaussian fitting
+    for peak_index in peak_ind_scipy:
+        centroid_guess = dt_axis[peak_index]    # centroid is the DT at the index of the peak
+        amp_guess = ciu_col[peak_index]         # amplitude is the value at the index of the peak
+        width_guess = peak_index * width_frac
+        params_lists.append([0.001, amp_guess, centroid_guess, width_guess])
+        # params_lists.append([0, centroid_guess, amp_guess, width_guess])
+
+    # sort guesses by amplitude (index 1 in each sublist) in order from largest to smallest
+    params_lists = sorted(params_lists, key=lambda x: x[1], reverse=True)
+    return params_lists
+
+
 def gaussfunc(x, y0, a, xc, w):
     """
     Gaussian function with constraints applied for CIU data
@@ -103,7 +132,8 @@ def gaussfunc(x, y0, a, xc, w):
     # w = abs(w)
     # xc = abs(xc)
     rxc = ((x-xc)**2)/(2*(w**2))
-    y = y0 + a*(np.exp(-rxc))
+    # y = y0 + a*(np.exp(-rxc))
+    y = a*(np.exp(-rxc))
     return y
 
 
@@ -163,6 +193,39 @@ def filter_fits(params_list, peak_width_cutoff, intensity_cutoff, centroid_bound
     return filtered_list
 
 
+# def fit_gaussians(param_guesses_multiple, dt_axis, cv_col_intensities, params_obj):
+#     """
+#
+#     :param param_guesses_multiple:
+#     :param dt_axis:
+#     :param cv_col_intensities:
+#     :param params_obj:
+#     :return:
+#     """
+#     widthfrac = params_obj.gaussian_width_fraction
+#     min_spacing = params_obj.gaussian_min_spacing
+#     intensity_thr = params_obj.gaussian_int_threshold
+#
+#     # perform a curve fit using the multiple gaussian function
+#     try:
+#         popt, pcov = curve_fit(multi_gauss_func, dt_axis, cv_col_intensities, method='lm',
+#                                p0=param_guesses_multiple, maxfev=5000)
+#     except RuntimeError:
+#         # no convergence within specified max iterations. Try again with fewer peaks
+#         param_guesses_multiple = estimate_multi_params(cv_col_intensities, dt_axis, widthfrac,
+#                                                        peak_int_threshold=intensity_thr,
+#                                                        min_spacing_bins=int(min_spacing * 2))
+#         try:
+#             popt, pcov = curve_fit(multi_gauss_func, dt_axis, cv_col_intensities, method='lm',
+#                                    p0=param_guesses_multiple, maxfev=5000)
+#         except RuntimeError:
+#             # failed again
+#             popt = []
+#             pcov = []
+#
+#     return popt, pcov
+
+
 def gaussian_fit_ciu(analysis_obj, params_obj):
     """
     Gaussian fitting module for single-gaussian analysis of CIU-type data. Determines estimated
@@ -180,7 +243,7 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
     filename = analysis_obj.filename
 
     widthfrac = params_obj.gaussian_width_fraction
-    min_spacing = params_obj.gaussian_min_spacing
+    # min_spacing = params_obj.gaussian_min_spacing
     filter_width_max = params_obj.gaussian_width_max
     intensity_thr = params_obj.gaussian_int_threshold
     centroid_bounds = params_obj.gaussian_centroid_bound_filter
@@ -202,26 +265,47 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
     for cv_index, cv_col_intensities in enumerate(intarray):
         print(cv_index + 1)
         # use peak detection to estimate initial 'guess' parameters for fitting
-        param_guesses_multiple = estimate_multi_params(cv_col_intensities, dt_axis, widthfrac, peak_int_threshold=intensity_thr,
-                                                       min_spacing_bins=min_spacing)
+        all_peak_guesses = estimate_multi_params_all(cv_col_intensities, dt_axis, widthfrac)
 
-        # perform a curve fit using the multiple gaussian function
-        try:
-            popt, pcov = curve_fit(multi_gauss_func, dt_axis, cv_col_intensities, method='lm',
-                                   p0=param_guesses_multiple, maxfev=5000)
-        except RuntimeError:
-            # no convergence within specified max iterations. Try again with fewer peaks
-            param_guesses_multiple = estimate_multi_params(cv_col_intensities, dt_axis, widthfrac, peak_int_threshold=intensity_thr,
-                                                           min_spacing_bins=int(min_spacing * 2))
+        param_guesses_multiple = []
+        yfit = 0
+        slope, intercept, rvalue, pvalue, stderr = 0, 0, 0, 0, 0
+        adjrsq = 0
+        i = 0
+        # set bounds for fitting: keep baseline and centroid on DT axis, amplitude 0 to 1.5, width 0 to len(dt_axis)
+        max_dt = dt_axis[len(dt_axis) - 1]
+        min_dt = dt_axis[0]
+        fit_bounds_lower, fit_bounds_upper = [], []
+        fit_bounds_lower_append = [0, 0, min_dt, 0]
+        fit_bounds_upper_append = [max_dt, 1.1, max_dt, len(dt_axis)]
+
+        # Iterate through peak detection until convergence criterion is met, adding one additional peak each iteration
+        while adjrsq < 0.995:
             try:
-                popt, pcov = curve_fit(multi_gauss_func, dt_axis, cv_col_intensities, method='lm',
-                                       p0=param_guesses_multiple, maxfev=5000)
+                param_guesses_multiple.extend(all_peak_guesses[i])
+                # ensure bounds arrays maintain same shape as parameter guesses
+                fit_bounds_lower.extend(fit_bounds_lower_append)
+                fit_bounds_upper.extend(fit_bounds_upper_append)
+            except IndexError:
+                # No converge with all estimated peaks. Continue with final estimate
+                print('Included all {} peaks found, but r^2 still less than convergence criterion. '
+                      'Poor fitting possible'.format(i+1))
+                break
+            try:
+                popt, pcov = curve_fit(multi_gauss_func, dt_axis, cv_col_intensities, method='trf',
+                                       p0=param_guesses_multiple, maxfev=5000,
+                                       bounds=(fit_bounds_lower, fit_bounds_upper))
             except RuntimeError:
-                # failed again
                 popt = []
                 pcov = []
-
+            yfit = multi_gauss_func(dt_axis, *popt)
+            slope, intercept, rvalue, pvalue, stderr = linregress(cv_col_intensities, yfit)
+            adjrsq = adjrsquared(rvalue ** 2, len(cv_col_intensities))
+            i += 1
+            # if i > 10:
+            #     break
         # filter peaks by width if desired
+        print('performed {} iterations'.format(i))
         filt_popt = popt
         if filter_width_max is not None:
             filt_popt = filter_fits(popt, filter_width_max, intensity_thr, centroid_bounds)
@@ -241,25 +325,10 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
             index += 4
         filtered_gaussians.append(filt_gaussians_at_cv)
 
-        # extract individual gaussian function parameters and save information (and print diagnostics)
-        # centroids = popt[2::4]
-        # widths = popt[3::4]
-
-        yfit = multi_gauss_func(dt_axis, *popt)
-        # fwhm, res = resandfwhm(centroids, widths)
-        # print('Arrival time | Width\n', centroids, ' | ', widths)
-        # print('FWHM | Resolution\n', fwhm, ' | ', res)
-        slope, intercept, rvalue, pvalue, stderr = linregress(cv_col_intensities, yfit)
-        adjrsq = adjrsquared(rvalue ** 2, len(cv_col_intensities))
-        # print('Slope | intercept | r^2 | adjr^2 | pvalue | stderr')
-        # print('%.4f | %.4f | %.4f | %.4f | %.4e | %.4f' % (slope, intercept, rvalue ** 2, adjrsq, pvalue, stderr))
         rsq_arr.append(rvalue ** 2)
         adjrsq_arr.append(adjrsq)
         arrivtime_gausfit.append(yfit)
-        # arrivtime_centroid.append(centroids)
-        # width_gausfit.append(widths)
-        # fwhm_arr.append(fwhm)
-        # res_arr.append(res)
+
         stats.append([slope, intercept, rvalue ** 2, adjrsq, pvalue, stderr])
         popt_arr.append(popt)
         pcov_arr.append(pcov)
@@ -267,15 +336,11 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
     # save fit information to the analysis object and return it
     analysis_obj.gaussians = gaussians
     analysis_obj.filtered_gaussians = filtered_gaussians
-    # analysis_obj.init_gauss_lists(popt_arr)
     analysis_obj.gauss_adj_r2s = adjrsq_arr
-    # analysis_obj.gauss_fwhms = fwhm_arr
     analysis_obj.gauss_fits = arrivtime_gausfit
-    # analysis_obj.gauss_resolutions = res_arr
     analysis_obj.gauss_r2s = rsq_arr
     analysis_obj.gauss_covariances = pcov_arr
     analysis_obj.gauss_fit_stats = stats
-    # analysis_obj.gauss_filt_params = filtered_params
 
     if params_obj.gaussian_save_diagnostics:
         analysis_obj.save_gaussfits_pdf(outputpath)

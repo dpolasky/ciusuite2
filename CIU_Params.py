@@ -41,6 +41,7 @@ class Parameters(object):
         self.flat_width_tolerance = None
         self.combine_output_file = None
         self.ciu50_mode = None
+        self.cv_gap_tolerance = None
 
     def set_params(self, params_dict):
         """
