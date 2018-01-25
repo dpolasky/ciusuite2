@@ -195,7 +195,7 @@ class CIUAnalysisObj(object):
                 output.write(gauss_line + '\n')
                 index += 1
 
-    def save_feature_outputs(self, outputpath, combine=False):
+    def save_ciu50_outputs(self, outputpath, combine=False):
         """
         Print feature detection outputs to file. Must have feature detection already performed.
         **NOTE: currently, feature plot is still in the feature detect module, but could (should?)
@@ -229,10 +229,11 @@ class CIUAnalysisObj(object):
             with open(output_name, 'w') as outfile:
                 outfile.write(output_string)
 
-    def save_features_short(self, outputpath, combine=False):
+    def save_ciu50_short(self, outputpath, combine=False):
         """
         Helper method to also save a shortened version of feature information
-        :param outputpath:
+        :param outputpath: directory in which to save output
+        :param combine: If True, return a string to be combined with other files instead of saving to file
         :return:
         """
         output_name = os.path.join(outputpath, self.filename + '_features-short.csv')

@@ -70,6 +70,7 @@ class Feature(object):
         """
         self.gauss_median_centroid = np.median([x.centroid for x in self.gaussians])
         self.cvs = [x.cv for x in self.gaussians]
+        self.cvs = sorted(self.cvs)
 
     def accept_centroid(self, centroid, width_tol, collision_voltage, cv_tol):
         """
@@ -83,7 +84,7 @@ class Feature(object):
         """
         # Refresh current median and cvs in case more gaussians have been added since last calculation
         self.refresh()
-        if abs(self.gauss_median_centroid - centroid) < width_tol:
+        if abs(self.gauss_median_centroid - centroid) <= width_tol:
             # centroid is within the Feature's bounds, check for gaps
             nearest_cv_index = (np.abs(self.cvs - collision_voltage)).argmin()
             nearest_cv = self.cvs[nearest_cv_index]
@@ -97,7 +98,7 @@ def feature_detect_gaussians(analysis_obj):
     analogous to the changepoint detection + flat features from column maxes in CIU-50 analysis,
     but using gaussian data enables seeing all features instead only the most intense one(s).
     :param analysis_obj: CIUAnalysisObj with Gaussians previously fitted
-    :return: list of assigned Features
+    :return: analysis object with features saved
     """
     features = []
     # compute width tolerance in DT units
@@ -123,7 +124,8 @@ def feature_detect_gaussians(analysis_obj):
             features.append(new_feature)
     # filter features to remove 'loners' without a sufficient number of points
     filtered_features = filter_features(features, analysis_obj.params.min_feature_length)
-    return filtered_features
+    analysis_obj.features_gaussian = filtered_features
+    return analysis_obj
 
 
 def filter_features(features, min_feature_length):
@@ -171,82 +173,6 @@ def plot_feature_gaussians(analysis_obj, outputdir):
     plt.savefig(output_path)
 
 
-def feature_detect_gauss_old(ciu_obj, ratio_change):
-    """
-    Used fitted gaussians to determine the locations of CIU features in the provided data.
-    :param ciu_obj: CIUAnalysisObj with gaussian data previously calculated
-    :param ratio_change: ratio change (0 < x < 1) to centroid to indicate movement to a new feature
-    :return: list of Feature objects
-    """
-    centroids = np.asarray(ciu_obj.gauss_centroids)
-    cv_axis = ciu_obj.axes[1]
-
-    init_centroid = np.average(centroids[0:2])
-
-    features = []
-    current_feature_cent = init_centroid
-    current_feature = Feature()
-
-    index = 0
-    for centroid in centroids:
-        change_from_last = (centroid - current_feature_cent) / float(current_feature_cent)
-        if change_from_last > ratio_change:
-            # new feature - finish current feature and begin a new one
-            current_feature.finish()
-            features.append(current_feature)
-            current_feature = Feature()
-        current_feature.centroids.append(centroid)
-        current_feature.cvs.append(cv_axis[index])
-
-        current_feature_cent = centroid
-        index += 1
-    # append final feature
-    current_feature.finish()
-    features.append(current_feature)
-    return features
-
-
-def remove_loner_features(feature_list):
-    """
-    Method to combine series' of individual "features" that are generated during a sustained movement
-    of peak centroids over many collision voltages. May or may not keep in final version
-    :param feature_list: List of Feature objects
-    :return: updated list of Feature objects with loners combined
-    """
-    index = 0
-    new_feature_list = []
-    while index < len(feature_list):
-        feature = feature_list[index]
-        if feature.length == 1:
-            while check_next(feature_list, index + 1):
-                # if the next feature's length is 1 too, add it to this one as well
-                feature.combine(feature_list[index + 1])
-                index += 1
-            new_feature_list.append(feature)
-            index += 1
-        else:
-            new_feature_list.append(feature)
-            index += 1
-    return new_feature_list
-
-
-def check_next(feature_list, index):
-    """
-    Helper method for remove loners - returns True if the feature at the specified index has a length of 1
-    :param feature_list: List of features
-    :param index: index at which to look
-    :return:
-    """
-    try:
-        if feature_list[index].length == 1:
-            return True
-        else:
-            return False
-    except IndexError:
-        # this is the last feature, ignore
-        return False
-
-
 def print_features_list(feature_list, outputpath):
     """
     Write feature information to file
@@ -257,11 +183,95 @@ def print_features_list(feature_list, outputpath):
     with open(outputpath, 'w') as outfile:
         index = 1
         for feature in feature_list:
-            cvline = 'CV:,' + ','.join(['{:.2f}'.format(x) for x in feature.cvs])
-            centroidline = 'Centroid:,' + ','.join(['{:.2f}'.format(x) for x in feature.centroids])
-            outfile.write('Feature,{}\nmean centroid,{},length,{}\n{}\n{}\n\n'
-                          .format(index, feature.mean_centroid, feature.length, cvline, centroidline))
+            outfile.write('Feature {},Median centroid:,{:.2f},CV range:,{} - {}\n'.format(index,
+                                                                                          feature.gauss_median_centroid,
+                                                                                          feature.cvs[0],
+                                                                                          feature.cvs[len(feature.cvs) - 1]))
+            outfile.write('CV (V), Centroid, Amplitude, Width, Baseline, FWHM, Resolution\n')
+            for gaussian in feature.gaussians:
+                outfile.write(gaussian.print_info() + '\n')
+
             index += 1
+            # cvline = 'CV:,' + ','.join(['{:.2f}'.format(x) for x in feature.cvs])
+            # centroidline = 'Centroid:,' + ','.join(['{:.2f}'.format(x) for x in feature.centroids])
+            # outfile.write('Feature,{}\nmean centroid,{},length,{}\n{}\n{}\n\n'
+            #               .format(index, feature.mean_centroid, feature.length, cvline, centroidline))
+            # index += 1
+
+# def feature_detect_gauss_old(ciu_obj, ratio_change):
+#     """
+#     Used fitted gaussians to determine the locations of CIU features in the provided data.
+#     :param ciu_obj: CIUAnalysisObj with gaussian data previously calculated
+#     :param ratio_change: ratio change (0 < x < 1) to centroid to indicate movement to a new feature
+#     :return: list of Feature objects
+#     """
+#     centroids = np.asarray(ciu_obj.gauss_centroids)
+#     cv_axis = ciu_obj.axes[1]
+#
+#     init_centroid = np.average(centroids[0:2])
+#
+#     features = []
+#     current_feature_cent = init_centroid
+#     current_feature = Feature()
+#
+#     index = 0
+#     for centroid in centroids:
+#         change_from_last = (centroid - current_feature_cent) / float(current_feature_cent)
+#         if change_from_last > ratio_change:
+#             # new feature - finish current feature and begin a new one
+#             current_feature.finish()
+#             features.append(current_feature)
+#             current_feature = Feature()
+#         current_feature.centroids.append(centroid)
+#         current_feature.cvs.append(cv_axis[index])
+#
+#         current_feature_cent = centroid
+#         index += 1
+#     # append final feature
+#     current_feature.finish()
+#     features.append(current_feature)
+#     return features
+#
+#
+# def remove_loner_features(feature_list):
+#     """
+#     Method to combine series' of individual "features" that are generated during a sustained movement
+#     of peak centroids over many collision voltages. May or may not keep in final version
+#     :param feature_list: List of Feature objects
+#     :return: updated list of Feature objects with loners combined
+#     """
+#     index = 0
+#     new_feature_list = []
+#     while index < len(feature_list):
+#         feature = feature_list[index]
+#         if feature.length == 1:
+#             while check_next(feature_list, index + 1):
+#                 # if the next feature's length is 1 too, add it to this one as well
+#                 feature.combine(feature_list[index + 1])
+#                 index += 1
+#             new_feature_list.append(feature)
+#             index += 1
+#         else:
+#             new_feature_list.append(feature)
+#             index += 1
+#     return new_feature_list
+#
+#
+# def check_next(feature_list, index):
+#     """
+#     Helper method for remove loners - returns True if the feature at the specified index has a length of 1
+#     :param feature_list: List of features
+#     :param index: index at which to look
+#     :return:
+#     """
+#     try:
+#         if feature_list[index].length == 1:
+#             return True
+#         else:
+#             return False
+#     except IndexError:
+#         # this is the last feature, ignore
+#         return False
 
 
 class ChangeptFeature(object):
@@ -627,7 +637,7 @@ def fit_logistic(x_axis, y_data, guess_center, guess_min, guess_max, steepness_g
     return popt, pcov
 
 
-def feature_detect_main(analysis_obj, outputdir):
+def ciu50_main(analysis_obj, outputdir):
     """
     Primary feature detection runner method. Calls appropriate sub-methods using data and
     parameters from the passed analysis object
@@ -642,7 +652,7 @@ def feature_detect_main(analysis_obj, outputdir):
                                           analysis_obj.params.flat_width_tolerance)
     transitions_list = compute_transitions(analysis_obj, features_list)
     if len(transitions_list) == 0:
-        print('No transitions found for file {}' + os.path.basename(analysis_obj.filename).rstrip('.ciu'))
+        print('No transitions found for file {}'.format(os.path.basename(analysis_obj.filename).rstrip('.ciu')))
     for transition in transitions_list:
         transition.plot_transition(analysis_obj, outputdir)
     plt.clf()
@@ -662,7 +672,7 @@ if __name__ == '__main__':
     for file in files:
         with open(file, 'rb') as analysis_file:
             obj = pickle.load(analysis_file)
-        # feature_detect_main(obj, main_dir)
+        # ciu50_main(obj, main_dir)
         obj.features_gaussian = feature_detect_gaussians(obj)
         plot_feature_gaussians(obj, main_dir)
 

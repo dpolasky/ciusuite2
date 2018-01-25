@@ -59,6 +59,7 @@ class CIUSuite2(object):
             'on_button_olddeltadt_clicked': self.on_button_olddeltadt_clicked,
             'on_button_crop_clicked': self.on_button_crop_clicked,
             'on_button_gaussfit_clicked': self.on_button_gaussfit_clicked,
+            'on_button_ciu50_clicked': self.on_button_ciu50_clicked,
             'on_button_feature_detect_clicked': self.on_button_feature_detect_clicked,
             'on_button_classification_supervised_clicked': self.on_button_classification_supervised_clicked
         }
@@ -369,7 +370,7 @@ class CIUSuite2(object):
         self.display_analysis_files()
         self.progress_done()
 
-    def on_button_feature_detect_clicked(self):
+    def on_button_ciu50_clicked(self):
         """
         Run feature detection workflow to generate CIU-50 (transition) outputs for selected
         files
@@ -388,27 +389,59 @@ class CIUSuite2(object):
             analysis_obj = load_analysis_obj(file)
 
             # run feature detection
-            analysis_obj = Feature_Detection.feature_detect_main(analysis_obj, outputdir=self.output_dir)
+            analysis_obj = Feature_Detection.ciu50_main(analysis_obj, outputdir=self.output_dir)
             filename = save_analysis_obj(analysis_obj, outputdir=self.output_dir)
             new_file_list.append(filename)
 
             if not analysis_obj.params.combine_output_file:
-                analysis_obj.save_feature_outputs(self.output_dir)
-                analysis_obj.save_features_short(self.output_dir)
+                analysis_obj.save_ciu50_outputs(self.output_dir)
+                analysis_obj.save_ciu50_short(self.output_dir)
                 combine_flag = False
             else:
                 file_string = os.path.basename(filename).rstrip('.ciu') + '\n'
                 all_outputs += file_string
-                all_outputs += analysis_obj.save_feature_outputs(self.output_dir, True)
+                all_outputs += analysis_obj.save_ciu50_outputs(self.output_dir, True)
                 short_outputs += os.path.basename(filename).rstrip('.ciu')
-                short_outputs += analysis_obj.save_features_short(self.output_dir, True)
+                short_outputs += analysis_obj.save_ciu50_short(self.output_dir, True)
                 combine_flag = True
 
         if combine_flag:
-            outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_features.csv')
-            outputpath_short = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_features-short.csv')
+            outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_ciu50s.csv')
+            outputpath_short = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_ciu50-short.csv')
             save_existing_output_string(outputpath, all_outputs)
             save_existing_output_string(outputpath_short, short_outputs)
+
+        self.display_analysis_files()
+        self.progress_done()
+
+    def on_button_feature_detect_clicked(self):
+        """
+        Run Gaussian-based feature detection routine. Ensure Gaussians have been fit previously.
+        :return: void
+        """
+        files_to_read = self.check_file_range_entries()
+        new_file_list = []
+
+        for file in files_to_read:
+            # update progress and load file
+            self.update_progress(files_to_read.index(file), len(files_to_read))
+            analysis_obj = load_analysis_obj(file)
+
+            # check to make sure the analysis_obj has Gaussian data fitted
+            if analysis_obj.gaussians is None:
+                messagebox.showwarning('Gaussian fitting required', 'Data in file {} does not have Gaussian fitting'
+                                                                    'performed. Please run Gaussian fitting, then try '
+                                                                    'again.')
+                break
+
+            # If gaussian data exists, perform the analysis
+            analysis_obj = Feature_Detection.feature_detect_gaussians(analysis_obj)
+            filename = save_analysis_obj(analysis_obj, outputdir=self.output_dir)
+            new_file_list.append(filename)
+
+            Feature_Detection.plot_feature_gaussians(analysis_obj, self.output_dir)
+            outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_features.csv')
+            Feature_Detection.print_features_list(analysis_obj.features_gaussian, outputpath)
 
         self.display_analysis_files()
         self.progress_done()

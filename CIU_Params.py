@@ -22,12 +22,13 @@ class Parameters(object):
 
         # Gaussian fitting and filtering parameters
         self.gaussian_int_threshold = None
-        self.gaussian_min_spacing = None
+        # self.gaussian_min_spacing = None
         self.gaussian_width_max = None
         self.gaussian_centroid_bound_filter = None
         self.gaussian_centroid_plot_bounds = None
         self.gaussian_width_fraction = None
         self.gaussian_save_diagnostics = None
+        self.gaussian_convergence_r2 = None
 
         # Plotting and saving output parameters
         self.plot_extension = None

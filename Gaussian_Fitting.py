@@ -41,7 +41,7 @@ class Gaussian(object):
         Method for generating strings to save to output files with all info
         :return: string
         """
-        return '{},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f}'.format(self.cv,
+        return '{},{:.2f},{:.2f},{:.1f},{:.1f},{:.1f},{:.1f}'.format(self.cv,
                                                                      self.centroid,
                                                                      self.amplitude,
                                                                      self.width,
@@ -91,16 +91,16 @@ def estimate_multi_params(ciu_col, dt_axis, width_frac, peak_int_threshold=0.1, 
 
 def estimate_multi_params_all(ciu_col, dt_axis, width_frac):
     """
-    Make initial guesses for a sum of gaussians fitting
+    Make initial guesses for peak locations, but ensure overestimation. SciPy find_peaks_cwt tends to
+    way overestimate peaks (at least if a small width range is provided), but the fitting algorithm works
+    by passing increasing numbers of peaks until the fit converges, so we need to have a large number of
+    peaks to provide.
     :param ciu_col: 1D numpy array representing the DT spectrum in a given column (CV)
     :param dt_axis: drift time data (x axis to the fitted gaussian's y) for peak indexing
     :param width_frac: estimation of peak width (DT * fraction), typically 10% has been found to work well
-    :param peak_int_threshold: Minimum intensity threshold to detect a peak for fitting
-    :param min_spacing_bins: Minimum distance between peaks IN BINS - should be about instrument resolution
     :return: list of [centroid, width, amplitude] initial guesses
     """
-    # estimate the number of components by doing a simple peak finding using PeakUtils
-    peak_indices = peakutils.indexes(ciu_col, thres=0.05, min_dist=1)
+    # estimate the number of components by doing a simple peak finding using CWT - since it tends to give lots of peaks
     peak_ind_scipy = scipy.signal.find_peaks_cwt(ciu_col, np.arange(1, 5))
 
     params_lists = []
@@ -110,7 +110,6 @@ def estimate_multi_params_all(ciu_col, dt_axis, width_frac):
         amp_guess = ciu_col[peak_index]         # amplitude is the value at the index of the peak
         width_guess = peak_index * width_frac
         params_lists.append([0.001, amp_guess, centroid_guess, width_guess])
-        # params_lists.append([0, centroid_guess, amp_guess, width_guess])
 
     # sort guesses by amplitude (index 1 in each sublist) in order from largest to smallest
     params_lists = sorted(params_lists, key=lambda x: x[1], reverse=True)
@@ -191,39 +190,6 @@ def filter_fits(params_list, peak_width_cutoff, intensity_cutoff, centroid_bound
             filtered_list.extend(params_list[index:index + 4])
         index += 4
     return filtered_list
-
-
-# def fit_gaussians(param_guesses_multiple, dt_axis, cv_col_intensities, params_obj):
-#     """
-#
-#     :param param_guesses_multiple:
-#     :param dt_axis:
-#     :param cv_col_intensities:
-#     :param params_obj:
-#     :return:
-#     """
-#     widthfrac = params_obj.gaussian_width_fraction
-#     min_spacing = params_obj.gaussian_min_spacing
-#     intensity_thr = params_obj.gaussian_int_threshold
-#
-#     # perform a curve fit using the multiple gaussian function
-#     try:
-#         popt, pcov = curve_fit(multi_gauss_func, dt_axis, cv_col_intensities, method='lm',
-#                                p0=param_guesses_multiple, maxfev=5000)
-#     except RuntimeError:
-#         # no convergence within specified max iterations. Try again with fewer peaks
-#         param_guesses_multiple = estimate_multi_params(cv_col_intensities, dt_axis, widthfrac,
-#                                                        peak_int_threshold=intensity_thr,
-#                                                        min_spacing_bins=int(min_spacing * 2))
-#         try:
-#             popt, pcov = curve_fit(multi_gauss_func, dt_axis, cv_col_intensities, method='lm',
-#                                    p0=param_guesses_multiple, maxfev=5000)
-#         except RuntimeError:
-#             # failed again
-#             popt = []
-#             pcov = []
-#
-#     return popt, pcov
 
 
 def gaussian_fit_ciu(analysis_obj, params_obj):
@@ -358,5 +324,5 @@ if __name__ == '__main__':
     files = filedialog.askopenfilenames(filetypes=[('CIU', '.ciu')])
     for file in files:
         with open(file, 'rb') as analysis_file:
-            analysis_obj = pickle.load(analysis_file)
-        gaussian_fit_ciu(analysis_obj, analysis_obj.params)
+            current_analysis_obj = pickle.load(analysis_file)
+        gaussian_fit_ciu(current_analysis_obj, current_analysis_obj.params)
