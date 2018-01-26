@@ -58,6 +58,14 @@ class CIUAnalysisObj(object):
 
         self.features_gaussian = None
 
+    def __str__(self):
+        """
+        Display the filename of the object as reference
+        :return: void
+        """
+        return os.path.basename(self.filename.rstrip('.ciu'))
+    __repr__ = __str__
+
     def get_attribute_by_cv(self, attribute, filtered):
         """
         Return a list of lists of the specified attribute at each collision voltage (i.e. [[centroid 1], [centroid 1,

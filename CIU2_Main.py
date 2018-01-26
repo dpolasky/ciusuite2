@@ -52,6 +52,7 @@ class CIUSuite2(object):
             'on_button_analysisfile_clicked': self.on_button_analysisfile_clicked,
             'on_button_paramload_clicked': self.on_button_paramload_clicked,
             'on_button_printparams_clicked': self.on_button_printparams_clicked,
+            'on_button_reproc_files_clicked': self.on_button_reproc_files_clicked,
             'on_button_changedir_clicked': self.on_button_changedir_clicked,
             'on_button_oldplot_clicked': self.on_button_oldplot_clicked,
             'on_button_oldcompare_clicked': self.on_button_oldcompare_clicked,
@@ -60,6 +61,7 @@ class CIUSuite2(object):
             'on_button_crop_clicked': self.on_button_crop_clicked,
             'on_button_gaussfit_clicked': self.on_button_gaussfit_clicked,
             'on_button_ciu50_clicked': self.on_button_ciu50_clicked,
+            'on_button_ciu50_gaussian_clicked': self.on_button_ciu50_gaussian_clicked,
             'on_button_feature_detect_clicked': self.on_button_feature_detect_clicked,
             'on_button_classification_supervised_clicked': self.on_button_classification_supervised_clicked
         }
@@ -91,14 +93,15 @@ class CIUSuite2(object):
         self.analysis_file_list = []
 
         raw_files = open_files([('_raw.csv', '_raw.csv')])
+        self.progress_started()
+
         # run raw processing
         for raw_file in raw_files:
-            self.update_progress(raw_files.index(raw_file), len(raw_files))
-
             raw_obj = generate_raw_obj(raw_file)
             analysis_obj = process_raw_obj(raw_obj, self.params_obj)
             analysis_filename = save_analysis_obj(analysis_obj)
             self.analysis_file_list.append(analysis_filename)
+            self.update_progress(raw_files.index(raw_file), len(raw_files))
 
         # update the list of analysis files to display
         self.display_analysis_files()
@@ -165,6 +168,27 @@ class CIUSuite2(object):
         self.builder.get_object('Entry_num_files').insert(0, str(len(self.analysis_file_list)))
         self.builder.get_object('Entry_num_files').config(state=tk.DISABLED)
 
+    def on_button_reproc_files_clicked(self):
+        """
+        Re-run processing from raw and update parameter file in all loaded Analysis objects/.ciu files
+        :return: void
+        """
+        files_to_read = self.check_file_range_entries()
+        output_files = []
+        self.progress_started()
+        for analysis_file in files_to_read:
+            # load analysis obj and print params
+            analysis_obj = load_analysis_obj(analysis_file)
+
+            # update parameters and re-process raw data
+            new_obj = process_raw_obj(analysis_obj.raw_obj, self.params_obj)
+            filename = new_obj.filename
+            output_files.append(filename)
+            self.update_progress(files_to_read.index(analysis_file), len(files_to_read))
+
+        self.display_analysis_files()
+        self.progress_done()
+
     def on_button_printparams_clicked(self):
         """
         print parameters from selected files (or all files) to console
@@ -225,12 +249,12 @@ class CIUSuite2(object):
         """
         # Determine if a file range has been specified
         files_to_read = self.check_file_range_entries()
-
+        self.progress_started()
         for analysis_file in files_to_read:
-            self.update_progress(files_to_read.index(analysis_file), len(files_to_read))
-
             analysis_obj = load_analysis_obj(analysis_file)
             Original_CIU.ciu_plot(analysis_obj, self.params_obj, self.output_dir)
+            self.update_progress(files_to_read.index(analysis_file), len(files_to_read))
+
         self.progress_done()
 
     def on_button_oldcompare_clicked(self):
@@ -240,6 +264,7 @@ class CIUSuite2(object):
         """
         # Determine if a file range has been specified
         files_to_read = self.check_file_range_entries()
+        self.progress_started()
 
         if len(files_to_read) == 1:
             # re-open filechooser to get second file
@@ -257,8 +282,6 @@ class CIUSuite2(object):
             rmsd_print_list = ['File 1, File 2, RMSD (%)']
             # batch compare - compare all against all.
             for file in files_to_read:
-                self.update_progress(files_to_read.index(file), len(files_to_read))
-
                 # don't compare the file against itself
                 skip_index = files_to_read.index(file)
                 index = 0
@@ -272,6 +295,7 @@ class CIUSuite2(object):
                                                             rmsd)
                         rmsd_print_list.append(printstring)
                     index += 1
+                self.update_progress(files_to_read.index(file), len(files_to_read))
 
             # print output to csv
             with open(os.path.join(self.output_dir, 'batch_RMSDs.csv'), 'w') as rmsd_file:
@@ -287,9 +311,10 @@ class CIUSuite2(object):
         """
         # Determine if a file range has been specified
         files_to_read = self.check_file_range_entries()
+        self.progress_started()
 
         analysis_obj_list = [load_analysis_obj(x) for x in files_to_read]
-        averaged_obj = average_ciu(analysis_obj_list, self.params_obj, self.output_dir)
+        averaged_obj = average_ciu(analysis_obj_list)
         self.analysis_file_list = [averaged_obj.filename]
         self.display_analysis_files()
         self.progress_done()
@@ -304,11 +329,10 @@ class CIUSuite2(object):
         """
         # Determine if a file range has been specified
         files_to_read = self.check_file_range_entries()
+        self.progress_started()
 
         new_file_list = []
         for file in files_to_read:
-            self.update_progress(files_to_read.index(file), len(files_to_read))
-
             analysis_obj = load_analysis_obj(file)
             shifted_obj = Original_CIU.delta_dt(analysis_obj)
             newfile = save_analysis_obj(shifted_obj, filename_append='_delta', outputdir=self.output_dir)
@@ -317,6 +341,8 @@ class CIUSuite2(object):
             if self.params_obj.save_output_csv:
                 save_path = file.rstrip('.ciu') + '_delta_raw.csv'
                 Original_CIU.write_ciu_csv(save_path, shifted_obj.ciu_data, shifted_obj.axes)
+            self.update_progress(files_to_read.index(file), len(files_to_read))
+
         self.analysis_file_list = new_file_list
         self.display_analysis_files()
         self.progress_done()
@@ -332,11 +358,10 @@ class CIUSuite2(object):
         # vals = crop_ui.crop_vals
         # print(vals)
         files_to_read = self.check_file_range_entries()
+        self.progress_started()
 
         new_file_list = []
         for file in files_to_read:
-            self.update_progress(files_to_read.index(file), len(files_to_read))
-
             analysis_obj = load_analysis_obj(file)
             crop_obj = Raw_Processing.crop(analysis_obj, self.params_obj.cropping_window_values)
             newfile = save_analysis_obj(crop_obj, filename_append='_crop', outputdir=self.output_dir)
@@ -345,6 +370,8 @@ class CIUSuite2(object):
             if self.params_obj.save_output_csv:
                 save_path = file.rstrip('.ciu') + '_crop_raw.csv'
                 Original_CIU.write_ciu_csv(save_path, crop_obj.ciu_data, crop_obj.axes)
+            self.update_progress(files_to_read.index(file), len(files_to_read))
+
         self.analysis_file_list = new_file_list
         self.display_analysis_files()
         self.progress_done()
@@ -357,16 +384,17 @@ class CIUSuite2(object):
         """
         # Determine if a file range has been specified
         files_to_read = self.check_file_range_entries()
+        self.progress_started()
 
         new_file_list = []
         for file in files_to_read:
-            self.update_progress(files_to_read.index(file), len(files_to_read))
-
             analysis_obj = load_analysis_obj(file)
             analysis_obj = Gaussian_Fitting.gaussian_fit_ciu(analysis_obj, self.params_obj)
 
             filename = save_analysis_obj(analysis_obj, outputdir=self.output_dir)
             new_file_list.append(filename)
+            self.update_progress(files_to_read.index(file), len(files_to_read))
+
         self.display_analysis_files()
         self.progress_done()
 
@@ -377,15 +405,15 @@ class CIUSuite2(object):
         :return: void
         """
         files_to_read = self.check_file_range_entries()
-        new_file_list = []
+        self.progress_started()
 
+        new_file_list = []
         all_outputs = ''
         short_outputs = ''
         filename = ''
         combine_flag = False
         for file in files_to_read:
-            # update progress and load file
-            self.update_progress(files_to_read.index(file), len(files_to_read))
+            # load file
             analysis_obj = load_analysis_obj(file)
 
             # run feature detection
@@ -404,10 +432,57 @@ class CIUSuite2(object):
                 short_outputs += os.path.basename(filename).rstrip('.ciu')
                 short_outputs += analysis_obj.save_ciu50_short(self.output_dir, True)
                 combine_flag = True
+            self.update_progress(files_to_read.index(file), len(files_to_read))
 
         if combine_flag:
             outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_ciu50s.csv')
             outputpath_short = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_ciu50-short.csv')
+            save_existing_output_string(outputpath, all_outputs)
+            save_existing_output_string(outputpath_short, short_outputs)
+
+        self.display_analysis_files()
+        self.progress_done()
+
+    def on_button_ciu50_gaussian_clicked(self):
+        """
+        Repeat of CIU50 button, but with Gaussian feature det instead of changepoint. Will clean up
+        so there's only one method once final analysis method is decided on.
+        :return: void
+        """
+        files_to_read = self.check_file_range_entries()
+        self.progress_started()
+
+        new_file_list = []
+        all_outputs = ''
+        short_outputs = ''
+        filename = ''
+        combine_flag = False
+        for file in files_to_read:
+            # load file
+            analysis_obj = load_analysis_obj(file)
+
+            # run feature detection
+            analysis_obj = Feature_Detection.ciu50_gaussians(analysis_obj, outputdir=self.output_dir)
+            filename = save_analysis_obj(analysis_obj, outputdir=self.output_dir)
+            new_file_list.append(filename)
+
+            if not analysis_obj.params.combine_output_file:
+                analysis_obj.save_ciu50_outputs(self.output_dir)
+                analysis_obj.save_ciu50_short(self.output_dir)
+                combine_flag = False
+            else:
+                file_string = os.path.basename(filename).rstrip('.ciu') + '\n'
+                all_outputs += file_string
+                all_outputs += analysis_obj.save_ciu50_outputs(self.output_dir, True)
+                short_outputs += os.path.basename(filename).rstrip('.ciu')
+                short_outputs += analysis_obj.save_ciu50_short(self.output_dir, True)
+                combine_flag = True
+            self.update_progress(files_to_read.index(file), len(files_to_read))
+
+        if combine_flag:
+            outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_ciu50s.csv')
+            outputpath_short = os.path.join(self.output_dir,
+                                            os.path.basename(filename.rstrip('.ciu')) + '_ciu50-short.csv')
             save_existing_output_string(outputpath, all_outputs)
             save_existing_output_string(outputpath_short, short_outputs)
 
@@ -420,11 +495,11 @@ class CIUSuite2(object):
         :return: void
         """
         files_to_read = self.check_file_range_entries()
+        self.progress_started()
         new_file_list = []
 
         for file in files_to_read:
-            # update progress and load file
-            self.update_progress(files_to_read.index(file), len(files_to_read))
+            # load file
             analysis_obj = load_analysis_obj(file)
 
             # check to make sure the analysis_obj has Gaussian data fitted
@@ -442,6 +517,7 @@ class CIUSuite2(object):
             Feature_Detection.plot_feature_gaussians(analysis_obj, self.output_dir)
             outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_features.csv')
             Feature_Detection.print_features_list(analysis_obj.features_gaussian, outputpath)
+            self.update_progress(files_to_read.index(file), len(files_to_read))
 
         self.display_analysis_files()
         self.progress_done()
@@ -499,6 +575,19 @@ class CIUSuite2(object):
         # refresh display
         self.mainwindow.update()
 
+    def progress_started(self):
+        """
+        Display a message showing that the operation has begun
+        :return: void
+        """
+        self.builder.get_object('Entry_progress').config(state=tk.NORMAL)
+        self.builder.get_object('Entry_progress').delete(0, tk.END)
+        self.builder.get_object('Entry_progress').insert(0, 'Processing...')
+        self.builder.get_object('Entry_progress').config(state=tk.DISABLED)
+
+        self.builder.get_object('Progressbar_main')['value'] = 1
+        self.mainwindow.update()
+
     def update_progress(self, current_analysis, num_analyses):
         """
         Update the progress bar to display the current progress through the analysis list
@@ -507,7 +596,7 @@ class CIUSuite2(object):
         :return: void
         """
         current_prog = (current_analysis + 1) / float(num_analyses) * 100
-        prog_string = 'Processing {} of {}'.format(current_analysis + 1, num_analyses)
+        prog_string = 'Processed {} of {}'.format(current_analysis + 1, num_analyses)
 
         progress_bar = self.builder.get_object('Progressbar_main')
         progress_bar['value'] = current_prog
@@ -597,13 +686,11 @@ def process_raw_obj(raw_obj, params_obj):
     return analysis_obj
 
 
-def average_ciu(analysis_obj_list, params_obj, output_dir):
+def average_ciu(analysis_obj_list):
     """
     Generate and save replicate object (a CIUAnalysisObj with averaged ciu_data and a list
     of raw_objs) that can be used for further analysis
     :param analysis_obj_list: list of CIUAnalysisObj's to average
-    :param params_obj: Parameters object with options
-    :param output_dir: directory in which to save output
     :return: averaged analysis object
     """
     raw_obj_list = []
