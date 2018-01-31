@@ -293,7 +293,7 @@ class ChangeptFeature(object):
         """
         self.start_cv_val = cv_val_list[0]
         self.end_cv_val = cv_val_list[len(cv_val_list) - 1]
-        self.cv_vals = cv_val_list
+        self.cvs = cv_val_list
 
         self.start_cv_index = cv_index_list[0]
         self.end_cv_index = cv_index_list[len(cv_index_list) - 1]
@@ -398,7 +398,7 @@ class Transition(object):
 
         elif fit_mode == 2:
             final_x_vals = np.linspace(self.combined_x_axis[0], self.combined_x_axis[len(self.combined_x_axis) - 1],
-                                       len(self.combined_x_axis) * 10)
+                                       len(self.combined_x_axis) * 5)
             interp_function = scipy.interpolate.interp1d(self.combined_x_axis, self.combined_y_vals)
             final_y_vals = interp_function(final_x_vals)
 
@@ -430,7 +430,7 @@ class Transition(object):
         # check goodness of fit
         yfit = logistic_func(final_x_vals, *popt)
 
-        slope, intercept, rvalue, pvalue, stderr = scipy.stats.linregress(self.combined_y_vals, yfit)
+        slope, intercept, rvalue, pvalue, stderr = scipy.stats.linregress(final_y_vals, yfit)
         # adjrsq = adjrsquared(rvalue ** 2, len(cv_col_intensities))
         rsq = rvalue ** 2
 
@@ -450,7 +450,13 @@ class Transition(object):
         :param trans_distance: length of transition region (indices) to determine number of points to use for interp
         :return: final_x_value np array, final_y_value np array for logistic fitting
         """
-        transition_x_vals = np.linspace(interp_start_cv, interp_end_cv, trans_distance * 10)
+        # Use collision voltage step size to interpolate 5 extra bins per CV in the transition region
+        try:
+            cv_step = self.feature1.cvs[1] - self.feature1.cvs[0]
+        except IndexError:
+            # feature of size 1 - CV step must be feature distance
+            cv_step = trans_distance
+        transition_x_vals = np.linspace(interp_start_cv, interp_end_cv, (trans_distance / cv_step) * 5)  # interpolate to 0.5V step
         transition_y_vals = interp_function_raw(transition_x_vals)
 
         # get index values (position in combined x-axis array) for interpolation start/end CV
@@ -513,9 +519,10 @@ class Transition(object):
         # prepare and plot the actual transition using fitted parameters
         interp_x = np.linspace(x_axis[0], x_axis[len(x_axis) - 1], 200)
         y_fit = logistic_func(interp_x, *self.fit_params)
-        plt.plot(interp_x, y_fit, 'white', label='CIU50 = {:.2f}, k= {:.2f}'.format(self.ciu50, self.fit_params[3]))
+        plt.plot(interp_x, y_fit, 'white', label='CIU50: {:.1f}, r2=: {:.2f}'.format(self.ciu50, self.rsq))
         plt.legend(loc='best')
-        output_path = os.path.join(outputdir, analysis_obj.filename.rstrip('.ciu') + '_transition' + analysis_obj.params.plot_extension)
+        filename = os.path.basename(analysis_obj.filename).rstrip('.ciu') + '_transition' + analysis_obj.params.plot_extension
+        output_path = os.path.join(outputdir, filename)
         plt.savefig(output_path)
         # print('c (max): {:.2f}, y0 (min): {:.2f}, x0: {:.2f}, k: {:.2f}'.format(*self.fit_params))
 

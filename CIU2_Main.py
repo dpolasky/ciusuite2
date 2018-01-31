@@ -32,10 +32,12 @@ class CIUSuite2(object):
     """
 
     """
-    def __init__(self):
+    def __init__(self, tk_root_window):
         """
 
         """
+        self.tk_root = tk_root_window
+
         # create a Pygubu builder
         self.builder = builder = pygubu.Builder()
 
@@ -82,7 +84,12 @@ class CIUSuite2(object):
         self.mainwindow.mainloop()
 
     def on_close_window(self):
+        """
+        Close (destroy) the app window and the Tkinter root window to stop the process.
+        :return: void
+        """
         self.mainwindow.destroy()
+        self.tk_root.destroy()
 
     def on_button_rawfile_clicked(self):
         """
@@ -823,9 +830,8 @@ class CropUI(object):
 
 
 if __name__ == '__main__':
+    # Build the GUI and start its mainloop (run) method
     root = tk.Tk()
     root.withdraw()
-    # ciu_app = CIUSuite2(root)
-    ciu_app = CIUSuite2()
+    ciu_app = CIUSuite2(root)
     ciu_app.run()
-    # root.mainloop()

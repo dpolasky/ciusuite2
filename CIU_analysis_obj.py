@@ -214,7 +214,7 @@ class CIUAnalysisObj(object):
         output_string = ''
 
         # assemble the output
-        output_string += 'Features:, CV_lower (V),CV_upper (V),DT mode,DT_lower,DT_upper\n'
+        output_string += 'Features:, CV_lower (V),CV_upper (V),DT mode,DT_lower,DT_upper, rsq\n'
         feat_index = 1
         for feature in self.features:
             output_string += 'Feature {},'.format(feat_index)
@@ -223,11 +223,12 @@ class CIUAnalysisObj(object):
             output_string += '{:.2f},{:.2f}\n'.format(np.min(feature.dt_max_vals),
                                                       np.max(feature.dt_max_vals))
             feat_index += 1
-        output_string += 'Transitions:,y0 (ms),ymax (ms),CIU-50 (V),k (steepness)\n'
+        output_string += 'Transitions:,y0 (ms),ymax (ms),CIU-50 (V),k (steepness),r_squared\n'
         trans_index = 1
         for transition in self.transitions:
             output_string += 'transition {} -> {},'.format(trans_index, trans_index + 1)
-            output_string += '{:.2f},{:.2f},{:.2f},{:.2f}\n'.format(*transition.fit_params)
+            output_string += '{:.2f},{:.2f},{:.2f},{:.2f}'.format(*transition.fit_params)
+            output_string += ',{:.3f}\n'.format(transition.rsq)
             trans_index += 1
 
         if combine:
