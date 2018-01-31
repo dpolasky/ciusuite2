@@ -246,7 +246,7 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
         fit_bounds_upper_append = [max_dt, 1.1, max_dt, len(dt_axis)]
 
         # Iterate through peak detection until convergence criterion is met, adding one additional peak each iteration
-        while adjrsq < 0.995:
+        while adjrsq < analysis_obj.params.gaussian_convergence_r2:
             try:
                 param_guesses_multiple.extend(all_peak_guesses[i])
                 # ensure bounds arrays maintain same shape as parameter guesses

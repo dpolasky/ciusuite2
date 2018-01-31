@@ -126,16 +126,17 @@ def feature_detect_gaussians(analysis_obj):
     return analysis_obj
 
 
-def compute_transitions_gaussian(analysis_obj):
+def compute_transitions_gaussian(analysis_obj, adjusted_features):
     """
     Fit logistic/sigmoidal transition functions to the transition between each sequential pair
-    of features in the object's gaussian feature list. Saves Transition objects containing combined
+    of features in the provided gaussian feature list. Saves Transition objects containing combined
     feature pair info, fit, and resulting CIU-50 value.
+    :param adjusted_features: List of Features adjusted to only include CV data where col max is close to centroid
     :param analysis_obj: CIU analysis object with gaussian features already prepared
     :return: list of Transition objects (also saves to analysis_obj)
     """
     # initialize transition fitting information for gaussian feature lists
-    for feature in analysis_obj.features_gaussian:
+    for feature in adjusted_features:
         # Get indices of each CV relative to the complete fingerprint and corresponding DT max values
         cv_indices = []
         cv_axis = list(analysis_obj.axes[1])
@@ -150,14 +151,18 @@ def compute_transitions_gaussian(analysis_obj):
     # Fit sigmoids for transition calculations
     index = 0
     transition_list = []
-    while index < len(analysis_obj.features_gaussian) - 1:
-        current_transition = Transition(analysis_obj.features_gaussian[index],
-                                        analysis_obj.features_gaussian[index + 1],
+    while index < len(adjusted_features) - 1:
+        current_transition = Transition(adjusted_features[index],
+                                        adjusted_features[index + 1],
                                         analysis_obj)
         # check to make sure this is a transition that should be fitted (upper feature has a col max)
         if current_transition.check_features(analysis_obj):
+            # current_transition.fit_transition(analysis_obj.bin_spacing, dt_min=analysis_obj.axes[0][0],
+            #                                   fit_mode=analysis_obj.params.ciu50_mode, gaussian_bool=True)
+            # current_transition.fit_transition_gauss(analysis_obj.bin_spacing, dt_min=analysis_obj.axes[0][0],
+            #                                         fit_mode=analysis_obj.params.ciu50_mode, gaussian_bool=True)
             current_transition.fit_transition(analysis_obj.bin_spacing, dt_min=analysis_obj.axes[0][0],
-                                              fit_mode=analysis_obj.params.ciu50_mode, gaussian_bool=True)
+                                              fit_mode=analysis_obj.params.ciu50_mode, gaussian_bool=False)
             transition_list.append(current_transition)
         else:
             print('invalid transition between features {} and {}, skipping'.format(index + 1, index + 2))
@@ -178,6 +183,37 @@ def filter_features(features, min_feature_length):
         if len(feature.gaussians) >= min_feature_length:
             filtered_list.append(feature)
     return filtered_list
+
+
+def adjust_gauss_features(analysis_obj):
+    """
+    Run setup method to prepare Gaussian features for transition fitting. Removes any CV values
+    from features for which the max DT value at that CV is outside the width tolerance from the
+    feature's median DT. This is necessary because Gaussian features start/persist well before/after
+    they are the most abundant peak - which can cause bad fitting if incorrect CV's are included.
+    :param analysis_obj: CIUAnalysisObj with gaussian fitting and gaussian feature detect performed
+    :return: list of adjusted Features
+    """
+    adjusted_features = []
+    for feature in analysis_obj.features_gaussian:
+        final_cvs = []
+        for cv in feature.cvs:
+            # check if the ciu_data column max value is appropriate for this feature at this CV
+            cv_index = list(analysis_obj.axes[1]).index(cv)
+            dt_diff = abs(analysis_obj.col_max_dts[cv_index] - feature.gauss_median_centroid)
+            if dt_diff < bin_to_dt(analysis_obj.params.flat_width_tolerance,
+                                   analysis_obj.axes[0][0],
+                                   analysis_obj.bin_spacing):
+                # difference is within tolerance; include this CV in the adjusted feature
+                final_cvs.append(cv)
+
+        # initialize the new feature using the CV list (it will only have CV and centroid data)
+        if len(final_cvs) > 0:
+            adj_feature = Feature()
+            adj_feature.gauss_median_centroid = feature.gauss_median_centroid
+            adj_feature.cvs = final_cvs
+            adjusted_features.append(adj_feature)
+    return adjusted_features
 
 
 def plot_feature_gaussians(analysis_obj, outputdir):
@@ -237,81 +273,6 @@ def print_features_list(feature_list, outputpath):
             # outfile.write('Feature,{}\nmean centroid,{},length,{}\n{}\n{}\n\n'
             #               .format(index, feature.mean_centroid, feature.length, cvline, centroidline))
             # index += 1
-
-# def feature_detect_gauss_old(ciu_obj, ratio_change):
-#     """
-#     Used fitted gaussians to determine the locations of CIU features in the provided data.
-#     :param ciu_obj: CIUAnalysisObj with gaussian data previously calculated
-#     :param ratio_change: ratio change (0 < x < 1) to centroid to indicate movement to a new feature
-#     :return: list of Feature objects
-#     """
-#     centroids = np.asarray(ciu_obj.gauss_centroids)
-#     cv_axis = ciu_obj.axes[1]
-#
-#     init_centroid = np.average(centroids[0:2])
-#
-#     features = []
-#     current_feature_cent = init_centroid
-#     current_feature = Feature()
-#
-#     index = 0
-#     for centroid in centroids:
-#         change_from_last = (centroid - current_feature_cent) / float(current_feature_cent)
-#         if change_from_last > ratio_change:
-#             # new feature - finish current feature and begin a new one
-#             current_feature.finish()
-#             features.append(current_feature)
-#             current_feature = Feature()
-#         current_feature.centroids.append(centroid)
-#         current_feature.cvs.append(cv_axis[index])
-#
-#         current_feature_cent = centroid
-#         index += 1
-#     # append final feature
-#     current_feature.finish()
-#     features.append(current_feature)
-#     return features
-#
-#
-# def remove_loner_features(feature_list):
-#     """
-#     Method to combine series' of individual "features" that are generated during a sustained movement
-#     of peak centroids over many collision voltages. May or may not keep in final version
-#     :param feature_list: List of Feature objects
-#     :return: updated list of Feature objects with loners combined
-#     """
-#     index = 0
-#     new_feature_list = []
-#     while index < len(feature_list):
-#         feature = feature_list[index]
-#         if feature.length == 1:
-#             while check_next(feature_list, index + 1):
-#                 # if the next feature's length is 1 too, add it to this one as well
-#                 feature.combine(feature_list[index + 1])
-#                 index += 1
-#             new_feature_list.append(feature)
-#             index += 1
-#         else:
-#             new_feature_list.append(feature)
-#             index += 1
-#     return new_feature_list
-#
-#
-# def check_next(feature_list, index):
-#     """
-#     Helper method for remove loners - returns True if the feature at the specified index has a length of 1
-#     :param feature_list: List of features
-#     :param index: index at which to look
-#     :return:
-#     """
-#     try:
-#         if feature_list[index].length == 1:
-#             return True
-#         else:
-#             return False
-#     except IndexError:
-#         # this is the last feature, ignore
-#         return False
 
 
 class ChangeptFeature(object):
@@ -405,6 +366,7 @@ class Transition(object):
         self.ciu50 = None
         self.fit_params = None
         self.fit_covariances = None
+        self.rsq = None
 
     def fit_transition(self, bin_spacing, dt_min, fit_mode, gaussian_bool):
         """
@@ -418,45 +380,16 @@ class Transition(object):
         :return: void (saves fit parameters to object)
         """
         # initial fitting guesses: center is in between the features, min/max are median DTs of features 1 and 2
-        # center_guess = self.feature2.start_cv_val  # first value of second feature
-        if gaussian_bool:
-            min_guess = dt_min + (np.median(self.feature1.dt_max_bins) - 1) * bin_spacing
-            max_guess = dt_min + (np.median(self.feature2.dt_max_bins) - 1) * bin_spacing
+        center_guess = self.feature2.start_cv_val - (self.feat_distance / 2.0)   # halfway between features
+        min_guess = dt_min + (np.median(self.feature1.dt_max_bins) - 1) * bin_spacing
+        max_guess = dt_min + (np.median(self.feature2.dt_max_bins) - 1) * bin_spacing
+        # guess steepness as a function of between feature1 end and feature2 start
+        steepness_guess = self.feat_distance / 10.0
 
-            center_guess = self.feature2.start_cv_val - (self.feat_distance / 2.0)  # halfway between features
-
-            # min_guess = self.feature1.gauss_median_centroid
-            # max_guess = self.feature2.gauss_median_centroid
-            # compute region of overlap (all CV's included in both features) and use for center guess, etc
-            overlap_region_cvs = [x for x in self.feature1.cvs if x in self.feature2.cvs]
-            # if self.center_guess_gaussian is not None:
-            #     center_guess = self.center_guess_gaussian   # guess based on first column max value in feature 2
-            # else:
-            #     center_guess = np.median(overlap_region_cvs)    # fallback guess, poor performance if large overlap
-            # steepness_guess = len(overlap_region_cvs) / 10
-            steepness_guess = 0.5
-
-            max_len_overlap = 2     # TODO: make this a user param (or fix so not needed)
-            if len(overlap_region_cvs) > max_len_overlap:
-                # shorten interpolation region to prevent bad fitting from over interpolation
-                n = len(overlap_region_cvs)
-                overlap_region_cvs = overlap_region_cvs[n // 2 - max_len_overlap // 2: n // 2 + max_len_overlap // 2]
-            trans_start_cv = overlap_region_cvs[0]
-            trans_end_cv = overlap_region_cvs[len(overlap_region_cvs) - 1]
-            trans_distance = len(overlap_region_cvs)
-
-        else:
-            center_guess = self.feature2.start_cv_val - (self.feat_distance / 2.0)   # halfway between features
-
-            min_guess = dt_min + (np.median(self.feature1.dt_max_bins) - 1) * bin_spacing
-            max_guess = dt_min + (np.median(self.feature2.dt_max_bins) - 1) * bin_spacing
-            # guess steepness as a function of between feature1 end and feature2 start
-            steepness_guess = self.feat_distance / 10.0
-
-            # for interpolation of transition modes - determine transition region to interpolate
-            trans_start_cv = self.feature1.end_cv_val
-            trans_end_cv = self.feature2.start_cv_val
-            trans_distance = trans_end_cv - trans_start_cv
+        # for interpolation of transition modes - determine transition region to interpolate
+        trans_start_cv = self.feature1.end_cv_val
+        trans_end_cv = self.feature2.start_cv_val
+        trans_distance = trans_end_cv - trans_start_cv
 
         # Perform interpolation as specified by the user parameters
         if fit_mode == 1:
@@ -493,11 +426,20 @@ class Transition(object):
             print('fitting FAILED!')
             popt = [0, 0, 0, 0]
             pcov = []
+
+        # check goodness of fit
+        yfit = logistic_func(final_x_vals, *popt)
+
+        slope, intercept, rvalue, pvalue, stderr = scipy.stats.linregress(self.combined_y_vals, yfit)
+        # adjrsq = adjrsquared(rvalue ** 2, len(cv_col_intensities))
+        rsq = rvalue ** 2
+
         if popt[2] < 0:
             print("""WARNING: poor performance from logistic fitting.""")
         self.ciu50 = popt[2]
         self.fit_params = popt
         self.fit_covariances = pcov
+        self.rsq = rsq
 
     def interpolate_transition(self, interp_function_raw, interp_start_cv, interp_end_cv, trans_distance):
         """
@@ -508,9 +450,6 @@ class Transition(object):
         :param trans_distance: length of transition region (indices) to determine number of points to use for interp
         :return: final_x_value np array, final_y_value np array for logistic fitting
         """
-        # pad_len = 0  # number of index positions on CV axis to pad around transition
-        # pad_cv = self.combined_x_axis[pad_len] - self.combined_x_axis[0]  # converted from index to actual CV
-
         transition_x_vals = np.linspace(interp_start_cv, interp_end_cv, trans_distance * 10)
         transition_y_vals = interp_function_raw(transition_x_vals)
 
@@ -537,7 +476,6 @@ class Transition(object):
         second feature contains at least one column max value (i.e. the transition to the feature does
         take place).
         :param analysis_obj: CIUAnalysisObj with axis and column max information
-        :param feature2: Second feature in transition (Feature obj)
         :return: True if checks are satisfied, False if not
         """
         feature2_cv_indices = np.arange(self.feature2.start_cv_index, self.feature2.end_cv_index)
@@ -551,7 +489,6 @@ class Transition(object):
 
         # no CV found with column max within tolerance - return false
         return False
-
 
     def plot_transition(self, analysis_obj, outputdir):
         """
@@ -611,6 +548,37 @@ def changepoint_detect(analysis_obj):
 
     analysis_obj.changepoint_cvs = cv_shifts
     return output, cv_shifts
+
+
+def changepoint_detect_gaussian(analysis_obj):
+    """
+    Method to use Gaussian features detected in place of ChangePy module for changepoint detection.
+    Guesses midpoints of feature overlap regions to be the change location.
+    :param analysis_obj: CIUAnalysis object with gaussian fitting done
+    :return: output = list of indices of changepoints, cv_shifts = list of CV values corresponding to changepoints
+    """
+    # for each valid feature transition, estimate a changepoint
+    feat_index = 0
+    cv_axis = analysis_obj.axes[1]
+    changepoint_values = [cv_axis[0]]   # ensure the starting point of the fingerprint is included
+    while feat_index < len(analysis_obj.features_gaussian) - 1:  # in analysis_obj.features_gaussian:
+        feature = analysis_obj.features_gaussian[feat_index]
+        next_feature = analysis_obj.features_gaussian[feat_index + 1]
+        # compute overlap region
+        overlap_region_cvs = [x for x in feature.cvs if x in next_feature.cvs]
+        if len(overlap_region_cvs) > 0:
+            # if an overlap is found, use the middle of it as the changepoint guess
+            # changept_guess = np.median(overlap_region_cvs)
+            changept_guess = overlap_region_cvs[len(overlap_region_cvs) // 2]
+        else:
+            # if no overlap is found, use halfway between the end of the first feature and start of the next
+            # changept_guess = np.median([feature.end_cv_val, next_feature.start_cv_val])
+            changept_guess = abs(next_feature.start_cv_val - feature.end_cv_val) // 2 + feature.end_cv_val
+
+        changepoint_values.append(changept_guess)
+        feat_index += 1
+    changepoint_indices = [list(cv_axis).index(x) for x in changepoint_values]
+    return changepoint_indices, changepoint_values
 
 
 def partition_to_features(analysis_obj, cv_bin_shift_list, min_feature_len, flat_width_tol=1):
@@ -735,8 +703,11 @@ def fit_logistic(x_axis, y_data, guess_center, guess_min, guess_max, steepness_g
     """
     # guess initial params: [c, y0, x0, k], default guess k=1
     p0 = [guess_max, guess_min, guess_center, steepness_guess]
+    # fit_bounds_lower = [0, 0, 0, 0]
+    # fit_bounds_upper = [np.inf, np.inf, 200, np.inf]
+    # popt, pcov = scipy.optimize.curve_fit(logistic_func, x_axis, y_data, p0=p0, maxfev=5000,
+    #                                       bounds=(fit_bounds_lower, fit_bounds_upper))
     popt, pcov = scipy.optimize.curve_fit(logistic_func, x_axis, y_data, p0=p0, maxfev=5000)
-    # bounds=([0, 0, 0, 0], [np.inf, np.inf, np.inf, np.inf]))
     return popt, pcov
 
 
@@ -770,7 +741,17 @@ def ciu50_gaussians(analysis_obj, outputdir):
     :param outputdir: directory in which to save output
     :return: analysis object
     """
-    transitions_list = compute_transitions_gaussian(analysis_obj)
+    # Adjust Features to avoid inclusion of any points without col maxes
+    adj_features = adjust_gauss_features(analysis_obj)
+
+    # Catch bad inputs (not enough features to compute a transition)
+    if len(adj_features) <= 1:
+        filename = os.path.basename(analysis_obj.filename).rstrip('.ciu')
+        print('Not enough features (<=1) in file {}. No transition analysis performed'.format(filename))
+        return analysis_obj
+
+    # compute transitions and save output
+    transitions_list = compute_transitions_gaussian(analysis_obj, adj_features)
     if len(transitions_list) == 0:
         print('No transitions found for file {}'.format(os.path.basename(analysis_obj.filename).rstrip('.ciu')))
     for transition in transitions_list:
