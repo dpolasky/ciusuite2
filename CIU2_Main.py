@@ -30,11 +30,12 @@ hard_crop_ui = r"C:\CIUSuite2\Crop_vals.ui"
 
 class CIUSuite2(object):
     """
-
+    Primary graphical class for running CIU2 user interface. Uses PyGuBu builder to create
+    interface and handles associated events.
     """
     def __init__(self, tk_root_window):
         """
-
+        Create a new GUI window, connect feedback to buttons, and load parameters
         """
         self.tk_root = tk_root_window
 

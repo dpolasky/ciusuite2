@@ -63,7 +63,7 @@ class CIUAnalysisObj(object):
         Display the filename of the object as reference
         :return: void
         """
-        return os.path.basename(self.filename.rstrip('.ciu'))
+        return '<CIUAnalysisObj> file: {}'.format(os.path.basename(self.filename.rstrip('.ciu')))
     __repr__ = __str__
 
     def get_attribute_by_cv(self, attribute, filtered):

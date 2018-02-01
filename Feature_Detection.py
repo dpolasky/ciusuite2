@@ -37,8 +37,11 @@ class Feature(object):
         self.dt_max_vals = None
 
     def __str__(self):
-        # display the gaussian version data, including median and length of list
-        return 'Median: {:.1f} Length: {}'.format(self.gauss_median_centroid, len(self.gaussians))
+        # display either the gaussian or changepoint version data, including median and length of list
+        if self.gauss_median_centroid is not None:
+            return '<Feature> Med: {:.1f} Len: {}'.format(self.gauss_median_centroid, len(self.gaussians))
+        else:
+            return '<Feature> Med: {:.1f} Len: {}'.format(np.median(self.dt_max_vals), len(self.cvs))
     __repr__ = __str__
 
     def refresh(self):
@@ -72,7 +75,27 @@ class Feature(object):
             # if collision voltage is within tolerance of the nearest CV in the feature already, return True
             return abs(collision_voltage - nearest_cv) <= cv_tol
 
-    def set_transition_info(self, cv_index_list, dt_bin_list, dt_val_list):
+    def init_feature_data_changept(self, cv_index_list, cv_val_list, dt_bin_list, dt_val_list):
+        """
+        Init method from ChangepointFeature object - merged into single object with Gaussian
+        Features. Initializes key parameters for transition fitting from partitioned data.
+        :param cv_index_list: List of indices of CV values in the complete dataset
+        :param cv_val_list: List of CV values making up this feature
+        :param dt_bin_list: List of indices of peak max DT values at each CV
+        :param dt_val_list: List of max DT value at each CV
+        :return: void
+        """
+        self.start_cv_val = cv_val_list[0]
+        self.end_cv_val = cv_val_list[len(cv_val_list) - 1]
+        self.cvs = cv_val_list
+
+        self.start_cv_index = cv_index_list[0]
+        self.end_cv_index = cv_index_list[len(cv_index_list) - 1]
+
+        self.dt_max_bins = dt_bin_list
+        self.dt_max_vals = dt_val_list
+
+    def init_feature_data_gauss(self, cv_index_list, dt_bin_list, dt_val_list):
         """
         Import and set data to use with Transition class. Adapted to removed ChangeptFeature subclass
         Note: *requires gaussian feature detection to have been performed previously*
@@ -146,7 +169,7 @@ def compute_transitions_gaussian(analysis_obj, adjusted_features):
         # cv_indices = [list(analysis_obj.axes[1]).index(feature.cvs[i]) for i in feature.cvs]
         dt_max_bins = analysis_obj.col_maxes[cv_indices[0]: cv_indices[len(cv_indices) - 1]]
         dt_max_vals = analysis_obj.col_max_dts[cv_indices[0]: cv_indices[len(cv_indices) - 1]]
-        feature.set_transition_info(cv_indices, dt_max_bins, dt_max_vals)
+        feature.init_feature_data_gauss(cv_indices, dt_max_bins, dt_max_vals)
 
     # Fit sigmoids for transition calculations
     index = 0
@@ -275,32 +298,32 @@ def print_features_list(feature_list, outputpath):
             # index += 1
 
 
-class ChangeptFeature(object):
-    """
-    Object to store information about a partitioned segment of a CIU fingerprint containing
-    a flat feature. Stores the range of indices and CV values covered by the feature and
-    its centroid DT index and value.
-    """
-    def __init__(self, cv_index_list, cv_val_list, dt_bin_list, dt_val_list):
-        """
-        Object to store information for a single feature in a CIU fingerprint. Holds primarily
-        information about the range of collision voltages/indices over which the feature is
-        present and the drift bin containing the max value of each contained CV column
-        :param cv_index_list: list of indices of collision voltages that make up this feature (args for sublist of CV axis)
-        :param cv_val_list: list of actual collision voltage values that make up this feature (sublist of CV axis)
-        :param dt_bin_list: list of max_dt_bin entries for each collision voltage in the feature
-        :param dt_val_list: list of max_dt values in ms for each collision voltage in the feature
-        """
-        self.start_cv_val = cv_val_list[0]
-        self.end_cv_val = cv_val_list[len(cv_val_list) - 1]
-        self.cvs = cv_val_list
-
-        self.start_cv_index = cv_index_list[0]
-        self.end_cv_index = cv_index_list[len(cv_index_list) - 1]
-        self.cv_indices = cv_index_list
-
-        self.dt_max_bins = dt_bin_list
-        self.dt_max_vals = dt_val_list
+# class ChangeptFeature(object):
+#     """
+#     Object to store information about a partitioned segment of a CIU fingerprint containing
+#     a flat feature. Stores the range of indices and CV values covered by the feature and
+#     its centroid DT index and value.
+#     """
+#     def __init__(self, cv_index_list, cv_val_list, dt_bin_list, dt_val_list):
+#         """
+#         Object to store information for a single feature in a CIU fingerprint. Holds primarily
+#         information about the range of collision voltages/indices over which the feature is
+#         present and the drift bin containing the max value of each contained CV column
+#         :param cv_index_list: list of indices of collision voltages that make up this feature (args for sublist of CV axis)
+#         :param cv_val_list: list of actual collision voltage values that make up this feature (sublist of CV axis)
+#         :param dt_bin_list: list of max_dt_bin entries for each collision voltage in the feature
+#         :param dt_val_list: list of max_dt values in ms for each collision voltage in the feature
+#         """
+#         self.start_cv_val = cv_val_list[0]
+#         self.end_cv_val = cv_val_list[len(cv_val_list) - 1]
+#         self.cvs = cv_val_list
+#
+#         self.start_cv_index = cv_index_list[0]
+#         self.end_cv_index = cv_index_list[len(cv_index_list) - 1]
+#         self.cv_indices = cv_index_list
+#
+#         self.dt_max_bins = dt_bin_list
+#         self.dt_max_vals = dt_val_list
 
 
 class Transition(object):
@@ -368,6 +391,17 @@ class Transition(object):
         self.fit_covariances = None
         self.rsq = None
 
+    def __str__(self):
+        # display the transition range and CIU50 and R2 if they have been calculated
+        if self.ciu50 is not None and self.rsq is not None:
+            return '<Transition> range: {}-{}, ciu50: {:.1f}, rsq: {:.2f}'.format(self.start_cv,
+                                                                                  self.end_cv,
+                                                                                  self.ciu50,
+                                                                                  self.rsq)
+        else:
+            return '<Transition> range: {}-{}'.format(self.start_cv, self.end_cv)
+    __repr__ = __str__
+
     def fit_transition(self, bin_spacing, dt_min, fit_mode, gaussian_bool):
         """
         Fit a logistic function to the transition using the feature information. Requires
@@ -392,7 +426,7 @@ class Transition(object):
         trans_distance = trans_end_cv - trans_start_cv
 
         # Perform interpolation as specified by the user parameters
-        if fit_mode == 1:
+        if fit_mode == 1:   # DEPRECATED - basic interpolation always gives better results
             final_x_vals = self.combined_x_axis
             final_y_vals = self.combined_y_vals
 
@@ -618,7 +652,8 @@ def partition_to_features(analysis_obj, cv_bin_shift_list, min_feature_len, flat
         if len(feature_dt_bins) > min_feature_len:
             feature_dt_vals = [bin_to_dt(x, min_dt=analysis_obj.axes[0][0], bin_spacing=analysis_obj.bin_spacing)
                                for x in feature_dt_bins]
-            feature = ChangeptFeature(cv_index_list, feature_cvs, feature_dt_bins, feature_dt_vals)
+            feature = Feature()
+            feature.init_feature_data_changept(cv_index_list, feature_cvs, feature_dt_bins, feature_dt_vals)
             features.append(feature)
 
         prev_index = change_index
