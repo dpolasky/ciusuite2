@@ -1,6 +1,13 @@
 """
-Module for Parameter object to hold parameter information in analysis objects
+Module for Parameter object to hold parameter information in analysis objects and associated
+parameter UI, etc
 """
+import tkinter
+
+# Dictionary containing descriptions of all parameters for display in menus/etc
+PARAM_DESCRIPTIONS = {'smoothing_method': 'Method with which to smooth data. Savitsky-Golay or None',
+                      'smoothing_window': 'Size of the filter for the applied smoothing method. Default is 5',
+                      'smoothing_iterations': 'the number of times to apply the smoothing. Default is 1'}
 
 
 class Parameters(object):
@@ -43,6 +50,7 @@ class Parameters(object):
         self.combine_output_file = None
         self.ciu50_mode = None
         self.cv_gap_tolerance = None
+        self.params_dict = None
 
     def set_params(self, params_dict):
         """
@@ -59,6 +67,7 @@ class Parameters(object):
                 # no such parameter
                 print('No parameter name for param: ' + name)
                 continue
+        self.params_dict = params_dict
 
     def print_params_to_console(self):
         """
@@ -67,6 +76,18 @@ class Parameters(object):
         """
         for paramkey, value in sorted(self.__dict__.items()):
             print('{}: {}'.format(paramkey, value))
+
+    def compare(self, other_params):
+        """
+        Compare all parameters in this object to another parameters object. Returns True if
+        all parameters are identical, False if not
+        :param other_params: Parameters object
+        :return: boolean
+        """
+        for param_key in self.params_dict.keys():
+            if not self.params_dict[param_key] == other_params.params_dict[param_key]:
+                return False
+        return True
 
 
 def parse_params_file(params_file):
@@ -120,9 +141,72 @@ def parse_params_file(params_file):
         print('params file not found!')
 
 
+class ParamUI(tkinter.Toplevel):
+    """
+    Modular parameter editing UI popup class. Designed to take a list of parameters of arbitrary
+    length and provide their names, current values, and definitions into a dialog for editing.
+    """
+    def __init__(self, section_name, params_obj, key_list):
+        """
+        Initialize a graphical menu with the parameters listed by key in the 'key_list' input.
+        :param params_obj: Parameters object with parameter value information
+        :param key_list: list of keys (corresponding to keys in params.obj.params_dict and also the
+        PARAM_DESCRIPTIONS dict) to display in the menu.
+        """
+        tkinter.Toplevel.__init__(self)
+        self.title(section_name)
+
+        # return values = list by parameter of the entry
+        self.return_vals = []
+        self.entry_vars = []
+
+        # display a label (name), entry (value), and label (description) for each parameter in the key list
+        row = 0
+        for param_key in key_list:
+            entry_var = tkinter.StringVar()
+
+            name = param_key
+            value = params_obj.params_dict[param_key]
+            description = PARAM_DESCRIPTIONS[param_key]
+            label = tkinter.Label(self, text=name).grid(row=row, column=0)
+
+            entry = tkinter.Entry(self, textvariable=entry_var).grid(row=row, column=1)
+            self.entry_vars.append(entry_var)
+
+            label2 = tkinter.Label(self, text=description).grid(row=row, column=2)
+            row += 1
+
+    def refresh_values(self):
+        """
+        Update the values for all parameters
+        :return:
+        """
+        for entry in self.entry_vars:
+            self.return_vals.append(entry.get())
+        return self.return_vals
+
+
+def test_param_ui():
+    # testing
+    myparams = Parameters()
+    mydict = parse_params_file(r"C:\CIUSuite2\CIU_params.txt")
+    myparams.set_params(mydict)
+    key_list = ['smoothing_method', 'smoothing_window', 'smoothing_iterations']
+
+    param_ui = ParamUI('test section', myparams, key_list)
+    test_top = tkinter.Toplevel()
+    test_top.title('test top')
+    param_ui.wait_window()
+    print('finished wait')
+
+
 # testing
 if __name__ == '__main__':
-    myparams = Parameters()
-    mydict = parse_params_file(r"C:\Users\dpolasky\Desktop\CIU_params.txt")
-    myparams.set_params(mydict)
-    myparams.print_params_to_console()
+    # myparams = Parameters()
+    # mydict = parse_params_file(r"C:\Users\dpolasky\Desktop\CIU_params.txt")
+    # myparams.set_params(mydict)
+    # myparams.print_params_to_console()
+    root = tkinter.Tk()
+    root.withdraw()
+
+    test_param_ui()

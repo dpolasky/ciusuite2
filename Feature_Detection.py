@@ -39,7 +39,7 @@ class Feature(object):
     def __str__(self):
         # display either the gaussian or changepoint version data, including median and length of list
         if self.gauss_median_centroid is not None:
-            return '<Feature> Med: {:.1f} Len: {}'.format(self.gauss_median_centroid, len(self.gaussians))
+            return '<Feature> Med: {:.1f} Len: {}'.format(self.gauss_median_centroid, len(self.cvs))
         else:
             return '<Feature> Med: {:.1f} Len: {}'.format(np.median(self.dt_max_vals), len(self.cvs))
     __repr__ = __str__
@@ -180,15 +180,12 @@ def compute_transitions_gaussian(analysis_obj, adjusted_features):
                                         analysis_obj)
         # check to make sure this is a transition that should be fitted (upper feature has a col max)
         if current_transition.check_features(analysis_obj):
-            # current_transition.fit_transition(analysis_obj.bin_spacing, dt_min=analysis_obj.axes[0][0],
-            #                                   fit_mode=analysis_obj.params.ciu50_mode, gaussian_bool=True)
-            # current_transition.fit_transition_gauss(analysis_obj.bin_spacing, dt_min=analysis_obj.axes[0][0],
-            #                                         fit_mode=analysis_obj.params.ciu50_mode, gaussian_bool=True)
             current_transition.fit_transition(analysis_obj.bin_spacing, dt_min=analysis_obj.axes[0][0],
                                               fit_mode=analysis_obj.params.ciu50_mode, gaussian_bool=False)
             transition_list.append(current_transition)
         else:
-            print('invalid transition between features {} and {}, skipping'.format(index + 1, index + 2))
+            print('feature {} never reaches 50% intensity, '
+                  'skipping transition between {} and {}'.format(index + 2, index + 1, index + 2))
         index += 1
     analysis_obj.transitions = transition_list
     return transition_list
@@ -298,34 +295,6 @@ def print_features_list(feature_list, outputpath):
             # index += 1
 
 
-# class ChangeptFeature(object):
-#     """
-#     Object to store information about a partitioned segment of a CIU fingerprint containing
-#     a flat feature. Stores the range of indices and CV values covered by the feature and
-#     its centroid DT index and value.
-#     """
-#     def __init__(self, cv_index_list, cv_val_list, dt_bin_list, dt_val_list):
-#         """
-#         Object to store information for a single feature in a CIU fingerprint. Holds primarily
-#         information about the range of collision voltages/indices over which the feature is
-#         present and the drift bin containing the max value of each contained CV column
-#         :param cv_index_list: list of indices of collision voltages that make up this feature (args for sublist of CV axis)
-#         :param cv_val_list: list of actual collision voltage values that make up this feature (sublist of CV axis)
-#         :param dt_bin_list: list of max_dt_bin entries for each collision voltage in the feature
-#         :param dt_val_list: list of max_dt values in ms for each collision voltage in the feature
-#         """
-#         self.start_cv_val = cv_val_list[0]
-#         self.end_cv_val = cv_val_list[len(cv_val_list) - 1]
-#         self.cvs = cv_val_list
-#
-#         self.start_cv_index = cv_index_list[0]
-#         self.end_cv_index = cv_index_list[len(cv_index_list) - 1]
-#         self.cv_indices = cv_index_list
-#
-#         self.dt_max_bins = dt_bin_list
-#         self.dt_max_vals = dt_val_list
-
-
 class Transition(object):
     """
     Store information about a CIU transition, including the starting and ending feature,
@@ -426,11 +395,11 @@ class Transition(object):
         trans_distance = trans_end_cv - trans_start_cv
 
         # Perform interpolation as specified by the user parameters
-        if fit_mode == 1:   # DEPRECATED - basic interpolation always gives better results
-            final_x_vals = self.combined_x_axis
-            final_y_vals = self.combined_y_vals
+        # if fit_mode == 1:   # DEPRECATED - basic interpolation always gives better results
+        #     final_x_vals = self.combined_x_axis
+        #     final_y_vals = self.combined_y_vals
 
-        elif fit_mode == 2:
+        if fit_mode == 1 or fit_mode == 2:
             final_x_vals = np.linspace(self.combined_x_axis[0], self.combined_x_axis[len(self.combined_x_axis) - 1],
                                        len(self.combined_x_axis) * 5)
             interp_function = scipy.interpolate.interp1d(self.combined_x_axis, self.combined_y_vals)
@@ -452,12 +421,10 @@ class Transition(object):
 
         # run the logistic fitting
         try:
-            # popt, pcov = fit_logistic(self.combined_x_axis, self.combined_y_vals, center_guess, min_guess, max_guess,
-            #                           steepness_guess)
             popt, pcov = fit_logistic(final_x_vals, final_y_vals, center_guess, min_guess, max_guess,
                                       steepness_guess)
         except RuntimeError:
-            print('fitting FAILED!')
+            print('fitting failed for {}'.format(self))
             popt = [0, 0, 0, 0]
             pcov = []
 
@@ -469,7 +436,7 @@ class Transition(object):
         rsq = rvalue ** 2
 
         if popt[2] < 0:
-            print("""WARNING: poor performance from logistic fitting.""")
+            print('WARNING: poor performance from logistic fitting for {}'.format(self))
         self.ciu50 = popt[2]
         self.fit_params = popt
         self.fit_covariances = pcov
@@ -518,6 +485,9 @@ class Transition(object):
         :param analysis_obj: CIUAnalysisObj with axis and column max information
         :return: True if checks are satisfied, False if not
         """
+        if self.start_cv > self.end_cv:
+            return False
+
         feature2_cv_indices = np.arange(self.feature2.start_cv_index, self.feature2.end_cv_index)
         width_tol_dt = analysis_obj.params.flat_width_tolerance * analysis_obj.bin_spacing
         for cv_index in feature2_cv_indices:

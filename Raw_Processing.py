@@ -81,7 +81,13 @@ def sav_gol_smooth(ciu_data_matrix, smooth_window):
 
 
 def find_nearest(array, value):
-    # get the index of the value nearest to the input value
+    """
+    Get the index in the array nearest to the input value. Handles values outside the
+    array by returning the end value in the correct direction.
+    :param array: array-like object to search within
+    :param value: value to find nearest index in the array
+    :return: index (int) of closest match in the array
+    """
     idx = (np.abs(array - value)).argmin()
     return idx
 
@@ -89,6 +95,7 @@ def find_nearest(array, value):
 def crop(analysis_obj, crop_vals):
     """
     Crops the data and axes arrays to the nearest values specified in the crop vals list.
+    If provided crop values are outside the axes, will crop to the nearest value.
     :param analysis_obj: CIUAnalysisObj with data to crop
     :param crop_vals: list of values to crop to in form [cv_low, cv_high, dt_low, dt_high]
     :return: New CIUAnalysisObj with cropped data and new axes
@@ -96,27 +103,39 @@ def crop(analysis_obj, crop_vals):
     # Determine the indices corresponding to the values nearest to those entered by the user
     dt_axis = analysis_obj.axes[0]
     cv_axis = analysis_obj.axes[1]
-    cv_low = find_nearest(cv_axis, crop_vals[0])
-    cv_high = find_nearest(cv_axis, crop_vals[1])
-    dt_low = find_nearest(dt_axis, crop_vals[2])
-    dt_high = find_nearest(dt_axis, crop_vals[3])
+    dt_low = find_nearest(dt_axis, crop_vals[0])
+    dt_high = find_nearest(dt_axis, crop_vals[1])
+    cv_low = find_nearest(cv_axis, crop_vals[2])
+    cv_high = find_nearest(cv_axis, crop_vals[3])
+
+    # allow single axis cropping - ignore one axis if its provided values are equal
+    crop_dt = True
+    crop_cv = True
+    if dt_high == dt_low:
+        crop_dt = False
+    if cv_low == cv_high:
+        crop_cv = False
 
     # crop the data and axes
     ciu_data_matrix = analysis_obj.ciu_data
-    ciu_data_matrix = ciu_data_matrix[dt_low:dt_high + 1]  # crop the rows
+    if crop_dt:
+        ciu_data_matrix = ciu_data_matrix[dt_low:dt_high + 1]  # crop the rows
+        dt_axis = dt_axis[dt_low:dt_high + 1]
     ciu_data_matrix = np.swapaxes(ciu_data_matrix, 0, 1)
-    ciu_data_matrix = ciu_data_matrix[cv_low:cv_high + 1]  # crop the columns
+    if crop_cv:
+        ciu_data_matrix = ciu_data_matrix[cv_low:cv_high + 1]  # crop the columns
+        cv_axis = cv_axis[cv_low:cv_high + 1]
     ciu_data_matrix = np.swapaxes(ciu_data_matrix, 0, 1)
-
-    cv_axis = cv_axis[cv_low:cv_high + 1]
-    dt_axis = dt_axis[dt_low:dt_high + 1]
     new_axes = [dt_axis, cv_axis]
 
-    crop_obj = CIUAnalysisObj(analysis_obj.raw_obj, ciu_data_matrix, new_axes,
-                              analysis_obj.gauss_params)
-    crop_obj.params = analysis_obj.params
-    crop_obj.raw_obj_list = analysis_obj.raw_obj_list
-    return crop_obj
+    # crop_obj = CIUAnalysisObj(analysis_obj.raw_obj, ciu_data_matrix, new_axes,
+    #                           analysis_obj.gauss_params)
+    # crop_obj.params = analysis_obj.params
+    # crop_obj.raw_obj_list = analysis_obj.raw_obj_list
+    # save output to the analysis object
+    analysis_obj.ciu_data = ciu_data_matrix
+    analysis_obj.axes = new_axes
+    return analysis_obj
 
 
 def interpolate_cv(norm_data, axes, num_bins=200):

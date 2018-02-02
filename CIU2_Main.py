@@ -20,6 +20,7 @@ import Original_CIU
 import numpy as np
 import Feature_Detection
 import Classification
+import subprocess
 
 hard_file_path_ui = r"C:\CIUSuite2\CIUSuite2.ui"
 hard_params_file = r"C:\CIUSuite2\CIU_params.txt"
@@ -62,17 +63,20 @@ class CIUSuite2(object):
             'on_button_oldavg_clicked': self.on_button_oldavg_clicked,
             'on_button_olddeltadt_clicked': self.on_button_olddeltadt_clicked,
             'on_button_crop_clicked': self.on_button_crop_clicked,
+            'on_button_restore_clicked': self.on_button_restore_clicked,
             'on_button_gaussfit_clicked': self.on_button_gaussfit_clicked,
             'on_button_ciu50_clicked': self.on_button_ciu50_clicked,
             'on_button_ciu50_gaussian_clicked': self.on_button_ciu50_gaussian_clicked,
             'on_button_feature_detect_clicked': self.on_button_feature_detect_clicked,
-            'on_button_classification_supervised_clicked': self.on_button_classification_supervised_clicked
+            'on_button_classification_supervised_clicked': self.on_button_classification_supervised_clicked,
+            'on_section_params_oldciu_clicked': self.on_section_params_oldciu_clicked
         }
         builder.connect_callbacks(callbacks)
 
         # load parameter file
         self.params_obj = CIU_Params.Parameters()
         self.params_obj.set_params(CIU_Params.parse_params_file(hard_params_file))
+        self.param_file = hard_params_file
 
         params_text = self.builder.get_object('Text_params')
         params_text.delete(1.0, tk.END)
@@ -134,24 +138,69 @@ class CIUSuite2(object):
             self.output_dir = os.path.dirname(self.analysis_file_list[0])
             self.update_dir_entry()
         except IndexError:
-            # no files selected (user probably hit 'cancel' - ignore
-            pass
+            # no files selected (user probably hit 'cancel') - ignore
+            return
+
+        # check if parameters in loaded files match the current Parameter object
+        self.check_params()
 
     def on_button_paramload_clicked(self):
         """
         Open a user chosen parameter file into self.params
         :return: void
         """
-        new_param_file = open_files([('params file', '.txt')])[0]
+        # self.builder.get_object('Button_AnalysisFile').config(state=tk.DISABLED)
+        #
+        # self.on_button_edit_params_clicked()
+        #
+        # self.builder.get_object('Button_AnalysisFile').config(state=tk.NORMAL)
+        try:
+            new_param_file = open_files([('params file', '.txt')])[0]
+        except IndexError:
+            # no file loaded - user probably clicked cancel. Ignore the button call
+            return
+
         new_param_obj = CIU_Params.Parameters()
         new_param_obj.set_params(CIU_Params.parse_params_file(new_param_file))
         self.params_obj = new_param_obj
+        self.param_file = new_param_file
 
         # update parameter location display
         new_text = 'Parameters loaded from {}'.format(os.path.basename(new_param_file))
         params_text = self.builder.get_object('Text_params')
         params_text.delete(1.0, tk.END)
         params_text.insert(tk.INSERT, new_text)
+
+        # check if files are loaded
+        if len(self.analysis_file_list) > 0:
+            # TODO: prompt user to overwrite params or not
+            print('TO-DO: ask user for overwrite or not')
+
+    def on_button_edit_params_clicked(self):
+        """
+        Open the current parameter file in Notepad to allow the user to edit. Waits for
+        the notepad application to close before returning to the CIU2 GUI.
+        Updates the current Params object once the parameter file has been closed
+        :return: void
+        """
+        param_args = ['notepad.exe', self.param_file]
+        return_proc = subprocess.run(param_args)
+        print(return_proc)
+
+        # once done, update stuff and continue
+        new_param_obj = CIU_Params.Parameters()
+        new_param_obj.set_params(CIU_Params.parse_params_file(self.param_file))
+        self.params_obj = new_param_obj
+
+        new_text = 'Parameters updated in {}'.format(os.path.basename(self.param_file))
+        params_text = self.builder.get_object('Text_params')
+        params_text.delete(1.0, tk.END)
+        params_text.insert(tk.INSERT, new_text)
+
+        # check if files are loaded
+        if len(self.analysis_file_list) > 0:
+            # TODO: prompt user to overwrite params or not
+            print('TO-DO: ask user for overwrite or not')
 
     def display_analysis_files(self):
         """
@@ -179,6 +228,31 @@ class CIUSuite2(object):
     def on_button_reproc_files_clicked(self):
         """
         Re-run processing from raw and update parameter file in all loaded Analysis objects/.ciu files
+        Updates ciu_data and parameters in the object, but does NOT delete saved fitting/features/etc
+        information from the object.
+        :return: void
+        """
+        files_to_read = self.check_file_range_entries()
+        output_files = []
+        self.progress_started()
+        for analysis_file in files_to_read:
+            # load analysis obj and print params
+            analysis_obj = load_analysis_obj(analysis_file)
+
+            # update parameters, ciu_data, and axes but retain all other object information
+            analysis_obj = reprocess_raw(analysis_obj, self.params_obj)
+            filename = save_analysis_obj(analysis_obj, outputdir=self.output_dir)
+            output_files.append(filename)
+            self.update_progress(files_to_read.index(analysis_file), len(files_to_read))
+
+        self.display_analysis_files()
+        self.progress_done()
+
+    def on_button_restore_clicked(self):
+        """
+        Restore the original dataset using the Raw_obj for each analysis object requested.
+        Can be used to undo cropping, delta-dt, parameter changes, etc. Differs from reprocess
+        in that a NEW object is created, so any gaussian fitting/etc is reset in this method.
         :return: void
         """
         files_to_read = self.check_file_range_entries()
@@ -190,7 +264,7 @@ class CIUSuite2(object):
 
             # update parameters and re-process raw data
             new_obj = process_raw_obj(analysis_obj.raw_obj, self.params_obj)
-            filename = new_obj.filename
+            filename = save_analysis_obj(new_obj, outputdir=self.output_dir)
             output_files.append(filename)
             self.update_progress(files_to_read.index(analysis_file), len(files_to_read))
 
@@ -249,6 +323,19 @@ class CIUSuite2(object):
         self.builder.get_object('Text_outputdir').delete(1.0, tk.INSERT)
         self.builder.get_object('Text_outputdir').insert(tk.INSERT, self.output_dir)
         self.builder.get_object('Text_outputdir').config(state=tk.DISABLED)
+
+    def on_section_params_oldciu_clicked(self):
+        """
+        Run a ParamsUI interface for the old CIU section, then update the Parameters object
+        with any changed parameters (and reprocess data?)
+        :return: void
+        """
+        key_list = ['smoothing_method', 'smoothing_iterations']
+        param_ui = CIU_Params.ParamUI('test section', self.params_obj, key_list)
+        # wait for user to close the window
+        param_ui.wait_window()
+        return_vals = param_ui.refresh_values()
+        print(return_vals)
 
     def on_button_oldplot_clicked(self):
         """
@@ -358,21 +445,26 @@ class CIUSuite2(object):
     def on_button_crop_clicked(self):
         """
         Open a dialog to ask user for crop inputs, then crop selected data accordingly
-        :return: saves new .ciu files (with _crop)
+        :return: saves new .ciu files
         """
         # run the cropping UI
-        # crop_ui = CropUI()
-        # crop_ui.run()
-        # vals = crop_ui.crop_vals
-        # print(vals)
+        crop_vals = run_crop_ui()
+
+        if crop_vals is None:
+            # user hit cancel, or no values were provided
+            self.progress_done()
+            return
+
         files_to_read = self.check_file_range_entries()
         self.progress_started()
 
         new_file_list = []
         for file in files_to_read:
             analysis_obj = load_analysis_obj(file)
-            crop_obj = Raw_Processing.crop(analysis_obj, self.params_obj.cropping_window_values)
-            newfile = save_analysis_obj(crop_obj, filename_append='_crop', outputdir=self.output_dir)
+            crop_obj = Raw_Processing.crop(analysis_obj, crop_vals)
+            crop_obj.crop_vals = crop_vals
+            # newfile = save_analysis_obj(crop_obj, filename_append='_crop', outputdir=self.output_dir)
+            newfile = save_analysis_obj(crop_obj, outputdir=self.output_dir)
             new_file_list.append(newfile)
             # also save _raw.csv output if desired
             if self.params_obj.save_output_csv:
@@ -565,6 +657,36 @@ class CIUSuite2(object):
         Classification.class_comparison_lda(data_labels, obj_list_by_label, self.output_dir)
         self.progress_done()
 
+    def check_params(self):
+        """
+        Check each file the in the analysis file list to see if its parameters match the
+        current Parameters object. If not, display the file numbers of mismatched files.
+        :return: void
+        """
+        mismatched_files = []
+        file_index = 1
+        for file in self.analysis_file_list:
+            analysis_obj = load_analysis_obj(file)
+            if not analysis_obj.params.compare(self.params_obj):
+                # parameters don't match, add to list
+                mismatched_files.append(file_index)
+            file_index += 1
+
+        # write output to text display
+        if len(mismatched_files) == 0:
+            match_string = 'Parameters in each file match the current parameters'
+            self.builder.get_object('Text_ParamsMatch').config(state=tk.NORMAL)
+            self.builder.get_object('Text_ParamsMatch').delete(1.0, tk.INSERT)
+            self.builder.get_object('Text_ParamsMatch').insert(tk.INSERT, match_string)
+            self.builder.get_object('Text_ParamsMatch').config(state=tk.DISABLED)
+        else:
+            file_string = ','.join([str(x) for x in mismatched_files])
+            mismatch_string = 'Non-synchronized params in files {}'.format(file_string)
+            self.builder.get_object('Text_ParamsMatch').config(state=tk.NORMAL)
+            self.builder.get_object('Text_ParamsMatch').delete(1.0, tk.INSERT)
+            self.builder.get_object('Text_ParamsMatch').insert(tk.INSERT, mismatch_string)
+            self.builder.get_object('Text_ParamsMatch').config(state=tk.DISABLED)
+
     def progress_print_text(self, text_to_print, prog_percent):
         """
         Set the progress bar to print text (e.g. 'analysis in progress...')
@@ -661,7 +783,7 @@ def generate_raw_obj(raw_file):
 def process_raw_obj(raw_obj, params_obj):
     """
     Run all initial raw processing stages (data import, smoothing, interpolation, cropping)
-    on a raw file using the parameters provided in a Parameters object. Returns a new
+    on a raw file using the parameters provided in a Parameters object. Returns a NEW
     analysis object with the processed data
     :param raw_obj: the CIURaw object containing the raw data to process
     :param params_obj: Parameters object containing processing parameters
@@ -686,10 +808,47 @@ def process_raw_obj(raw_obj, params_obj):
     analysis_obj = CIUAnalysisObj(raw_obj, norm_data, axes)
 
     # crop if desired and update the analysis_obj
-    if params_obj.cropping_window_values is not None:  # If no cropping, use the whole matrix
-        analysis_obj = Raw_Processing.crop(analysis_obj, params_obj.cropping_window_values)
+    # if params_obj.cropping_window_values is not None:  # If no cropping, use the whole matrix
+    #     analysis_obj = Raw_Processing.crop(analysis_obj, params_obj.cropping_window_values)
 
     # save parameters and return
+    analysis_obj.params = params_obj
+    return analysis_obj
+
+
+def reprocess_raw(analysis_obj, params_obj):
+    """
+    Wrapper method to differentiate between running raw processing methods (smoothing/etc)
+    and generation of new CIUAnalysis objects. Updates ciu_data, axes, and parameters, but
+    retains all other information in the analysis_obj
+    :param analysis_obj: CIUAnalysisObj to reprocess
+    :param params_obj: Parameters object containing processing parameters
+    :return: the existing analysis object with reprocessed ciu_data and axes
+    """
+    # ALTERNATIVE METHOD - rename to 'update params' and only change params obj...
+
+
+    raw_obj = analysis_obj.raw_obj
+    norm_data = Raw_Processing.normalize_by_col(raw_obj.rawdata)
+    axes = (raw_obj.dt_axis, raw_obj.cv_axis)
+    analysis_obj.ciu_data = norm_data
+    analysis_obj.axes = axes
+
+    # interpolate data if desired
+    if params_obj.interpolation_bins is not None:
+        norm_data, axes = Raw_Processing.interpolate_cv(norm_data, axes, params_obj.interpolation_bins)
+
+    # Smooth data if desired (column-by-column)
+    if params_obj.smoothing_window is not None:
+        i = 0
+        while i < params_obj.smoothing_iterations:
+            norm_data = Raw_Processing.sav_gol_smooth(norm_data, params_obj.smoothing_window)
+            i += 1
+
+    # check for previously saved cropping and use those values if present
+    if analysis_obj.crop_vals is not None:
+        analysis_obj = Raw_Processing.crop(analysis_obj, analysis_obj.crop_vals)
+
     analysis_obj.params = params_obj
     return analysis_obj
 
@@ -775,14 +934,29 @@ class CropUI(object):
         self.crop_vals = []
 
     def run(self):
+        """
+        Run the UI and return the output values
+        :return: List of crop values [dt low, dt high, cv low, cv high]
+        """
         self.mainwindow.mainloop()
+        return self.return_values()
 
     def on_close_window(self):
+        """
+        Quit the mainwindow to stop the mainloop and get it to return
+        the crop values, then destroy it to remove it from screen.
+        :return: the provided crop values, or None if none were provided
+        """
+        self.mainwindow.quit()
         self.mainwindow.destroy()
+        return self.return_values()
 
     def on_button_cancel_clicked(self):
-        # close the window without changing anything
-        self.on_close_window()
+        """
+        Close the UI window and return None
+        :return: will return None from on_close_window
+        """
+        return self.on_close_window()
 
     def on_button_crop_clicked(self):
         """
@@ -817,7 +991,7 @@ class CropUI(object):
 
         # if all values are valid, save the list and close the window
         self.crop_vals = [dt_low, dt_high, cv_low, cv_high]
-        self.on_close_window()
+        return self.on_close_window()
 
     def return_values(self):
         """
@@ -830,9 +1004,22 @@ class CropUI(object):
             return None
 
 
+def run_crop_ui():
+    """
+    Run the crop UI widget from PyGuBu to get cropping values and return them
+    :return: List of crop values [dt_low, dt_high, cv_low, cv_high], or None if none were specified or
+    the user hit the 'cancel' button
+    """
+    crop_app = CropUI()
+    crop_vals = crop_app.run()
+    return crop_vals
+
+
 if __name__ == '__main__':
     # Build the GUI and start its mainloop (run) method
     root = tk.Tk()
     root.withdraw()
     ciu_app = CIUSuite2(root)
     ciu_app.run()
+    # test = run_crop_ui()
+    # print(test)

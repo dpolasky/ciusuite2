@@ -33,6 +33,7 @@ class CIUAnalysisObj(object):
         self.raw_obj_list = None    # used for replicates (averaged fingerprints) only
         self.ciu_data = ciu_data
         self.axes = axes            # convention: axis 0 = DT, axis 1 = CV
+        self.crop_vals = None
         self.params = Parameters()
         self.filename = None        # filename of .ciu file saved
 
