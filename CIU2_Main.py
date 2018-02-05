@@ -7,6 +7,7 @@ a (very) basic GUI of some kind.
 # GUI test
 import tkinter as tk
 import pygubu
+import pygubu.widgets.simpletooltip as tooltip
 from tkinter import filedialog
 from tkinter import simpledialog
 from tkinter import messagebox
@@ -67,11 +68,13 @@ class CIUSuite2(object):
             'on_button_gaussfit_clicked': self.on_button_gaussfit_clicked,
             'on_button_ciu50_clicked': self.on_button_ciu50_clicked,
             'on_button_ciu50_gaussian_clicked': self.on_button_ciu50_gaussian_clicked,
-            'on_button_feature_detect_clicked': self.on_button_feature_detect_clicked,
+            'on_button_feature_gaussian_clicked': self.on_button_feature_gaussian_clicked,
+            'on_button_feature_changept_clicked': self.on_button_feature_changept_clicked,
             'on_button_classification_supervised_clicked': self.on_button_classification_supervised_clicked,
             'on_section_params_oldciu_clicked': self.on_section_params_oldciu_clicked
         }
         builder.connect_callbacks(callbacks)
+        self.initialize_tooltips()
 
         # load parameter file
         self.params_obj = CIU_Params.Parameters()
@@ -95,6 +98,42 @@ class CIUSuite2(object):
         """
         self.mainwindow.destroy()
         self.tk_root.destroy()
+
+    def initialize_tooltips(self):
+        """
+        Register tooltips for all buttons/widgets that need tooltips
+        :return: void
+        """
+        tooltip.create(self.builder.get_object('Text_analysis_list'), 'Selected .ciu files appear here. Any processing will be '
+                                                                      '\nperformed on all files in the table, unless the '
+                                                                      '\nboxes below indicate only a subset of the files.')
+        tooltip.create(self.builder.get_object('Text_ParamsMatch'), 'When parameters are edited, this box displays if edits have been saved to the .ciu files')
+        tooltip.create(self.builder.get_object('Button_RawFile'), 'Select text files to analyze. Data will be loaded and converted to generate a .ciu file, '
+                                                                  '\nwhich will appear in the table below')
+        tooltip.create(self.builder.get_object('Button_AnalysisFile'), 'Select previously processed .ciu files to load. Files will be displayed in the table below')
+        tooltip.create(self.builder.get_object('Button_change_outputdir'), 'Select a new directory in which to save output files, including .ciu files.'
+                                                                           '\nBy default, this is set to the directory containing the loaded .csv or .ciu '
+                                                                           '\n files in the table.')
+        tooltip.create(self.builder.get_object('Button_reproc_files'), 'THIS BUTTON IS WAITING FOR A FINAL DECISION ON HOW WE ARE HANDLING PARAMETER EDITS AND DOES THE'
+                                                                       '\nSAME THING AS RESTORE ORIGINAL DATA FOR NOW')
+        tooltip.create(self.builder.get_object('Button_restore_raw'), 'Clears ALL previous processing, cropping, and analysis from a .ciu file, restoring the original raw data.'
+                                                                      '\nCannot be undone')
+        tooltip.create(self.builder.get_object('Entry_start_files'), 'To process only some files in the table above, enter the number corresponding to the beginning'
+                                                                     '\nof the range of files to analyze. Must be an integer value only')
+        tooltip.create(self.builder.get_object('Entry_end_files'), 'To process only some files in the table above, enter the number corresponding to the end'
+                                                                   '\nof the range of files to analyze. Must be an integer value only')
+        tooltip.create(self.builder.get_object('Button_old_plot'), 'Generate a CIU fingerprint plot for all files in the table above')
+        tooltip.create(self.builder.get_object('Button_old_compare'), 'Perform RMSD comparisons between the files in the table above.')
+        tooltip.create(self.builder.get_object('Button_old_average'), 'Average selected fingerprints in the table above to form a new .ciu file with the'
+                                                                      '\naveraged data. Intended only for replicate analyses of the same data. '
+                                                                      '\nUse the range entries beneath the table to select replicate data if multiple'
+                                                                      '\ndatasets are present in the table.')
+        tooltip.create(self.builder.get_object('Button_old_deltadt'), 'Convert selected files to a delta-drift time axis. Each file has its drift time axis'
+                                                                      '\nshifted such that the apex/peak drift time in the first (lowest energy) column is '
+                                                                      '\nset to 0. This enables RMSD comparisons of shifting drift times separately from '
+                                                                      '\ndifferences in starting/initial drift time.')
+        tooltip.create(self.builder.get_object('Button_crop'), 'Crop CIU data in one or both axes. A popup window will open to input crop dimensions'
+                                                               '\nUpdates the .ciu file with the cropped data and axes. To undo, use the Restore Original Data button.')
 
     def on_button_rawfile_clicked(self):
         """
@@ -620,7 +659,7 @@ class CIUSuite2(object):
         self.display_analysis_files()
         self.progress_done()
 
-    def on_button_feature_detect_clicked(self):
+    def on_button_feature_gaussian_clicked(self):
         """
         Run Gaussian-based feature detection routine. Ensure Gaussians have been fit previously.
         :return: void
@@ -645,9 +684,34 @@ class CIUSuite2(object):
             filename = save_analysis_obj(analysis_obj, outputdir=self.output_dir)
             new_file_list.append(filename)
 
-            Feature_Detection.plot_feature_gaussians(analysis_obj, self.output_dir)
+            Feature_Detection.plot_features(analysis_obj, self.output_dir, mode='gaussian')
             outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_features.csv')
-            Feature_Detection.print_features_list(analysis_obj.features_gaussian, outputpath)
+            Feature_Detection.print_features_list(analysis_obj.features_gaussian, outputpath, mode='gaussian')
+            self.update_progress(files_to_read.index(file), len(files_to_read))
+
+        self.display_analysis_files()
+        self.progress_done()
+
+    def on_button_feature_changept_clicked(self):
+        """
+        Run simple flat feature detection routine. Does NOT require Gaussian fitting
+        :return: void
+        """
+        files_to_read = self.check_file_range_entries()
+        self.progress_started()
+        new_file_list = []
+
+        for file in files_to_read:
+            # load file
+            analysis_obj = load_analysis_obj(file)
+
+            analysis_obj = Feature_Detection.feature_detect_changept(analysis_obj)
+            filename = save_analysis_obj(analysis_obj, outputdir=self.output_dir)
+            new_file_list.append(filename)
+
+            Feature_Detection.plot_features(analysis_obj, self.output_dir, mode='changept')
+            outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_features.csv')
+            Feature_Detection.print_features_list(analysis_obj.features_changept, outputpath, mode='changept')
             self.update_progress(files_to_read.index(file), len(files_to_read))
 
         self.display_analysis_files()

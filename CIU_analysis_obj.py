@@ -58,6 +58,7 @@ class CIUAnalysisObj(object):
         self.gauss_fit_stats = None
 
         self.features_gaussian = None
+        self.features_changept = None
 
     def __str__(self):
         """

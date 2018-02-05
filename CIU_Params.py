@@ -9,7 +9,28 @@ from tkinter import messagebox
 # Dictionary containing descriptions of all parameters for display in menus/etc
 PARAM_DESCRIPTIONS = {'smoothing_method': 'Method with which to smooth data. Savitsky-Golay or None',
                       'smoothing_window': 'Size of the filter for the applied smoothing method. Default is 5',
-                      'smoothing_iterations': 'the number of times to apply the smoothing. Default is 1'}
+                      'smoothing_iterations': 'the number of times to apply the smoothing. Default is 1',
+
+                      'plot_x_title': 'title to display on x - axis of CIU plot',
+                      'interpolation_bins': 'If provided, the data will be interpolated along the collision voltage axis to have the specified number of bins',
+                      'plot_y_title': 'title to display on y - axis of CIU plot',
+                      'plot_extension': 'file format in which to save CIU plot(acceptable values are .png, .pdf, .jpg)',
+                      'save_output_csv': 'Whether to write an _raw.csv output file with the processed data (True or False)',
+                      'output_title': 'Optional title for the plot. If provided, will label the plot with the title; otherwise, the name of the raw file is used for the title.',
+
+                      'min_feature_length': 'The minimum number of points (collision voltages) across which a feature must be present to be counted as a real feature. Default = 3. Decrease to catch small features (if real) present at only a few collision voltages (e.g. quick transitions and/or large voltage steps).',
+                      'flat_width_tolerance': 'tolerance (in drift bins) around the most common apex drift bin for a CV column to allow for inclusion into a feature. Default = 4. Higher values allow more slanted features to be detected/allowed, but may result in poor fitting. Lower values result in strict filtering to very flat features only.',
+                      'combine_output_file': '',
+                      'cv_gap_tolerance': '',
+                      'ciu50_mode': '',
+
+                      'gaussian_int_threshold': 'Minimum intensity to allow a peak to be fit. Default: 0.1 (10%)',
+                      'gaussian_width_max': 'An optional filter to remove noise peaks from future analysis steps and plotting. Removes any peak from analysis with a width greater than the parameter. Default: 4',
+                      'gaussian_centroid_bound_filter': 'Optional filter to remove peaks from plotting and analysis outside provided DT bounds. format: [DT_lower_bound, DT_upper_bound]',
+                      'gaussian_centroid_plot_bounds': 'Optional DT-axis bounds for displaying centroids in plot (only in plot, no change to analysis) format: [DT_lower_bound, DT_upper_bound]',
+                      'gaussian_width_fraction': 'Parameter describing approximate width ratio of peaks prior to fit. Default 0.01 (typically doesnt need to be adjusted by user)',
+                      'gaussian_convergence_r2': 'The minimum r squared value for the multi-peak fitting to accept. The program will attempt to fit a single peak to the data, and will add peaks until the convergence fit is reached. If overfitting is occurring (too many peaks), reduce this value. In underfitting is occurring, increase it.'
+                      }
 
 # Dictionary containing value requirements for all parameters as tuples of (type, value range/list])
 PARAM_REQS = {'smoothing_method': ('string', ['Savitsky-Golay', 'None']),
@@ -225,7 +246,7 @@ class ParamUI(tkinter.Toplevel):
                     param_string += '{}: value must be one of ({})\n'.format(param, vals_string)
                 else:
                     # print type only for float/int
-                    param_string += '{}: value type must be {}\n'.format(param, PARAM_REQS[param][0])
+                    param_string += '{}: value type must be {}, and within bounds\n'.format(param, PARAM_REQS[param][0])
             messagebox.showwarning(title='Parameter Error', message=param_string)
             return
 

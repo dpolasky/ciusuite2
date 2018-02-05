@@ -144,7 +144,7 @@ def feature_detect_gaussians(analysis_obj):
             new_feature.gaussians.append(gaussian)
             features.append(new_feature)
     # filter features to remove 'loners' without a sufficient number of points
-    filtered_features = filter_features(features, analysis_obj.params.min_feature_length)
+    filtered_features = filter_features(features, analysis_obj.params.min_feature_length, mode='gaussian')
     analysis_obj.features_gaussian = filtered_features
     return analysis_obj
 
@@ -191,17 +191,24 @@ def compute_transitions_gaussian(analysis_obj, adjusted_features):
     return transition_list
 
 
-def filter_features(features, min_feature_length):
+def filter_features(features, min_feature_length, mode):
     """
     Remove any features below the specified minimum feature length from the feature list
     :param features: list of Features
     :param min_feature_length: minimum length (number of gaussians) to be included in a feature
+    :param mode: gaussian or changepoint: whether features are from gaussian fitting or changept detection
     :return: filtered feature list with too-small features removed
     """
     filtered_list = []
     for feature in features:
-        if len(feature.gaussians) >= min_feature_length:
-            filtered_list.append(feature)
+        if mode == 'gaussian':
+            if len(feature.gaussians) >= min_feature_length:
+                filtered_list.append(feature)
+        elif mode == 'changept':
+            if len(feature.cvs) >= min_feature_length:
+                filtered_list.append(feature)
+        else:
+            print('invalid mode')
     return filtered_list
 
 
@@ -236,12 +243,13 @@ def adjust_gauss_features(analysis_obj):
     return adjusted_features
 
 
-def plot_feature_gaussians(analysis_obj, outputdir):
+def plot_features(analysis_obj, outputdir, mode):
     """
     Generate a plot of features using gaussian-based feature fitting data previously saved
     to a CIUAnalysisObj.
     :param analysis_obj: CIUAnalysisObj with fitting data previously saved to obj.features_gaussian
     :param outputdir: directory in which to save output
+    :param mode: gaussian or changept: whether features are from Gaussian or Changepoint based fitting
     :return: void
     """
     # plot the initial CIU contour plot for reference
@@ -256,43 +264,62 @@ def plot_feature_gaussians(analysis_obj, outputdir):
     # prepare and plot the actual transition using fitted parameters
     feature_index = 1
 
-    for feature in analysis_obj.features_gaussian:
-        feature_x = [gaussian.cv for gaussian in feature.gaussians]
-        feature_y = [feature.gauss_median_centroid for x in feature.gaussians]
-        lines = plt.plot(feature_x, feature_y, label='Feature {} median: {:.2f}'.format(feature_index,
-                                                                                        feature.gauss_median_centroid))
-        feature_index += 1
-        plt.setp(lines, linewidth=3, linestyle='--')
+    if mode == 'gaussian':
+        for feature in analysis_obj.features_gaussian:
+            feature_x = [gaussian.cv for gaussian in feature.gaussians]
+            feature_y = [feature.gauss_median_centroid for x in feature.gaussians]
+            lines = plt.plot(feature_x, feature_y, label='Feature {} median: {:.2f}'.format(feature_index,
+                                                                                            feature.gauss_median_centroid))
+            feature_index += 1
+            plt.setp(lines, linewidth=3, linestyle='--')
+    elif mode == 'changept':
+        for feature in analysis_obj.features_changept:
+            feature_x = feature.cvs
+            feature_y = feature.dt_max_vals
+            lines = plt.plot(feature_x, feature_y, label='Feature {} median: {:.2f}'.format(feature_index,
+                                                                                            np.median(feature.dt_max_vals)))
+            feature_index += 1
+            plt.setp(lines, linewidth=3, linestyle='--')
+    else:
+        print('invalid mode')
     plt.legend(loc='best')
     output_path = os.path.join(outputdir, analysis_obj.filename.rstrip('.ciu') + '_features' + analysis_obj.params.plot_extension)
     plt.savefig(output_path)
     plt.clf()
 
 
-def print_features_list(feature_list, outputpath):
+def print_features_list(feature_list, outputpath, mode):
     """
     Write feature information to file
     :param feature_list: list of Feature objects
     :param outputpath: directory in which to save output
+    :param mode: gaussian or changepoint
     :return: void
     """
     with open(outputpath, 'w') as outfile:
         index = 1
         for feature in feature_list:
-            outfile.write('Feature {},Median centroid:,{:.2f},CV range:,{} - {}\n'.format(index,
-                                                                                          feature.gauss_median_centroid,
-                                                                                          feature.cvs[0],
-                                                                                          feature.cvs[len(feature.cvs) - 1]))
-            outfile.write('CV (V), Centroid, Amplitude, Width, Baseline, FWHM, Resolution\n')
-            for gaussian in feature.gaussians:
-                outfile.write(gaussian.print_info() + '\n')
+
+            if mode == 'gaussian':
+                outfile.write('Feature {},Median centroid:,{:.2f},CV range:,{} - {}\n'.format(index,
+                                                                                              feature.gauss_median_centroid,
+                                                                                              feature.cvs[0],
+                                                                                              feature.cvs[len(feature.cvs) - 1]))
+                outfile.write('CV (V), Centroid, Amplitude, Width, Baseline, FWHM, Resolution\n')
+                for gaussian in feature.gaussians:
+                    outfile.write(gaussian.print_info() + '\n')
+            else:
+                outfile.write('Feature {},Median centroid:,{:.2f},CV range:,{} - {}\n'.format(index,
+                                                                                              np.median(feature.dt_max_vals),
+                                                                                              feature.cvs[0],
+                                                                                              feature.cvs[len(feature.cvs) - 1]))
+                outfile.write('CV (V),Peak Drift Time')
+                cv_index = 0
+                for cv in feature.cvs:
+                    outfile.write('{},{:.2f}\n'.format(cv, feature.dt_max_vals[cv_index]))
+                    cv_index += 1
 
             index += 1
-            # cvline = 'CV:,' + ','.join(['{:.2f}'.format(x) for x in feature.cvs])
-            # centroidline = 'Centroid:,' + ','.join(['{:.2f}'.format(x) for x in feature.centroids])
-            # outfile.write('Feature,{}\nmean centroid,{},length,{}\n{}\n{}\n\n'
-            #               .format(index, feature.mean_centroid, feature.length, cvline, centroidline))
-            # index += 1
 
 
 class Transition(object):
@@ -723,6 +750,23 @@ def fit_logistic(x_axis, y_data, guess_center, guess_min, guess_max, steepness_g
     return popt, pcov
 
 
+def feature_detect_changept(analysis_obj):
+    """
+    Run changepoint detection based feature finding. Represents the first half of the original
+    changepoint-based CIU50 method, but saves features to the analysis object for plotting/viewing.
+    :param analysis_obj: CIUAnalysisObj
+    :return: updated Analysis object with features_changepoint set
+    """
+    change_indices, change_cvs = changepoint_detect(analysis_obj)
+    features_list = partition_to_features(analysis_obj,
+                                          change_indices,
+                                          analysis_obj.params.min_feature_length,
+                                          analysis_obj.params.flat_width_tolerance)
+    filtered_features = filter_features(features_list, analysis_obj.params.min_feature_length, mode='changept')
+    analysis_obj.features_changept = filtered_features
+    return analysis_obj
+
+
 def ciu50_main(analysis_obj, outputdir):
     """
     Primary feature detection runner method. Calls appropriate sub-methods using data and
@@ -731,12 +775,14 @@ def ciu50_main(analysis_obj, outputdir):
     :param outputdir: directory in which to save output
     :return: updated analysis object with feature detect information saved
     """
-    change_indices, change_cvs = changepoint_detect(analysis_obj)
-    features_list = partition_to_features(analysis_obj,
-                                          change_indices,
-                                          analysis_obj.params.min_feature_length,
-                                          analysis_obj.params.flat_width_tolerance)
-    transitions_list = compute_transitions(analysis_obj, features_list)
+    # change_indices, change_cvs = changepoint_detect(analysis_obj)
+    # features_list = partition_to_features(analysis_obj,
+    #                                       change_indices,
+    #                                       analysis_obj.params.min_feature_length,
+    #                                       analysis_obj.params.flat_width_tolerance)
+    if analysis_obj.features_changept is None:
+        analysis_obj = feature_detect_changept(analysis_obj)
+    transitions_list = compute_transitions(analysis_obj, analysis_obj.features_changept)
     if len(transitions_list) == 0:
         print('No transitions found for file {}'.format(os.path.basename(analysis_obj.filename).rstrip('.ciu')))
     for transition in transitions_list:
@@ -753,6 +799,9 @@ def ciu50_gaussians(analysis_obj, outputdir):
     :param outputdir: directory in which to save output
     :return: analysis object
     """
+    if analysis_obj.features_gaussian is None:
+        feature_detect_gaussians(analysis_obj)
+
     # Adjust Features to avoid inclusion of any points without col maxes
     adj_features = adjust_gauss_features(analysis_obj)
 
