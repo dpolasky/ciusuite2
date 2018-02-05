@@ -330,12 +330,43 @@ class CIUSuite2(object):
         with any changed parameters (and reprocess data?)
         :return: void
         """
-        key_list = ['smoothing_method', 'smoothing_iterations']
-        param_ui = CIU_Params.ParamUI('test section', self.params_obj, key_list)
-        # wait for user to close the window
+        title = 'Smoothing Parameters'
+        key_list = ['smoothing_method', 'smoothing_window', 'smoothing_iterations']
+        self.run_param_ui(title, key_list)
+
+        # param_ui = CIU_Params.ParamUI('Smoothing Parameters', self.params_obj, key_list)
+        #
+        # # wait for user to close the window
+        # param_ui.wait_window()
+        # # print(param_ui.return_code)
+        #
+        # # Only update parameters if the user clicked 'okay' (didn't click cancel or close the window)
+        # if param_ui.return_code == 0:
+        #     return_vals = param_ui.refresh_values()
+        #     # print(return_vals)
+        #     self.params_obj.set_params(return_vals)
+        # # self.params_obj.print_params_to_console()
+        # self.run()
+
+    def run_param_ui(self, section_title, list_of_param_keys):
+        """
+        Run the parameter UI for a given set of parameters.
+        :param section_title: Title to display on the popup parameter editing window (string)
+        :param list_of_param_keys: List of parameter keys. All values MUST be parameter names (as in
+        the __init__ method of the Parameters object.
+        :return: void
+        """
+        param_ui = CIU_Params.ParamUI(section_name=section_title,
+                                      params_obj=self.params_obj,
+                                      key_list=list_of_param_keys)
         param_ui.wait_window()
-        return_vals = param_ui.refresh_values()
-        print(return_vals)
+
+        # Only update parameters if the user clicked 'okay' (didn't click cancel or close the window)
+        if param_ui.return_code == 0:
+            return_vals = param_ui.refresh_values()
+            self.params_obj.set_params(return_vals)
+        self.check_params()
+        self.run()
 
     def on_button_oldplot_clicked(self):
         """
@@ -681,7 +712,7 @@ class CIUSuite2(object):
             self.builder.get_object('Text_ParamsMatch').config(state=tk.DISABLED)
         else:
             file_string = ','.join([str(x) for x in mismatched_files])
-            mismatch_string = 'Non-synchronized params in files {}'.format(file_string)
+            mismatch_string = 'Unsynchronized parameters in file(s): {}'.format(file_string)
             self.builder.get_object('Text_ParamsMatch').config(state=tk.NORMAL)
             self.builder.get_object('Text_ParamsMatch').delete(1.0, tk.INSERT)
             self.builder.get_object('Text_ParamsMatch').insert(tk.INSERT, mismatch_string)
@@ -798,7 +829,7 @@ def process_raw_obj(raw_obj, params_obj):
         norm_data, axes = Raw_Processing.interpolate_cv(norm_data, axes, params_obj.interpolation_bins)
 
     # Smooth data if desired (column-by-column)
-    if params_obj.smoothing_window is not None:
+    if params_obj.smoothing_window is not None and params_obj.smoothing_method is not None:
         i = 0
         while i < params_obj.smoothing_iterations:
             norm_data = Raw_Processing.sav_gol_smooth(norm_data, params_obj.smoothing_window)

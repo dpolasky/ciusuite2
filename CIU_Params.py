@@ -3,11 +3,18 @@ Module for Parameter object to hold parameter information in analysis objects an
 parameter UI, etc
 """
 import tkinter
+import numpy as np
+from tkinter import messagebox
 
 # Dictionary containing descriptions of all parameters for display in menus/etc
 PARAM_DESCRIPTIONS = {'smoothing_method': 'Method with which to smooth data. Savitsky-Golay or None',
                       'smoothing_window': 'Size of the filter for the applied smoothing method. Default is 5',
                       'smoothing_iterations': 'the number of times to apply the smoothing. Default is 1'}
+
+# Dictionary containing value requirements for all parameters as tuples of (type, value range/list])
+PARAM_REQS = {'smoothing_method': ('string', ['Savitsky-Golay', 'None']),
+              'smoothing_window': ('int', [0, np.inf]),
+              'smoothing_iterations': ('int', [0, np.inf])}
 
 
 class Parameters(object):
@@ -50,7 +57,7 @@ class Parameters(object):
         self.combine_output_file = None
         self.ciu50_mode = None
         self.cv_gap_tolerance = None
-        self.params_dict = None
+        self.params_dict = {}
 
     def set_params(self, params_dict):
         """
@@ -67,7 +74,7 @@ class Parameters(object):
                 # no such parameter
                 print('No parameter name for param: ' + name)
                 continue
-        self.params_dict = params_dict
+        self.update_dict()
 
     def print_params_to_console(self):
         """
@@ -88,6 +95,15 @@ class Parameters(object):
             if not self.params_dict[param_key] == other_params.params_dict[param_key]:
                 return False
         return True
+
+    def update_dict(self):
+        """
+        Build (or rebuild) a dictionary of all attributes contained in this object
+        :return: void
+        """
+        for field in vars(self):
+            value = self.__getattribute__(field)
+            self.params_dict[field] = value
 
 
 def parse_params_file(params_file):
@@ -155,35 +171,115 @@ class ParamUI(tkinter.Toplevel):
         """
         tkinter.Toplevel.__init__(self)
         self.title(section_name)
+        self.return_code = -2
 
-        # return values = list by parameter of the entry
-        self.return_vals = []
-        self.entry_vars = []
+        # return values = dictionary by parameter of the entry
+        self.return_vals = {}
+        self.keys = key_list
+        self.entry_vars = {}
 
         # display a label (name), entry (value), and label (description) for each parameter in the key list
         row = 0
         for param_key in key_list:
             entry_var = tkinter.StringVar()
+            # Get the current parameter value to display, or 'None' if the value is not set
+            if params_obj.params_dict[param_key] is not None:
+                entry_var.set(params_obj.params_dict[param_key])
+            else:
+                entry_var.set('None')
 
-            name = param_key
-            value = params_obj.params_dict[param_key]
-            description = PARAM_DESCRIPTIONS[param_key]
-            label = tkinter.Label(self, text=name).grid(row=row, column=0)
+            # display the parameter name, value, and description
+            tkinter.Label(self, text=param_key).grid(row=row, column=0)
+            tkinter.Entry(self, textvariable=entry_var).grid(row=row, column=1)
+            tkinter.Label(self, text=PARAM_DESCRIPTIONS[param_key]).grid(row=row, column=2)
 
-            entry = tkinter.Entry(self, textvariable=entry_var).grid(row=row, column=1)
-            self.entry_vars.append(entry_var)
-
-            label2 = tkinter.Label(self, text=description).grid(row=row, column=2)
+            self.entry_vars[param_key] = entry_var
             row += 1
+
+        # Finally, add 'okay' and 'cancel' buttons to the bottom of the dialog
+        tkinter.Button(self, text='Cancel', command=self.cancel_button_click).grid(row=row, column=0)
+        tkinter.Button(self, text='OK', command=self.ok_button_click).grid(row=row, column=1)
+
+    def ok_button_click(self):
+        """
+        When the user clicks 'OK', confirm that all values are valid and if so, close the window.
+        If not, prompt for corrective action.
+        :return: void
+        """
+        fail_params = []
+        for param_key in self.keys:
+            if not self.check_param_value(param_key):
+                fail_params.append(param_key)
+
+        if len(fail_params) == 0:
+            # no params failed, so close window and update parameter values
+            self.return_code = 0
+            self.on_close_window()
+        else:
+            # some parameters failed. Tell the user which ones and keep the window open
+            param_string = 'The following parameter(s) have inappropriate values:\n'
+            for param in fail_params:
+                if PARAM_REQS[param][0] == 'string' or PARAM_REQS[param][0] == 'bool':
+                    # print acceptable values list for string/bool
+                    vals_string = ', '.join(PARAM_REQS[param][1])
+                    param_string += '{}: value must be one of ({})\n'.format(param, vals_string)
+                else:
+                    # print type only for float/int
+                    param_string += '{}: value type must be {}\n'.format(param, PARAM_REQS[param][0])
+            messagebox.showwarning(title='Parameter Error', message=param_string)
+            return
+
+    def check_param_value(self, param_key):
+        """
+        Check an individual parameter against its requirements
+        :param param_key: key to parameter dictionary to be checked
+        :return: True if the current value of the corresponding entry is valid, False if not
+        """
+        param_type = PARAM_REQS[param_key][0]
+        param_val_list = PARAM_REQS[param_key][1]
+        if param_type == 'int':
+            # If the param is an int, the value must be within the values specified in the requirement tuple
+            try:
+                entered_val = int(self.entry_vars[param_key].get())
+            except ValueError:
+                return False
+            return param_val_list[0] <= entered_val <= param_val_list[1]
+
+        elif param_type == 'float':
+            try:
+                entered_val = float(self.entry_vars[param_key].get())
+            except ValueError:
+                return False
+            return param_val_list[0] <= entered_val <= param_val_list[1]
+
+        elif param_type == 'string' or param_type == 'bool':
+            # check whether the string or "boolean" (really a string) value is in the allowed list
+            return self.entry_vars[param_key].get() in param_val_list
+
+    def cancel_button_click(self):
+        """
+        Close the window and return without updating any parameter values
+        :return: void
+        """
+        self.return_code = -1
+        self.on_close_window()
 
     def refresh_values(self):
         """
         Update the values for all parameters
         :return:
         """
-        for entry in self.entry_vars:
-            self.return_vals.append(entry.get())
+        for key in self.entry_vars.keys():
+            self.return_vals[key] = self.entry_vars[key].get()
         return self.return_vals
+
+    def on_close_window(self):
+        """
+        Close the window
+        :return: void
+        """
+        self.quit()
+        self.destroy()
 
 
 def test_param_ui():
