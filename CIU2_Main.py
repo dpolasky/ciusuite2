@@ -13,10 +13,12 @@ from tkinter import simpledialog
 from tkinter import messagebox
 import os
 import Raw_Processing
+from CIU_raw import CIURaw
 import Gaussian_Fitting
 from CIU_analysis_obj import CIUAnalysisObj
 import pickle
 import CIU_Params
+from CIU_Params import Parameters
 import Original_CIU
 import numpy as np
 import Feature_Detection
@@ -370,9 +372,10 @@ class CIUSuite2(object):
         :return: void
         """
         title = 'Smoothing Parameters'
-        key_list = ['smoothing_method', 'smoothing_window', 'smoothing_iterations']
+        # key_list = ['smoothing_1_method', 'smoothing_2_window', 'smoothing_3_iterations']
+        key_list = [x for x in self.params_obj.params_dict.keys() if 'smoothing' in x]
         self.run_param_ui(title, key_list)
-
+        self.run()
         # param_ui = CIU_Params.ParamUI('Smoothing Parameters', self.params_obj, key_list)
         #
         # # wait for user to close the window
@@ -395,6 +398,7 @@ class CIUSuite2(object):
         the __init__ method of the Parameters object.
         :return: void
         """
+        list_of_param_keys = sorted(list_of_param_keys)     # keep parameter keys in alphabetical order
         param_ui = CIU_Params.ParamUI(section_name=section_title,
                                       params_obj=self.params_obj,
                                       key_list=list_of_param_keys)
@@ -405,13 +409,16 @@ class CIUSuite2(object):
             return_vals = param_ui.refresh_values()
             self.params_obj.set_params(return_vals)
         self.check_params()
-        self.run()
+        # self.run()
 
     def on_button_oldplot_clicked(self):
         """
         Run old CIU plot method to generate a plot in the output directory
         :return: void (saves to output dir)
         """
+        plot_keys = [x for x in self.params_obj.params_dict.keys() if 'ciuplot' in x]
+        self.run_param_ui('Plot parameters', plot_keys)
+
         # Determine if a file range has been specified
         files_to_read = self.check_file_range_entries()
         self.progress_started()
@@ -552,6 +559,9 @@ class CIUSuite2(object):
         the current list in place). Saves Gaussian diagnostics/info to file in self.output_dir
         :return: void
         """
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'gaussian' in x]
+        self.run_param_ui('Gaussian Fitting Parameters', param_keys)
+
         # Determine if a file range has been specified
         files_to_read = self.check_file_range_entries()
         self.progress_started()
@@ -869,6 +879,7 @@ def generate_raw_obj(raw_file):
     """
     Open an _raw.csv file and read its data into a CIURaw object to return
     :param raw_file: (string) filename of the _raw.csv file to read
+    :rtype: CIURaw
     :return: CIURaw object with raw data, filename, and axes
     """
     raw_obj = Raw_Processing.get_data(raw_file)
@@ -881,7 +892,10 @@ def process_raw_obj(raw_obj, params_obj):
     on a raw file using the parameters provided in a Parameters object. Returns a NEW
     analysis object with the processed data
     :param raw_obj: the CIURaw object containing the raw data to process
+    :type raw_obj: CIURaw
     :param params_obj: Parameters object containing processing parameters
+    :type params_obj: Parameters
+    :rtype: CIUAnalysisObj
     :return: CIUAnalysisObj with processed data
     """
     # normalize data and save axes information
@@ -895,7 +909,7 @@ def process_raw_obj(raw_obj, params_obj):
     # Smooth data if desired (column-by-column)
     if params_obj.smoothing_window is not None and params_obj.smoothing_method is not None:
         i = 0
-        while i < params_obj.smoothing_iterations:
+        while i < params_obj.smoothing_num_iterations:
             norm_data = Raw_Processing.sav_gol_smooth(norm_data, params_obj.smoothing_window)
             i += 1
 
@@ -911,13 +925,29 @@ def process_raw_obj(raw_obj, params_obj):
     return analysis_obj
 
 
+def update_params_in_obj(analysis_obj, params_obj):
+    """
+    Save the provided parameters object over the analysis_obj's current parameters object
+    :param analysis_obj: CIUAnalysisObj object
+    :param params_obj: Parameters object
+    :type params_obj: Parameters
+    :rtype: CIUAnalysisObj
+    :return: updated analysis_obj
+    """
+    analysis_obj.params = params_obj
+    return analysis_obj
+
+
 def reprocess_raw(analysis_obj, params_obj):
     """
     Wrapper method to differentiate between running raw processing methods (smoothing/etc)
     and generation of new CIUAnalysis objects. Updates ciu_data, axes, and parameters, but
     retains all other information in the analysis_obj
     :param analysis_obj: CIUAnalysisObj to reprocess
+    :type analysis_obj: CIUAnalysisObj
     :param params_obj: Parameters object containing processing parameters
+    :type params_obj: Parameters
+    :rtype: CIUAnalysisObj
     :return: the existing analysis object with reprocessed ciu_data and axes
     """
     # ALTERNATIVE METHOD - rename to 'update params' and only change params obj...
@@ -936,7 +966,7 @@ def reprocess_raw(analysis_obj, params_obj):
     # Smooth data if desired (column-by-column)
     if params_obj.smoothing_window is not None:
         i = 0
-        while i < params_obj.smoothing_iterations:
+        while i < params_obj.smoothing_num_iterations:
             norm_data = Raw_Processing.sav_gol_smooth(norm_data, params_obj.smoothing_window)
             i += 1
 
@@ -953,6 +983,8 @@ def average_ciu(analysis_obj_list):
     Generate and save replicate object (a CIUAnalysisObj with averaged ciu_data and a list
     of raw_objs) that can be used for further analysis
     :param analysis_obj_list: list of CIUAnalysisObj's to average
+    :type analysis_obj_list: list[CIUAnalysisObj]
+    :rtype: CIUAnalysisObj
     :return: averaged analysis object
     """
     raw_obj_list = []
@@ -976,6 +1008,7 @@ def save_analysis_obj(analysis_obj, filename_append='', outputdir=None):
     """
     Pickle the CIUAnalysisObj for later retrieval
     :param analysis_obj: CIUAnalysisObj to save
+    :type analysis_obj: CIUAnalysisObj
     :param filename_append: Addtional filename to append to the raw_obj name (e.g. 'AVG')
     :param outputdir: (optional) directory in which to save. Default = raw file directory
     :return: full path to save location
@@ -1000,6 +1033,7 @@ def load_analysis_obj(analysis_filename):
     """
     Load a pickled analysis object back into program memory
     :param analysis_filename: full path to file location to load
+    :rtype: CIUAnalysisObj
     :return: CIUAnalysisObj
     """
     with open(analysis_filename, 'rb') as analysis_file:

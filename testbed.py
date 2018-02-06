@@ -154,13 +154,13 @@ def ciu_plot_main(input_dir, output_dir, raw_file, smooth_window=None, crop_vals
                                     'gaussian_width_max': gaussian_width_max,
                                     'interpolation': interpolate_bins,
                                     'output_save_csv': save_csv,
-                                    'output_title': title,
-                                    'plot_extension': extension,
-                                    'plot_x_title': titlex,
-                                    'plot_y_title': titley,
-                                    'smoothing_iterations': num_smooths,
-                                    'smoothing_method': 'Savitsky-Golay',
-                                    'smoothing_window': smooth_window})
+                                    'ciuplot_3_plot_title': title,
+                                    'ciuplot_4_extension': extension,
+                                    'ciuplot_1_x_title': titlex,
+                                    'ciuplot_2_y_title': titley,
+                                    'smoothing_3_iterations': num_smooths,
+                                    'smoothing_1_method': 'Savitsky-Golay',
+                                    'smoothing_2_window': smooth_window})
 
     analysis_obj.save_gaussfits_pdf(outputpath)
     analysis_obj.plot_centroids(outputpath, centroid_plot_bounds)

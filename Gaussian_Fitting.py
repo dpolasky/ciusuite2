@@ -174,8 +174,9 @@ def filter_fits(params_list, peak_width_cutoff, intensity_cutoff, centroid_bound
         # test if the peak meets all conditions for inclusion
         include_peak = False
 
-        # ensure peak width is below the cutoff and above 0
-        if 0 < params_list[index + 3] < peak_width_cutoff:
+        # ensure peak width (FWHM) is below the cutoff and above 0
+        fwhm = 2 * math.sqrt(2 * math.log(2)) * params_list[index + 3]
+        if 0 < fwhm < peak_width_cutoff:
             # also remove amplitdues below the intensity cutoff
             if params_list[index + 1] > intensity_cutoff:
                 if centroid_bounds is not None:
@@ -213,7 +214,7 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
     filter_width_max = params_obj.gaussian_width_max
     intensity_thr = params_obj.gaussian_int_threshold
     centroid_bounds = params_obj.gaussian_centroid_bound_filter
-    centroid_plot_bounds = params_obj.gaussian_centroid_plot_bounds
+    centroid_plot_bounds = params_obj.gaussian_centroid_bounds
 
     outputpathdir = filename.rstrip('.ciu')
     outputpath = os.path.join(os.path.dirname(analysis_obj.filename), outputpathdir)

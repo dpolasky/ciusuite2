@@ -22,13 +22,14 @@ def ciu_plot(analysis_obj, params_obj, output_dir):
     """
     plt.clf()
     # save filename as plot title, unless a specific title is provided
-    if params_obj.output_title is not None:
-        output_title = params_obj.output_title
+    if params_obj.plot_title is not None:
+        plot_title = params_obj.plot_title
     else:
-        output_title = os.path.basename(analysis_obj.filename).rstrip('.ciu')
+        plot_title = ''
+    output_title = os.path.basename(analysis_obj.filename).rstrip('.ciu')
     output_path = os.path.join(output_dir, output_title + params_obj.plot_extension)
 
-    plt.title(output_title)
+    plt.title(plot_title)
     plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap='jet')
     plt.xlabel(params_obj.plot_x_title)
     plt.ylabel(params_obj.plot_y_title)
@@ -38,7 +39,7 @@ def ciu_plot(analysis_obj, params_obj, output_dir):
 
     # save csv if desired
     if params_obj.save_output_csv:
-        save_path = os.path.join(output_dir, output_title)
+        save_path = os.path.join(output_dir, plot_title)
         save_path += '_raw.csv'
         write_ciu_csv(save_path, analysis_obj.ciu_data, analysis_obj.axes)
 
