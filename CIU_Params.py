@@ -125,32 +125,19 @@ class Parameters(object):
         self.smoothing_1_method = None
         self.smoothing_2_window = None
         self.smoothing_3_iterations = None
-        # self.cropping_window_values = None
-        # self.interpolation_bins = None
         self.interp_1_method = None
         self.interp_2_bins = None
-
-        # Gaussian fitting and filtering parameters
-        # self.gaussian_int_threshold = None
-        # # self.gaussian_min_spacing = None
-        # self.gaussian_width_max = None
-        # self.gaussian_centroid_bound_filter = None
-        # self.gaussian_centroid_bounds = None
-        # self.gaussian_width_fraction = None
-        # self.gaussian_save_diagnostics = None
-        # self.gaussian_convergence_r2 = None
 
         # Plotting and saving output parameters
         self.ciuplot_4_extension = None
         self.ciuplot_3_plot_title = None
         self.ciuplot_1_x_title = None
         self.ciuplot_2_y_title = None
-
-        # self.min_feature_length = None
-        # self.flat_width_tolerance = None
-        # self.combine_output_file = None
-        # self.ciu50_mode = None
-        # self.cv_gap_tolerance = None
+        # self.compare_plot_1_x_title = None
+        # self.compare_plot_2_y_title = None
+        # self.compare_plot_3_plot_title = None
+        # self.compare_plot_4_extension = None
+        self.output_1_save_csv = None
 
         # Feature detection/CIU-50 parameters
         self.gaussian_1_convergence = None
@@ -168,8 +155,6 @@ class Parameters(object):
 
         self.ciu50_cpt_mode = None
         self.ciu50_gauss_mode = None
-
-        self.output_1_save_csv = None
 
     def set_params(self, params_dict):
         """
@@ -250,9 +235,9 @@ def parse_params_file(params_file):
                             param_dict[splits[0].strip()] = float(value)
                     except ValueError:
                         # string value - try parsing booleans or leave as a string
-                        if value in ['True', 'true', 'yes', 'Yes', 'Y', 'y']:
+                        if value.lower() in ['true', 't', 'yes', 'y']:
                             param_dict[splits[0].strip()] = True
-                        elif value in ['False', 'false', 'no', 'No', 'N', 'n']:
+                        elif value.lower() in ['false', 'f', 'no', 'n']:
                             param_dict[splits[0].strip()] = False
                         else:
                             param_dict[splits[0].strip()] = splits[1].strip()
@@ -274,7 +259,7 @@ def parse_params_file(params_file):
 def parse_param_value(param_string):
     """
     Parsing hierarchy for strings being passed (or parsed) into parameters.
-    :param param_string:
+    :param param_string: stripped line being parsed
     :return:
     """
     if param_string == 'None':
@@ -288,9 +273,9 @@ def parse_param_value(param_string):
                 return float(param_string)
         except ValueError:
             # string value - try parsing booleans or leave as a string
-            if param_string in ['True', 'true', 'yes', 'Yes', 'Y', 'y']:
+            if param_string.lower() in ['true', 'yes', 'y']:
                 return True
-            elif param_string in ['False', 'false', 'no', 'No', 'N', 'n']:
+            elif param_string.lower() in ['false', 'no', 'n']:
                 return False
             else:
                 return param_string.strip()
@@ -305,6 +290,7 @@ class ParamUI(tkinter.Toplevel):
         """
         Initialize a graphical menu with the parameters listed by key in the 'key_list' input.
         :param params_obj: Parameters object with parameter value information
+        :type params_obj: Parameters
         :param key_list: list of keys (corresponding to keys in params.obj.params_dict and also the
         PARAM_DESCRIPTIONS dict) to display in the menu.
         """
@@ -324,8 +310,16 @@ class ParamUI(tkinter.Toplevel):
         for param_key in key_list:
             entry_var = tkinter.StringVar()
             # Get the current parameter value to display, or 'None' if the value is not set
-            if params_obj.params_dict[param_key] is not None:
-                entry_var.set(params_obj.params_dict[param_key])
+            param_val = params_obj.params_dict[param_key]
+            if param_val is not None:
+                # change booleans to display as strings rather than 1 or 0
+                if isinstance(param_val, bool):
+                    if param_val:
+                        entry_var.set('true')
+                    elif not param_val:
+                        entry_var.set('false')
+                else:
+                    entry_var.set(params_obj.params_dict[param_key])
             else:
                 entry_var.set('None')
 
@@ -366,10 +360,10 @@ class ParamUI(tkinter.Toplevel):
                 if PAR_REQS[param][0] == 'string' or PAR_REQS[param][0] == 'bool':
                     # print acceptable values list for string/bool
                     vals_string = ', '.join(PAR_REQS[param][1])
-                    param_string += '{}: value must be one of ({})\n'.format(param, vals_string)
+                    param_string += '{}: value must be one of ({})\n'.format(PAR_NAMES[param], vals_string)
                 else:
                     # print type only for float/int
-                    param_string += '{}: value type must be {}, and within bounds\n'.format(param, PAR_REQS[param][0])
+                    param_string += '{}: value type must be {}, and within bounds\n'.format(PAR_NAMES[param], PAR_REQS[param][0])
             messagebox.showwarning(title='Parameter Error', message=param_string)
             return
 

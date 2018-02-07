@@ -15,6 +15,7 @@ def get_data(fname):
     """
     Read _raw.csv file and generate a CIURaw object containing its raw data and filename
     :param fname: string - path to _raw.csv file to read
+    :rtype: CIURaw
     :return: CIURaw object with rawdata, axes, and filename initialized
     """
     rawdata = np.genfromtxt(fname, missing_values=[""], filling_values=[0], delimiter=",")
@@ -97,7 +98,9 @@ def crop(analysis_obj, crop_vals):
     Crops the data and axes arrays to the nearest values specified in the crop vals list.
     If provided crop values are outside the axes, will crop to the nearest value.
     :param analysis_obj: CIUAnalysisObj with data to crop
+    :type analysis_obj: CIUAnalysisObj
     :param crop_vals: list of values to crop to in form [cv_low, cv_high, dt_low, dt_high]
+    :rtype: CIUAnalysisObj
     :return: New CIUAnalysisObj with cropped data and new axes
     """
     # Determine the indices corresponding to the values nearest to those entered by the user

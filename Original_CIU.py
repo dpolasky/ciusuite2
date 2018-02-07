@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 from CIU_analysis_obj import CIUAnalysisObj
-
+from CIU_Params import Parameters
 
 rmsd_plot_scaling = 1
 
@@ -16,29 +16,31 @@ def ciu_plot(analysis_obj, params_obj, output_dir):
     """
     Generate a CIU plot in the provided directory
     :param analysis_obj: preprocessed CIUAnalysisObj with data to be plotted
+    :type analysis_obj: CIUAnalysisObj
     :param params_obj: Parameters object with parameter information
+    :type params_obj: Parameters
     :param output_dir: directory in which to save the plot
     :return: void
     """
     plt.clf()
     # save filename as plot title, unless a specific title is provided
-    if params_obj.plot_title is not None:
-        plot_title = params_obj.plot_title
+    if params_obj.ciuplot_3_plot_title is not None:
+        plot_title = params_obj.ciuplot_3_plot_title
     else:
         plot_title = ''
     output_title = os.path.basename(analysis_obj.filename).rstrip('.ciu')
-    output_path = os.path.join(output_dir, output_title + params_obj.plot_extension)
+    output_path = os.path.join(output_dir, output_title + params_obj.ciuplot_4_extension)
 
     plt.title(plot_title)
     plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap='jet')
-    plt.xlabel(params_obj.plot_x_title)
-    plt.ylabel(params_obj.plot_y_title)
+    plt.xlabel(params_obj.ciuplot_1_x_title)
+    plt.ylabel(params_obj.ciuplot_2_y_title)
     plt.colorbar(ticks=[0, .25, .5, .75, 1])  # plot a colorbar
     plt.savefig(output_path)
     plt.close()
 
     # save csv if desired
-    if params_obj.save_output_csv:
+    if params_obj.output_1_save_csv:
         save_path = os.path.join(output_dir, plot_title)
         save_path += '_raw.csv'
         write_ciu_csv(save_path, analysis_obj.ciu_data, analysis_obj.axes)
@@ -130,8 +132,11 @@ def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir):
     Adapted to use CIUAnalysis objects as inputs, so now assumes data will be preprocessed prior
     to running this method.
     :param analysis_obj1: preprocessed (and loaded) CIUAnalysisObj with data to be used as file 1
+    :type analysis_obj1: CIUAnalysisObj
     :param analysis_obj2: preprocessed CIUAnalysisObj with data to be used as file 2
+    :type analysis_obj2: CIUAnalysisObj
     :param params_obj: Parameters object with parameter information
+    :type params_obj: Parameters
     :param outputdir: directory in which to save output
     :return: RMSD value (writes plot to output directory)
     """
@@ -146,10 +151,10 @@ def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir):
 
     contour_scaling = np.linspace(-rmsd_plot_scaling, rmsd_plot_scaling, 50, endpoint=True)
     colorbar_scaling = np.linspace(-rmsd_plot_scaling, rmsd_plot_scaling, 6, endpoint=True)
-    rmsd_plot(title, dif, axes, params_obj.plot_x_title, params_obj.plot_y_title,
-              contour_scaling, colorbar_scaling, rtext, outputdir, params_obj.plot_extension)
+    rmsd_plot(title, dif, axes, params_obj.ciuplot_1_x_title, params_obj.ciuplot_2_y_title,
+              contour_scaling, colorbar_scaling, rtext, outputdir, params_obj.ciuplot_4_extension)
 
-    if params_obj.save_output_csv:
+    if params_obj.output_1_save_csv:
         save_path = os.path.join(outputdir, title)
         save_path += '_raw.csv'
         write_ciu_csv(save_path, dif, axes)
@@ -164,6 +169,8 @@ def delta_dt(analysis_obj):
     Converts a CIU dataset to delta-drift time by moving the x-axis (DT) so that the max value
     (or centroid if gaussian fitting has been performed) of the first CV column is at 0.
     :param analysis_obj: CIUAnalysisObj to be shifted
+    :type analysis_obj: CIUAnalysisObj
+    :rtype: CIUAnalysisObj
     :return: new CIUAnalysisObj with shifted data
     """
     # Determine location of max in 1st CV column
@@ -183,11 +190,12 @@ def delta_dt(analysis_obj):
     new_axes = [new_dt_axis, analysis_obj.axes[1]]
 
     # create new CIUAnalysisObj with the new axis and return it
-    shift_analysis_obj = CIUAnalysisObj(analysis_obj.raw_obj, analysis_obj.ciu_data, new_axes,
-                                        analysis_obj.gauss_params)
-    shift_analysis_obj.params = analysis_obj.params
-    shift_analysis_obj.raw_obj_list = analysis_obj.raw_obj_list
-    return shift_analysis_obj
+    # shift_analysis_obj = CIUAnalysisObj(analysis_obj.raw_obj, analysis_obj.ciu_data, new_axes,
+    #                                     analysis_obj.gauss_params)
+    # shift_analysis_obj.params = analysis_obj.params
+    # shift_analysis_obj.raw_obj_list = analysis_obj.raw_obj_list
+    analysis_obj.axes = new_axes
+    return analysis_obj
 
 
 def write_ciu_csv(save_path, ciu_data, axes=None):

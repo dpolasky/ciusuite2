@@ -12,6 +12,9 @@ from tkinter import filedialog
 import pickle
 from CIU_Params import Parameters
 import scipy.stats
+from Feature_Detection import Feature, Transition
+from CIU_raw import CIURaw
+from typing import List
 
 
 class CIUAnalysisObj(object):
@@ -29,12 +32,12 @@ class CIUAnalysisObj(object):
         params are [baseline height, amplitude, centroid, width]
         """
         # basic information and objects
-        self.raw_obj = ciu_raw_obj
+        self.raw_obj = ciu_raw_obj  # type: CIURaw
         self.raw_obj_list = None    # used for replicates (averaged fingerprints) only
         self.ciu_data = ciu_data
         self.axes = axes            # convention: axis 0 = DT, axis 1 = CV
         self.crop_vals = None
-        self.params = Parameters()
+        self.params = Parameters()  # type: Parameters
         self.filename = None        # filename of .ciu file saved
 
         # CIU data manipulations for common use
@@ -45,8 +48,8 @@ class CIUAnalysisObj(object):
 
         # Feature detection results
         self.changepoint_cvs = []
-        self.features = []
-        self.transitions = []
+        # self.features = []      # type: List[Feature]
+        self.transitions = []   # type: List[Transition]
 
         # Gaussian fitting parameters - not always initialized with the object
         self.gaussians = None
@@ -57,8 +60,8 @@ class CIUAnalysisObj(object):
         self.gauss_r2s = None
         self.gauss_fit_stats = None
 
-        self.features_gaussian = None
-        self.features_changept = None
+        self.features_gaussian = None   # type: List[Feature]
+        self.features_changept = None   # type: List[Feature]
 
     def __str__(self):
         """
@@ -205,11 +208,14 @@ class CIUAnalysisObj(object):
                 output.write(gauss_line + '\n')
                 index += 1
 
-    def save_ciu50_outputs(self, outputpath, combine=False):
+    def save_ciu50_outputs(self, outputpath, mode, combine=False):
         """
         Print feature detection outputs to file. Must have feature detection already performed.
         **NOTE: currently, feature plot is still in the feature detect module, but could (should?)
         be moved here eventually.
+        :param mode: 'gaussian' or 'changept' - which type of feature to save
+        :param outputpath: directory in which to save output
+        :param combine: whether to output directly for this file or return a string for combining
         :return: void
         """
         output_name = os.path.join(outputpath, self.filename + '_features.csv')
@@ -218,7 +224,12 @@ class CIUAnalysisObj(object):
         # assemble the output
         output_string += 'Features:, CV_lower (V),CV_upper (V),DT mode,DT_lower,DT_upper, rsq\n'
         feat_index = 1
-        for feature in self.features:
+        if mode == 'gaussian':
+            features_list = self.features_gaussian
+        else:
+            features_list = self.features_changept
+
+        for feature in features_list:
             output_string += 'Feature {},'.format(feat_index)
             output_string += '{},{},'.format(feature.start_cv_val, feature.end_cv_val)
             output_string += '{:.2f},'.format(scipy.stats.mode(feature.dt_max_vals)[0][0])
@@ -247,7 +258,7 @@ class CIUAnalysisObj(object):
         :param combine: If True, return a string to be combined with other files instead of saving to file
         :return:
         """
-        output_name = os.path.join(outputpath, self.filename + '_features-short.csv')
+        output_name = os.path.join(outputpath, self.filename + '_transitions-short.csv')
         output_string = ''
 
         # assemble the output

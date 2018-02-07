@@ -32,6 +32,7 @@ def get_data(fname):
     """
     Read _raw.csv file and generate a CIURaw object containing its raw data and filename
     :param fname: string - path to _raw.csv file to read
+    :rtype: CIURaw
     :return: CIURaw object with rawdata, axes, and filename initialized
     """
     rawdata = np.genfromtxt(fname, missing_values=[""], filling_values=[0], delimiter=",")

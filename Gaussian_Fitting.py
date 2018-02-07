@@ -14,6 +14,12 @@ import tkinter
 from tkinter import filedialog
 import scipy.signal
 
+# imports for type checking
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from CIU_analysis_obj import CIUAnalysisObj
+    from CIU_Params import Parameters
+
 
 class Gaussian(object):
     """
@@ -201,7 +207,9 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
     :param analysis_obj: ciu analysis object in which to save all data. Uses obj.ciu_data, axes, etc
      (ciu_data is 2D numpy, axis 0 = DT, axis 1 = CV) for all data handling
      Smoothing, interpolation, cropping, etc should be done prior to running this method.
+    :type analysis_obj: CIUAnalysisObj
     :param params_obj: Parameters object with gaussian parameter information
+    :type params_obj: Parameters
     :return: saves all gaussian outputs into the ciu_obj and returns it
     """
     ciu_data = analysis_obj.ciu_data
@@ -209,12 +217,12 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
     cv_axis = analysis_obj.axes[1]
     filename = analysis_obj.filename
 
-    widthfrac = params_obj.gaussian_width_fraction
+    widthfrac = params_obj.gaussian_5_width_fraction
     # min_spacing = params_obj.gaussian_min_spacing
-    filter_width_max = params_obj.gaussian_width_max
-    intensity_thr = params_obj.gaussian_int_threshold
-    centroid_bounds = params_obj.gaussian_centroid_bound_filter
-    centroid_plot_bounds = params_obj.gaussian_centroid_bounds
+    filter_width_max = params_obj.gaussian_3_width_max
+    intensity_thr = params_obj.gaussian_2_int_threshold
+    # centroid_bounds = params_obj.gaussian_centroid_bound_filter
+    # centroid_plot_bounds = params_obj.gaussian_centroid_bounds
 
     outputpathdir = filename.rstrip('.ciu')
     outputpath = os.path.join(os.path.dirname(analysis_obj.filename), outputpathdir)
@@ -247,7 +255,7 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
         fit_bounds_upper_append = [max_dt, 1.1, max_dt, len(dt_axis)]
 
         # Iterate through peak detection until convergence criterion is met, adding one additional peak each iteration
-        while adjrsq < analysis_obj.params.gaussian_convergence_r2:
+        while adjrsq < analysis_obj.params.gaussian_1_convergence:
             try:
                 param_guesses_multiple.extend(all_peak_guesses[i])
                 # ensure bounds arrays maintain same shape as parameter guesses
@@ -275,7 +283,7 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
         print('performed {} iterations'.format(i))
         filt_popt = popt
         if filter_width_max is not None:
-            filt_popt = filter_fits(popt, filter_width_max, intensity_thr, centroid_bounds)
+            filt_popt = filter_fits(popt, filter_width_max, intensity_thr)
         filtered_params.append(filt_popt)
 
         # save Gaussian information to container objects
@@ -309,9 +317,9 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
     analysis_obj.gauss_covariances = pcov_arr
     analysis_obj.gauss_fit_stats = stats
 
-    if params_obj.gaussian_save_diagnostics:
+    if params_obj.gaussian_4_save_diagnostics:
         analysis_obj.save_gaussfits_pdf(outputpath)
-        analysis_obj.plot_centroids(outputpath, centroid_plot_bounds)
+        analysis_obj.plot_centroids(outputpath)
         analysis_obj.plot_fwhms(outputpath)
         analysis_obj.save_gauss_params(outputpath)
 

@@ -510,7 +510,7 @@ class CIUSuite2(object):
             newfile = save_analysis_obj(shifted_obj, filename_append='_delta', outputdir=self.output_dir)
             new_file_list.append(newfile)
             # also save _raw.csv output if desired
-            if self.params_obj.save_output_csv:
+            if self.params_obj.output_1_save_csv:
                 save_path = file.rstrip('.ciu') + '_delta_raw.csv'
                 Original_CIU.write_ciu_csv(save_path, shifted_obj.ciu_data, shifted_obj.axes)
             self.update_progress(files_to_read.index(file), len(files_to_read))
@@ -544,7 +544,7 @@ class CIUSuite2(object):
             newfile = save_analysis_obj(crop_obj, outputdir=self.output_dir)
             new_file_list.append(newfile)
             # also save _raw.csv output if desired
-            if self.params_obj.save_output_csv:
+            if self.params_obj.output_1_save_csv:
                 save_path = file.rstrip('.ciu') + '_crop_raw.csv'
                 Original_CIU.write_ciu_csv(save_path, crop_obj.ciu_data, crop_obj.axes)
             self.update_progress(files_to_read.index(file), len(files_to_read))
@@ -584,6 +584,9 @@ class CIUSuite2(object):
         files
         :return: void
         """
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'ciu50_cpt' in x]
+        self.run_param_ui('CIU-50 Parameters', param_keys)
+
         files_to_read = self.check_file_range_entries()
         self.progress_started()
 
@@ -601,8 +604,8 @@ class CIUSuite2(object):
             filename = save_analysis_obj(analysis_obj, outputdir=self.output_dir)
             new_file_list.append(filename)
 
-            if not analysis_obj.params.combine_output_file:
-                analysis_obj.save_ciu50_outputs(self.output_dir)
+            if not analysis_obj.params.output_1_save_csv:
+                analysis_obj.save_ciu50_outputs(self.output_dir, mode='changept')
                 analysis_obj.save_ciu50_short(self.output_dir)
                 combine_flag = False
             else:
@@ -629,6 +632,9 @@ class CIUSuite2(object):
         so there's only one method once final analysis method is decided on.
         :return: void
         """
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'ciu50_gauss' in x]
+        self.run_param_ui('CIU-50 Parameters', param_keys)
+
         files_to_read = self.check_file_range_entries()
         self.progress_started()
 
@@ -646,8 +652,8 @@ class CIUSuite2(object):
             filename = save_analysis_obj(analysis_obj, outputdir=self.output_dir)
             new_file_list.append(filename)
 
-            if not analysis_obj.params.combine_output_file:
-                analysis_obj.save_ciu50_outputs(self.output_dir)
+            if not analysis_obj.params.output_1_save_csv:
+                analysis_obj.save_ciu50_outputs(self.output_dir, mode='gaussian')
                 analysis_obj.save_ciu50_short(self.output_dir)
                 combine_flag = False
             else:
@@ -674,6 +680,9 @@ class CIUSuite2(object):
         Run Gaussian-based feature detection routine. Ensure Gaussians have been fit previously.
         :return: void
         """
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'feature_gauss' in x]
+        self.run_param_ui('Feature Detection Parameters from Gaussians', param_keys)
+
         files_to_read = self.check_file_range_entries()
         self.progress_started()
         new_file_list = []
@@ -707,6 +716,9 @@ class CIUSuite2(object):
         Run simple flat feature detection routine. Does NOT require Gaussian fitting
         :return: void
         """
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'feature_cpt' in x]
+        self.run_param_ui('Feature Detection Parameters', param_keys)
+
         files_to_read = self.check_file_range_entries()
         self.progress_started()
         new_file_list = []
@@ -903,14 +915,14 @@ def process_raw_obj(raw_obj, params_obj):
     axes = (raw_obj.dt_axis, raw_obj.cv_axis)
 
     # interpolate data if desired
-    if params_obj.interpolation_bins is not None:
-        norm_data, axes = Raw_Processing.interpolate_cv(norm_data, axes, params_obj.interpolation_bins)
+    if params_obj.interp_1_method:
+        norm_data, axes = Raw_Processing.interpolate_cv(norm_data, axes, params_obj.interp_2_bins)
 
     # Smooth data if desired (column-by-column)
-    if params_obj.smoothing_window is not None and params_obj.smoothing_method is not None:
+    if params_obj.smoothing_1_method is not None and params_obj.smoothing_2_window is not None:
         i = 0
-        while i < params_obj.smoothing_num_iterations:
-            norm_data = Raw_Processing.sav_gol_smooth(norm_data, params_obj.smoothing_window)
+        while i < params_obj.smoothing_3_iterations:
+            norm_data = Raw_Processing.sav_gol_smooth(norm_data, params_obj.smoothing_2_window)
             i += 1
 
     # save a CIUAnalysisObj with the information above
@@ -960,14 +972,14 @@ def reprocess_raw(analysis_obj, params_obj):
     analysis_obj.axes = axes
 
     # interpolate data if desired
-    if params_obj.interpolation_bins is not None:
-        norm_data, axes = Raw_Processing.interpolate_cv(norm_data, axes, params_obj.interpolation_bins)
+    if params_obj.interp_1_method:
+        norm_data, axes = Raw_Processing.interpolate_cv(norm_data, axes, params_obj.interp_2_bins)
 
     # Smooth data if desired (column-by-column)
-    if params_obj.smoothing_window is not None:
+    if params_obj.smoothing_1_method is not None:
         i = 0
-        while i < params_obj.smoothing_num_iterations:
-            norm_data = Raw_Processing.sav_gol_smooth(norm_data, params_obj.smoothing_window)
+        while i < params_obj.smoothing_3_iterations:
+            norm_data = Raw_Processing.sav_gol_smooth(norm_data, params_obj.smoothing_2_window)
             i += 1
 
     # check for previously saved cropping and use those values if present
