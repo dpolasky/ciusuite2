@@ -772,7 +772,8 @@ class CIUSuite2(object):
 
         # Run the classification
         self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
-        Classification.class_comparison_lda(data_labels, obj_list_by_label, self.output_dir)
+        scheme = Classification.main_build_classification(data_labels, obj_list_by_label, self.output_dir)
+
         self.progress_done()
 
     def check_params(self):
