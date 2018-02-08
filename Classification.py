@@ -13,12 +13,219 @@ from matplotlib.backends.backend_pdf import PdfPages as pdfpage
 from sklearn.metrics import accuracy_score
 from mlxtend.feature_selection import SequentialFeatureSelector as SFS
 from mlxtend.plotting import plot_sequential_feature_selection as plot_sfs
+from sklearn.linear_model import LogisticRegression
+
+from sklearn.feature_selection import f_classif, GenericUnivariateSelect
+from sklearn.svm import SVC
 
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
 import os
-from sklearn.linear_model import LogisticRegression
+import itertools
+
+
+class CFeature(object):
+    """
+    Container for classification feature information in feature selection.
+    """
+    def __init__(self, cv, cv_index, mean_score, std_dev_score):
+        self.cv = cv
+        self.cv_index = cv_index
+        # self.score_list = score_list
+        self.mean_score = mean_score
+        self.std_dev_score = std_dev_score
+
+    def __str__(self):
+        return '<CFeature> cv: {}, score: {:.2f}'.format(self.cv, self.mean_score)
+    __repr__ = __str__
+
+
+class DataProduct(object):
+    """
+    Container for label and product information for data combinations used in feature selection.
+    """
+    def __init__(self, data1, data2, label1, label2):
+        """
+        Initialize a new DataProduct with associated label and data
+        :param data1: ciu_data (normalized)
+        :param data2: ciu_data (normalized)
+        :param label1: label for data1
+        :param label2: label for data2
+        """
+        self.data1 = data1
+        self.data2 = data2
+        self.label1 = label1
+        self.label2 = label2
+
+        self.combined_data = None
+        self.combined_label_arr = None
+        self.numeric_label_arr = None
+
+        # results information
+        self.fit_scores = None
+        self.fit_pvalues = None
+        self.fit_sc = None
+
+        # run data preparation
+        self.prepare_data()
+
+    def prepare_data(self):
+        """
+        Manipulate data into concatenated arrays suitable for input into feature selection algorithm.
+        :return: void
+        """
+        self.combined_data = np.concatenate((self.data1, self.data2))
+
+        label_arr_1 = np.asarray([self.label1 for _ in range(len(self.data1))])
+        label_arr_2 = np.asarray([self.label2 for _ in range(len(self.data2))])
+        self.combined_label_arr = np.concatenate((label_arr_1, label_arr_2))
+
+        # use the label encoder to generate a numeric label list (could just do this manually??)
+        # output is just the class numbers in an array the shape of the input
+        encoder = LabelEncoder()
+        label_list = encoder.fit(self.combined_label_arr)
+        self.numeric_label_arr = label_list.transform(self.combined_label_arr) + 1
+
+    def __str__(self):
+        return '<DataProduct> labels: {}, {}'.format(self.label1, self.label2)
+    __repr__ = __str__
+
+
+def generate_products(analysis_obj_list_by_label, shaped_label_list):
+    """
+    Generate all combinations of replicate data across classes for feature selection. Will
+    create a DataProduct object with the key information for each combination.
+    :param analysis_obj_list_by_label: list of lists of CIUAnalysisObj's, sorted by class label
+    :type analysis_obj_list_by_label: list[list[CIUAnalysisObj]]
+    :param shaped_label_list: list of lists of class labels with matching shape of analysis_obj_by_label
+    :return: list of DataProduct objects for each combination
+    :rtype: list[DataProduct]
+    """
+    products = []
+    for object_tuple, label_tuple in zip(itertools.product(*analysis_obj_list_by_label), itertools.product(*shaped_label_list)):
+        # create a DataProduct object for this combination
+        data1 = object_tuple[0].ciu_data
+        data2 = object_tuple[1].ciu_data
+        product = DataProduct(data1, data2, label_tuple[0], label_tuple[1])
+
+        # Run feature selection for this combination
+        # todo: make these parameters accessible
+        select = GenericUnivariateSelect(score_func=f_classif, mode='percentile', param=100)
+        select.fit(product.combined_data, product.numeric_label_arr)
+
+        product.fit_pvalues = select.pvalues_
+        product.fit_scores = select.scores_
+        product.fit_sc = -np.log10(select.pvalues_)  # not sure what this is - ask Suggie
+
+        products.append(product)
+    return products
+
+
+def univariate_feature_selection_datacv_runldaonfeats(labels, analysis_obj_list_by_label, output_dir):
+    """
+
+    :param labels:
+    :param analysis_obj_list_by_label:
+    :param output_dir:
+    :return:
+    """
+    cv_axis = analysis_obj_list_by_label[0][0].axes[1]
+
+    shaped_label_list = []
+    for index, label in enumerate(labels):
+        shaped_label_list.append([label for _ in range(len(analysis_obj_list_by_label[index]))])
+
+    # generate all combinations of replicate datasets within the labels
+    products = generate_products(analysis_obj_list_by_label, shaped_label_list)
+
+    # Create a CFeature object to hold the information for this CV (feature)
+    scores = [product.fit_sc for product in products]
+    mean_score = np.mean(scores, axis=0)
+    std_score = np.std(scores, axis=0)
+
+    features = []
+    for cv_index, cv in enumerate(cv_axis):
+        feature = CFeature(cv, cv_index, mean_score[cv_index], std_score[cv_index])
+        features.append(feature)
+
+    # todo: make this selection its own method with multiple ways (best N features, all above cutoff)
+    sorted_features = sorted(features, key=lambda x: x.mean_score, reverse=True)
+    num_features = 5
+    selected_features = sorted_features[0: num_features]
+
+    inarray_list = [x.ciu_data for label_obj_list in analysis_obj_list_by_label for x in label_obj_list]    # flatten
+    inlabel_list = [x for label_list in shaped_label_list for x in label_list]  # flatten to single list
+
+    labels_name = 'Univariatefeatureselection' + '_'.join(labels) + '_'
+    output_path = os.path.join(output_dir, labels_name)
+    lda_ufs_best_features(selected_features, inarray_list, inlabel_list, output_path)
+
+
+def lda_ufs_best_features(features_list, flat_ciuraw_list, flat_label_list, output_path):
+    """
+
+    :param features_list:
+    :param flat_ciuraw_list:
+    :param flat_label_list:
+    :param output_path
+    :return:
+    """
+    pdf_out = pdfpage(output_path + 'ldatransform_features_univariate_fclassif_SVM_C10_linear_classif.pdf')
+
+    selected_cv_indices = [x.cv_index for x in features_list]
+
+    # create a concatenated array with the selected CV columns from each raw dataset
+    input_x_ciu_data = []
+    for ciuraw_data in flat_ciuraw_list:
+        selected_cols = []
+        # concatenate all selected columns
+        for cv_index in selected_cv_indices:
+            selected_cols = np.concatenate((selected_cols, ciuraw_data[cv_index]), axis=0)
+        input_x_ciu_data.append(selected_cols)
+
+    input_x_ciu_data = np.asarray(input_x_ciu_data)
+    input_y_labels, target_label = createtargetarray_featureselect(flat_label_list)
+
+    lda = LDA(solver='svd', n_components=5)
+    lda.fit(input_x_ciu_data, input_y_labels)
+    x_lda = lda.transform(input_x_ciu_data)
+
+    # yyyy = [0] * 20 + [1] * 20
+    # X = np.r_[np.random.randn(20, 2) - [2, 2], np.random.randn(20, 2) + [2, 2]]
+
+
+    # clf = LogisticRegression(C=10)
+    clf = SVC(kernel='linear', C=10)
+    # clf = RandomForestClassifier(n_estimators=10, criterion='entropy', n_jobs=-1)
+    # clf = KNC(n_neighbors=2,p=2,metric='minkowski', n_jobs=-1)
+    clf.fit(x_lda, input_y_labels)
+
+
+    x_min, x_max = np.floor(x_lda.min()), np.ceil(x_lda.max())
+    y_min, y_max = -3, 3
+    # yy = np.linspace(y_min, y_max)
+    colors = ['blue', 'red', 'lightgreen', 'gray', 'cyan']
+    cmap = ListedColormap(colors[:len(np.unique(input_y_labels))])
+    XX, YY = np.mgrid[x_min:x_max:100j, y_min:y_max:100j]
+    print(np.shape(XX))
+    print(np.shape(YY))
+    XXX = np.c_[XX.ravel(), YY.ravel()]
+    print(np.shape(XXX))
+    Z = clf.predict(XX.ravel().reshape(-1, 1))
+    Z = Z.reshape(XX.shape)
+    plt.contourf(XX, YY, Z, alpha=0.4, cmap=plt.cm.Paired)
+    cv_string = ','.join([str(x.cv) for x in features_list])
+    plt.title('From CVs: {}'.format(cv_string))
+    plot_sklearn_lda_1ld(x_lda, input_y_labels, target_label)
+    pdf_out.savefig()
+    plt.close()
+
+    plt.close()
+    pdf_out.close()
+
+
+
 
 
 def class_comparison_lda(labels, analysis_obj_list_by_label, output_dir):
@@ -334,23 +541,79 @@ def load_analysis_obj(analysis_filename):
     return analysis_obj
 
 
+# if __name__ == '__main__':
+#     # Read the data
+#     import tkinter
+#     from tkinter import filedialog
+#     from tkinter import simpledialog
+#     root = tkinter.Tk()
+#     root.withdraw()
+#
+#     num_classes = simpledialog.askinteger('Class Number', 'Into how many classes do you want to group?')
+#
+#     data_labels = []
+#     obj_list_by_label = []
+#     main_dir = 'C:\\'
+#     for index in range(0, num_classes):
+#         # Read in the .CIU files and labels for each class
+#         label = simpledialog.askstring('Class Name', 'What is the name of this class?')
+#         files = filedialog.askopenfilenames(filetypes=[('CIU', '.ciu')])
+#         main_dir = os.path.dirname(files[0])
+#
+#         obj_list = []
+#         for file in files:
+#             with open(file, 'rb') as analysis_file:
+#                 obj = pickle.load(analysis_file)
+#             obj_list.append(obj)
+#         data_labels.append(label)
+#         obj_list_by_label.append(obj_list)
+#
+#     class_comparison_lda(data_labels, obj_list_by_label, main_dir)
+#     # classification_lda_maxvals(data_labels, obj_list_by_label, main_dir)
+
 if __name__ == '__main__':
     # Read the data
     import tkinter
     from tkinter import filedialog
     from tkinter import simpledialog
+
     root = tkinter.Tk()
     root.withdraw()
 
-    num_classes = simpledialog.askinteger('Class Number', 'Into how many classes do you want to group?')
-
+    # num_classes = simpledialog.askinteger('Class Number', 'Into how many classes do you want to group?')
+    num_classes = 2
     data_labels = []
     obj_list_by_label = []
     main_dir = 'C:\\'
-    for index in range(0, num_classes):
+
+    class_labels = ['Igg1', 'Igg2', 'Igg4', 'Igg4']
+    f1 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG1_1.ciu'
+    f2 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG1_2.ciu'
+    f3 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG1_3.ciu'
+    f4 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG2_1.ciu'
+    f5 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG2_2.ciu'
+    f6 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG2_3.ciu'
+    f7 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG3_1.ciu'
+    f8 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG3_2.ciu'
+    f9 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG3_3.ciu'
+    f10 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG4_1.ciu'
+    f11 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG4_2.ciu'
+    f12 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG4_3.ciu'
+
+    f_class1 = [f1, f2, f3]
+    f_class2 = [f4, f5, f6]
+    f_class3 = [f7, f8, f9]
+    f_class4 = [f10, f11, f12]
+
+    fs = [f_class1, f_class2, f_class4, f_class4]
+    # fs= [f_class1, f_class2]
+
+    for class_index in range(0, num_classes):
         # Read in the .CIU files and labels for each class
-        label = simpledialog.askstring('Class Name', 'What is the name of this class?')
-        files = filedialog.askopenfilenames(filetypes=[('CIU', '.ciu')])
+        # label = simpledialog.askstring('Class Name', 'What is the name of this class?')
+        class_label = class_labels[class_index]
+        # files = filedialog.askopenfilenames(filetypes=[('CIU', '.ciu')])
+        files = fs[class_index]
         main_dir = os.path.dirname(files[0])
 
         obj_list = []
@@ -358,8 +621,15 @@ if __name__ == '__main__':
             with open(file, 'rb') as analysis_file:
                 obj = pickle.load(analysis_file)
             obj_list.append(obj)
-        data_labels.append(label)
+        data_labels.append(class_label)
         obj_list_by_label.append(obj_list)
 
-    class_comparison_lda(data_labels, obj_list_by_label, main_dir)
-    # classification_lda_maxvals(data_labels, obj_list_by_label, main_dir)
+    # featurescaling_lda(data_labels, obj_list_by_label, main_dir)
+    # class_comparison_lda(data_labels, obj_list_by_label, main_dir)
+    # univariate_feature_selection_datacv(data_labels, obj_list_by_label, main_dir)
+    # univariate_feature_selection_datacv_withprediction(data_labels, obj_list_by_label, main_dir)
+    # univariate_feature_selection_datacv_lda_withprediction(data_labels, obj_list_by_label, main_dir)
+
+    univariate_feature_selection_datacv_runldaonfeats(data_labels, obj_list_by_label, main_dir)
+    # univariate_feature_selection_datacv_runldaonfeats_suggie(data_labels, obj_list_by_label, main_dir)
+

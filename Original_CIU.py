@@ -6,6 +6,7 @@ with CIUAnalysisObj objects providing the primary basis for handling data.
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import scipy.interpolate
 from CIU_analysis_obj import CIUAnalysisObj
 from CIU_Params import Parameters
 
@@ -126,6 +127,23 @@ def compare_by_cv(norm_data_1, norm_data_2, axes, smooth_window=None, crop_vals=
     return rmsd_dict
 
 
+def interpolate_axes(axis1, axis2, num_bins):
+    """
+    Method to interpolate different length axes to the same length/scale to enable subtractive
+    (or other) comparison of data. The interpolated axis will have twice the number of bins as the
+    larger of the initial axes and will go from the minimum to maximum value of both axes to ensure
+    no data is missed.
+    :param axis1: numpy array (1D) of values
+    :param axis2: numpy array (1D) of values
+    :param num_bins: number of bins onto which to interpolate
+    :return: interpolated axis (numpy array)
+    """
+    # Determine axis sizes and ranges
+    min_val = np.min([np.min(axis1), np.min(axis2)])  # minimum value between both axes
+    max_val = np.max([np.max(axis1), np.max(axis2)])  # max value between both axes
+    return np.linspace(min_val, max_val, num_bins)
+
+
 def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir):
     """
     Basic CIU comparison between two raw files. Prints compare plot and csv to output dir.
@@ -143,6 +161,33 @@ def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir):
     norm_data_1 = analysis_obj1.ciu_data
     norm_data_2 = analysis_obj2.ciu_data
     axes = analysis_obj1.axes
+
+    interp_flag = False
+    dt_axis = analysis_obj1.axes[0]
+    cv_axis = analysis_obj1.axes[1]
+    num_bins = np.max([len(analysis_obj1.axes[0]), len(analysis_obj2.axes[0])])   # length of the DT axis
+    # ensure that the data are the same in both dimensions, and interpolate if not matched in either
+    if not len(analysis_obj1.axes[0]) == len(analysis_obj2.axes[0]) or not len(analysis_obj1.axes[1]) == len(analysis_obj2.axes[1]):
+        # DT axes do not match - interpolate DT axis
+        dt_axis = interpolate_axes(analysis_obj1.axes[0], analysis_obj2.axes[0], num_bins)
+        interp_flag = True
+    # if not len(analysis_obj1.axes[1]) == len(analysis_obj2.axes[1]):
+        # CV axes do not match - interpolate CV axis
+        cv_axis = interpolate_axes(analysis_obj1.axes[1], analysis_obj2.axes[1], num_bins)
+        # interp_flag = True
+
+    if interp_flag:
+        # interpolate the original CIU data from each object onto the new (matched) axes
+        interp_fn1 = scipy.interpolate.interp2d(analysis_obj1.axes[1],
+                                                analysis_obj1.axes[0],
+                                                analysis_obj1.ciu_data)
+        interp_fn2 = scipy.interpolate.interp2d(analysis_obj2.axes[1],
+                                                analysis_obj2.axes[0],
+                                                analysis_obj2.ciu_data)
+        norm_data_1 = interp_fn1(cv_axis, dt_axis)
+        norm_data_2 = interp_fn2(cv_axis, dt_axis)
+        axes = [dt_axis, cv_axis]
+
     dif, rmsd = rmsd_difference(norm_data_1, norm_data_2)
 
     rtext = "RMSD = " + '%2.2f' % rmsd

@@ -5,25 +5,26 @@ a (very) basic GUI of some kind.
 """
 
 # GUI test
-import tkinter as tk
 import pygubu
 import pygubu.widgets.simpletooltip as tooltip
+import tkinter as tk
 from tkinter import filedialog
 from tkinter import simpledialog
 from tkinter import messagebox
 import os
+import subprocess
+import pickle
+import numpy as np
+
 import Raw_Processing
 from CIU_raw import CIURaw
-import Gaussian_Fitting
 from CIU_analysis_obj import CIUAnalysisObj
-import pickle
 import CIU_Params
 from CIU_Params import Parameters
 import Original_CIU
-import numpy as np
+import Gaussian_Fitting
 import Feature_Detection
 import Classification
-import subprocess
 
 hard_file_path_ui = r"C:\CIUSuite2\CIUSuite2.ui"
 hard_params_file = r"C:\CIUSuite2\CIU_params.txt"
