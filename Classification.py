@@ -42,6 +42,7 @@ class ClassificationScheme(object):
 
         self.numeric_labels = None
         self.class_labels = None
+        self.transformed_test_data = None
 
     def __str__(self):
         label_string = ','.join(self.class_labels)
@@ -245,6 +246,8 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
     scheme.lda = lda
     scheme.numeric_labels = input_y_labels
     scheme.class_labels = target_label
+    scheme.transformed_test_data = x_lda
+    # scheme.input_ciu_data = input_x_ciu_data
 
     return scheme
 
@@ -289,7 +292,7 @@ def plot_stuff_suggie(class_scheme, output_path):
     """
     pdf_out = PdfPages(output_path + 'ldatransform_features_univariate_fclassif_SVM_C10_linear_classif.pdf')
 
-    x_min, x_max = np.floor(class_scheme.lda.min()), np.ceil(class_scheme.lda.max())
+    x_min, x_max = np.floor(class_scheme.transformed_test_data.min()), np.ceil(class_scheme.transformed_test_data.max())
     y_min, y_max = -3, 3
     # yy = np.linspace(y_min, y_max)
     colors = ['blue', 'red', 'lightgreen', 'gray', 'cyan']
@@ -301,7 +304,7 @@ def plot_stuff_suggie(class_scheme, output_path):
     plt.contourf(XX, YY, Z, alpha=0.4, cmap=plt.cm.Paired)
     cv_string = ','.join([str(x.cv) for x in class_scheme.selected_features])
     plt.title('From CVs: {}'.format(cv_string))
-    plot_sklearn_lda_1ld(class_scheme.lda, class_scheme.numeric_labels, class_scheme.class_labels)
+    plot_sklearn_lda_1ld(class_scheme.transformed_test_data, class_scheme.numeric_labels, class_scheme.class_labels)
     pdf_out.savefig()
     plt.close()
 

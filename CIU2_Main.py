@@ -74,6 +74,7 @@ class CIUSuite2(object):
             'on_button_feature_gaussian_clicked': self.on_button_feature_gaussian_clicked,
             'on_button_feature_changept_clicked': self.on_button_feature_changept_clicked,
             'on_button_classification_supervised_clicked': self.on_button_classification_supervised_clicked,
+            'on_button_classify_unknown_clicked': self.on_button_classify_unknown_clicked,
             'on_section_params_oldciu_clicked': self.on_section_params_oldciu_clicked
         }
         builder.connect_callbacks(callbacks)
@@ -773,7 +774,46 @@ class CIUSuite2(object):
         # Run the classification
         self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
         scheme = Classification.main_build_classification(data_labels, obj_list_by_label, self.output_dir)
+        Classification.save_scheme(scheme, self.output_dir)
 
+        self.progress_done()
+
+    def on_button_classify_unknown_clicked(self):
+        """
+        Open filechooser to load classification scheme object (previously saved), then run
+        classification on all loaded .ciu files against that scheme.
+        :return: void
+        """
+        # TODO: add axis exact match checking against scheme
+
+        scheme_file = filedialog.askopenfilename(filetypes=[('Classification File', '.clf')])
+        scheme = Classification.load_scheme(scheme_file)
+
+        # classify
+
+        # param_keys = [x for x in self.params_obj.params_dict.keys() if 'feature_cpt' in x]
+        # self.run_param_ui('Feature Detection Parameters', param_keys)
+
+        files_to_read = self.check_file_range_entries()
+        self.progress_started()
+        new_file_list = []
+
+        for file in files_to_read:
+            # load file
+            analysis_obj = load_analysis_obj(file)
+
+            prediction = scheme.classify_unknown(analysis_obj.ciu_data)
+
+            # analysis_obj = Feature_Detection.feature_detect_changept(analysis_obj)
+            # filename = save_analysis_obj(analysis_obj, outputdir=self.output_dir)
+            # new_file_list.append(filename)
+            #
+            # Feature_Detection.plot_features(analysis_obj, self.output_dir, mode='changept')
+            # outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_features.csv')
+            # Feature_Detection.print_features_list(analysis_obj.features_changept, outputpath, mode='changept')
+            self.update_progress(files_to_read.index(file), len(files_to_read))
+
+        self.display_analysis_files()
         self.progress_done()
 
     def check_params(self):
