@@ -165,16 +165,16 @@ def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir):
     interp_flag = False
     dt_axis = analysis_obj1.axes[0]
     cv_axis = analysis_obj1.axes[1]
-    num_bins = np.max([len(analysis_obj1.axes[0]), len(analysis_obj2.axes[0])])   # length of the DT axis
     # ensure that the data are the same in both dimensions, and interpolate if not matched in either
     if not len(analysis_obj1.axes[0]) == len(analysis_obj2.axes[0]) or not len(analysis_obj1.axes[1]) == len(analysis_obj2.axes[1]):
-        # DT axes do not match - interpolate DT axis
-        dt_axis = interpolate_axes(analysis_obj1.axes[0], analysis_obj2.axes[0], num_bins)
         interp_flag = True
-    # if not len(analysis_obj1.axes[1]) == len(analysis_obj2.axes[1]):
-        # CV axes do not match - interpolate CV axis
-        cv_axis = interpolate_axes(analysis_obj1.axes[1], analysis_obj2.axes[1], num_bins)
-        # interp_flag = True
+        print('axes in files {}, {} did not match; interpolating to compare'.format(
+            os.path.basename(analysis_obj1.filename),
+            os.path.basename(analysis_obj2.filename)))
+        num_bins_dt = np.max([len(analysis_obj1.axes[0]), len(analysis_obj2.axes[0])])  # length of the DT axis
+        dt_axis = interpolate_axes(analysis_obj1.axes[0], analysis_obj2.axes[0], num_bins_dt)
+        num_bins_cv = np.max([len(analysis_obj1.axes[1]), len(analysis_obj2.axes[1])])
+        cv_axis = interpolate_axes(analysis_obj1.axes[1], analysis_obj2.axes[1], num_bins_cv)
 
     if interp_flag:
         # interpolate the original CIU data from each object onto the new (matched) axes

@@ -18,8 +18,10 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 from sklearn.feature_selection import f_classif, GenericUnivariateSelect
 from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
 
 import numpy as np
+import scipy.stats
 import matplotlib.pyplot as plt
 import pickle
 import os
@@ -34,14 +36,16 @@ class ClassificationScheme(object):
     """
     def __init__(self):
         self.lda = None     # type: LinearDiscriminantAnalysis
-        self.classifier = None      # type: SVC
+        self.classifier = None
         self.classifier_type = None
+        self.params = None
 
         self.selected_features = []     # type: List[CFeature]
         self.all_features = None    # type: List[CFeature]
 
         self.numeric_labels = None
         self.class_labels = None
+        self.unique_labels = None
         self.transformed_test_data = None
 
     def __str__(self):
@@ -58,14 +62,39 @@ class ClassificationScheme(object):
         """
         # prepare data for classification by concatenating selected feature (CV) columns
         concat_data = []
+        append_data = []
         transpose_data = ciudata.T
         feature_cv_indices = [x.cv_index for x in self.selected_features]
         for cv_index in feature_cv_indices:
             concat_data = np.concatenate((concat_data, transpose_data[cv_index]))
+            append_data.append(transpose_data[cv_index])
 
         # classify
-        prediction = self.classifier.predict(concat_data)
+        concat2 = concat_data.reshape(-1, 1)
+        concat2shape = np.shape(concat2)
+        prediction = self.classifier.predict(concat2)
+        logp_prediction = self.classifier.predict_log_proba(concat2)
+        prob_prediction = self.classifier.predict_proba(concat2)
+
+        most_common_pred = scipy.stats.mode(prediction)
+        label_pred = self.unique_labels[most_common_pred[0][0] - 1]
+        prob_prediction_t = prob_prediction.T
+        avg_prob1 = np.mean(prob_prediction_t[0])
+        avg_prob2 = np.mean(prob_prediction_t[1])
         return prediction
+
+
+def get_unique_labels(label_list):
+    """
+    Return a list of unique labels (i.e. without duplicates) from the provided label list
+    :param label_list: list of labels (strings)
+    :return: list of unique labels (strings)
+    """
+    unique_labels = []
+    for label in label_list:
+        if label not in unique_labels:
+            unique_labels.append(label)
+    return unique_labels
 
 
 class CFeature(object):
@@ -190,7 +219,7 @@ def univariate_feature_selection(shaped_label_list, analysis_obj_list_by_label):
 
     # todo: make this selection its own method with multiple ways (best N features, all above cutoff)
     sorted_features = sorted(features, key=lambda x: x.mean_score, reverse=True)
-    num_features = 5
+    num_features = 1
     selected_features = sorted_features[0: num_features]
 
     return selected_features, features
@@ -233,8 +262,10 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
 
     # build classification scheme
     # clf = LogisticRegression(C=10)
-    clf = SVC(kernel='linear', C=10)
+
+    clf = SVC(kernel='linear', C=10, probability=True)
     # clf = RandomForestClassifier(n_estimators=10, criterion='entropy', n_jobs=-1)
+
     # clf = KNC(n_neighbors=2,p=2,metric='minkowski', n_jobs=-1)
     clf.fit(x_lda, input_y_labels)
 
@@ -246,7 +277,9 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
     scheme.lda = lda
     scheme.numeric_labels = input_y_labels
     scheme.class_labels = target_label
+    scheme.unique_labels = get_unique_labels(target_label)
     scheme.transformed_test_data = x_lda
+    scheme.params = clf.get_params()
     # scheme.input_ciu_data = input_x_ciu_data
 
     return scheme
@@ -279,8 +312,30 @@ def main_build_classification(labels, analysis_obj_list_by_label, output_dir):
     labels_name = 'Univariatefeatureselection' + '_'.join(labels) + '_'
     output_path = os.path.join(output_dir, labels_name)
     plot_stuff_suggie(constructed_scheme, output_path)
+    plot_feature_scores(all_features, analysis_obj_list_by_label[0][0].axes[1], output_path)
 
     return constructed_scheme
+
+
+def plot_feature_scores(feature_list, cv_axis, output_path):
+    """
+    Plot feature score by collision voltage
+    :param feature_list: list of CFeatures
+    :type feature_list: list[CFeature]
+    :param cv_axis: collision voltage axis from analysis object
+    :param output_path: directory in which to save output
+    :return: void
+    """
+    mean_scores = [x.mean_score for x in feature_list]
+    std_scores = [x.std_dev_score for x in feature_list]
+
+    plt.errorbar(x=cv_axis, y=mean_scores, yerr=std_scores, ls='none', marker='o', color='black')
+    plt.axhline(y=0.0, color='black', ls='--')
+    plt.xlabel('Feature')
+    plt.ylabel('-Log10(pvalues)')
+    plt.savefig(output_path + 'fclassif_logpscorevals.pdf')
+    # plt.show()
+    plt.close()
 
 
 def plot_stuff_suggie(class_scheme, output_path):
@@ -665,7 +720,8 @@ def save_scheme(scheme, outputdir):
     :param outputdir: directory in which to save output
     :return: void
     """
-    save_name = 'Classifier_' + '_'.join(scheme.class_labels)
+    unique_labels = get_unique_labels(scheme.class_labels)
+    save_name = 'Classifier_' + '_'.join(unique_labels)
     output_path = os.path.join(outputdir, save_name + '.clf')
 
     with open(output_path, 'wb') as save_file:

@@ -26,8 +26,11 @@ import Gaussian_Fitting
 import Feature_Detection
 import Classification
 
+# hard_file_path_ui = r"C:\CIUSuite2\CIUSuite2_2.ui"
 hard_file_path_ui = r"C:\CIUSuite2\CIUSuite2.ui"
-hard_params_file = r"C:\CIUSuite2\CIU_params.txt"
+
+# hard_params_file = r"C:\CIUSuite2\CIU_params.txt"
+hard_params_file = CIU_Params.hard_descripts_file
 hard_output_default = r"C:\Users\dpolasky\Desktop\test"
 hard_params_ui = r"C:\CIUSuite2\Param_editor.ui"
 hard_crop_ui = r"C:\CIUSuite2\Crop_vals.ui"
@@ -85,9 +88,9 @@ class CIUSuite2(object):
         self.params_obj.set_params(CIU_Params.parse_params_file(hard_params_file))
         self.param_file = hard_params_file
 
-        params_text = self.builder.get_object('Text_params')
-        params_text.delete(1.0, tk.END)
-        params_text.insert(tk.INSERT, 'Parameters loaded from hard file')
+        # params_text = self.builder.get_object('Text_params')
+        # params_text.delete(1.0, tk.END)
+        # params_text.insert(tk.INSERT, 'Parameters loaded from hard file')
 
         self.analysis_file_list = []
         self.output_dir = hard_output_default
@@ -118,8 +121,8 @@ class CIUSuite2(object):
         tooltip.create(self.builder.get_object('Button_change_outputdir'), 'Select a new directory in which to save output files, including .ciu files.'
                                                                            '\nBy default, this is set to the directory containing the loaded .csv or .ciu '
                                                                            '\n files in the table.')
-        tooltip.create(self.builder.get_object('Button_reproc_files'), 'THIS BUTTON IS WAITING FOR A FINAL DECISION ON HOW WE ARE HANDLING PARAMETER EDITS AND DOES THE'
-                                                                       '\nSAME THING AS RESTORE ORIGINAL DATA FOR NOW')
+        # tooltip.create(self.builder.get_object('Button_reproc_files'), 'THIS BUTTON IS WAITING FOR A FINAL DECISION ON HOW WE ARE HANDLING PARAMETER EDITS AND DOES THE'
+        #                                                                '\nSAME THING AS RESTORE ORIGINAL DATA FOR NOW')
         tooltip.create(self.builder.get_object('Button_restore_raw'), 'Clears ALL previous processing, cropping, and analysis from a .ciu file, restoring the original raw data.'
                                                                       '\nCannot be undone')
         tooltip.create(self.builder.get_object('Entry_start_files'), 'To process only some files in the table above, enter the number corresponding to the beginning'
@@ -148,20 +151,20 @@ class CIUSuite2(object):
         self.analysis_file_list = []
 
         raw_files = open_files([('_raw.csv', '_raw.csv')])
-        self.progress_started()
-
-        # run raw processing
-        for raw_file in raw_files:
-            raw_obj = generate_raw_obj(raw_file)
-            analysis_obj = process_raw_obj(raw_obj, self.params_obj)
-            analysis_filename = save_analysis_obj(analysis_obj)
-            self.analysis_file_list.append(analysis_filename)
-            self.update_progress(raw_files.index(raw_file), len(raw_files))
-
-        # update the list of analysis files to display
-        self.display_analysis_files()
-
         if len(raw_files) > 0:
+            self.progress_started()
+
+            # run raw processing
+            for raw_file in raw_files:
+                raw_obj = generate_raw_obj(raw_file)
+                analysis_obj = process_raw_obj(raw_obj, self.params_obj)
+                analysis_filename = save_analysis_obj(analysis_obj)
+                self.analysis_file_list.append(analysis_filename)
+                self.update_progress(raw_files.index(raw_file), len(raw_files))
+
+            # update the list of analysis files to display
+            self.display_analysis_files()
+
             # update directory to match the loaded files
             self.output_dir = os.path.dirname(self.analysis_file_list[0])
             self.update_dir_entry()
@@ -354,6 +357,9 @@ class CIUSuite2(object):
         :return: void
         """
         newdir = filedialog.askdirectory()
+        if newdir == '':
+            # user hit cancel - don't set directory
+            return
         self.output_dir = newdir
         self.update_dir_entry()
 
@@ -441,34 +447,62 @@ class CIUSuite2(object):
         self.progress_started()
 
         if len(files_to_read) == 1:
-            # re-open filechooser to get second file
-            newfile = filedialog.askopenfilename(filetypes=[('_raw.csv', '_raw.csv')])
-            self.analysis_file_list.append(newfile)
-            files_to_read.append(newfile)
+            # re-open filechooser to choose a list of files to compare to this standard
+            newfiles = filedialog.askopenfilenames(filetypes=[('_raw.csv', '_raw.csv')])
+            if len(newfiles) == 0:
+                return
+
+            rmsd_print_list = ['File 1, File 2, RMSD (%)']
+            std_file = files_to_read[0]
+            index = 0
+            for file in newfiles:
+                compare_obj = load_analysis_obj(file)
+                rmsd = Original_CIU.compare_basic_raw(std_file, compare_obj, self.params_obj, self.output_dir)
+                printstring = '{},{},{:.2f}'.format(os.path.basename(std_file).rstrip('.ciu'),
+                                                    os.path.basename(newfiles[index]).rstrip('.ciu'),
+                                                    rmsd)
+                rmsd_print_list.append(printstring)
+                index += 1
+                self.update_progress(newfiles.index(file), len(newfiles))
 
         if len(files_to_read) == 2:
-            # compare_basic_raw(test_file1, test_file2, test_dir, test_smooth, test_crop)
+            # Direct compare between two files
             ciu1 = load_analysis_obj(files_to_read[0])
             ciu2 = load_analysis_obj(files_to_read[1])
             Original_CIU.compare_basic_raw(ciu1, ciu2, self.params_obj, self.output_dir)
 
         elif len(files_to_read) > 2:
+            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_batch' in x]
+            self.run_param_ui('Plot parameters', batch_keys)
+
             rmsd_print_list = ['File 1, File 2, RMSD (%)']
             # batch compare - compare all against all.
+            f1_index = 0
             for file in files_to_read:
                 # don't compare the file against itself
                 skip_index = files_to_read.index(file)
-                index = 0
-                while index < len(files_to_read):
-                    if not index == skip_index:
-                        ciu1 = load_analysis_obj(file)
-                        ciu2 = load_analysis_obj(files_to_read[index])
-                        rmsd = Original_CIU.compare_basic_raw(ciu1, ciu2, self.params_obj, self.output_dir)
-                        printstring = '{},{},{:.2f}'.format(os.path.basename(file).rstrip('.ciu'),
-                                                            os.path.basename(files_to_read[index]).rstrip('.ciu'),
-                                                            rmsd)
-                        rmsd_print_list.append(printstring)
-                    index += 1
+                f2_index = 0
+                while f2_index < len(files_to_read):
+                    # skip either comparisons to self or reverse and self comparisons depending on parameter
+                    if self.params_obj.compare_batch_1_both_dirs:
+                        if f2_index == skip_index:
+                            f2_index += 1
+                            continue
+                    else:
+                        # skip reverse and self comparisons
+                        if f2_index >= f1_index:
+                            f2_index += 1
+                            continue
+
+                    ciu1 = load_analysis_obj(file)
+                    ciu2 = load_analysis_obj(files_to_read[f2_index])
+                    rmsd = Original_CIU.compare_basic_raw(ciu1, ciu2, self.params_obj, self.output_dir)
+                    printstring = '{},{},{:.2f}'.format(os.path.basename(file).rstrip('.ciu'),
+                                                        os.path.basename(files_to_read[f2_index]).rstrip('.ciu'),
+                                                        rmsd)
+                    rmsd_print_list.append(printstring)
+                    f2_index += 1
+                f1_index += 1
                 self.update_progress(files_to_read.index(file), len(files_to_read))
 
             # print output to csv
@@ -748,14 +782,23 @@ class CIUSuite2(object):
         :return: void
         """
         num_classes = simpledialog.askinteger('Class Number', 'Into how many classes do you want to group?')
-
+        if num_classes is None:
+            # user hit cancel - return
+            print('classification canceled')
+            return
         data_labels = []
         obj_list_by_label = []
         endfile = ''
         for index in range(0, num_classes):
-            # Read in the .CIU files and labels for each class
-            label = simpledialog.askstring('Class Name', 'What is the name of this class?')
+            # Read in the .CIU files and labels for each class, canceling the process if the user hits 'cancel'
+            label = simpledialog.askstring('Class Name', 'Enter the name (class label) for class {}'.format(index + 1))
+            if label is None:
+                print('classification canceled')
+                return
             files = filedialog.askopenfilenames(filetypes=[('CIU', '.ciu')])
+            if len(files) == 0:
+                print('classification canceled')
+                return
 
             obj_list = []
             for file in files:

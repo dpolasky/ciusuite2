@@ -69,35 +69,35 @@ def parse_param_descriptions(param_file):
             # parse a parameter name and description from the line
             splits = line.split(',')
             key = splits[0].strip()
-            names[key] = splits[3].strip()
-            descriptions[key] = splits[8].strip()
+            names[key] = splits[2].strip()
+            descriptions[key] = splits[7].strip()
 
             # parse parameter requirements
-            param_type = splits[4].strip()
+            param_type = splits[3].strip()
             if param_type == 'int':
                 # parse lower and upper bounds
-                if splits[5].strip() == 'ninf':
+                if splits[4].strip() == 'ninf':
                     lower_bound = -np.inf
                 else:
-                    lower_bound = int(splits[5].strip())
-                if splits[6].strip() == 'inf':
+                    lower_bound = int(splits[4].strip())
+                if splits[5].strip() == 'inf':
                     upper_bound = np.inf
                 else:
-                    upper_bound = int(splits[6].strip())
+                    upper_bound = int(splits[5].strip())
                 reqs[key] = (param_type, [lower_bound, upper_bound])
             elif param_type == 'float':
                 # parse lower and upper bounds
-                if splits[5].strip() == 'ninf':
+                if splits[4].strip() == 'ninf':
                     lower_bound = -np.inf
                 else:
-                    lower_bound = float(splits[5].strip())
-                if splits[6].strip() == 'inf':
+                    lower_bound = float(splits[4].strip())
+                if splits[5].strip() == 'inf':
                     upper_bound = np.inf
                 else:
-                    upper_bound = float(splits[6].strip())
+                    upper_bound = float(splits[5].strip())
                 reqs[key] = (param_type, [lower_bound, upper_bound])
             elif param_type == 'string' or param_type == 'bool':
-                reqs[key] = (param_type, splits[7].strip().split(';'))
+                reqs[key] = (param_type, splits[6].strip().split(';'))
             elif param_type == 'anystring':
                 reqs[key] = (param_type, [])
             else:
@@ -138,6 +138,7 @@ class Parameters(object):
         # self.compare_plot_3_plot_title = None
         # self.compare_plot_4_extension = None
         self.output_1_save_csv = None
+        self.compare_batch_1_both_dirs = None
 
         # Feature detection/CIU-50 parameters
         self.gaussian_1_convergence = None
@@ -205,6 +206,47 @@ class Parameters(object):
             self.params_dict[field] = value
 
 
+def parse_params_file_newcsv(params_file):
+    """
+    Parse a CIU2_param_info.csv file for all parameters. Returns a params_dict that can be used to
+    set_params on a Parameters object
+    :param params_file: File to parse (.csv), headers = '#'
+    :return: params_dict: Dictionary, key=param name, value=param value
+    """
+    param_dict = {}
+    try:
+        with open(params_file, 'r') as pfile:
+            lines = list(pfile)
+            for line in lines:
+                # skip headers and blank lines
+                if line.startswith('#') or line.startswith('\n'):
+                    continue
+                splits = line.rstrip('\n').split(',')
+                value = splits[1].strip()
+
+                # catch 'None' values and convert to None
+                if value == 'None':
+                    param_dict[splits[0].strip()] = None
+                else:
+                    # try parsing numbers
+                    try:
+                        try:
+                            param_dict[splits[0].strip()] = int(value)
+                        except ValueError:
+                            param_dict[splits[0].strip()] = float(value)
+                    except ValueError:
+                        # string value - try parsing booleans or leave as a string
+                        if value.lower() in ['true', 't', 'yes', 'y']:
+                            param_dict[splits[0].strip()] = True
+                        elif value.lower() in ['false', 'f', 'no', 'n']:
+                            param_dict[splits[0].strip()] = False
+                        else:
+                            param_dict[splits[0].strip()] = splits[1].strip()
+        return param_dict
+    except FileNotFoundError:
+        print('params file not found!')
+
+
 def parse_params_file(params_file):
     """
     Parse a CIU_params.txt file for all parameters. Returns a params_dict that can be used to
@@ -220,7 +262,7 @@ def parse_params_file(params_file):
                 # skip headers and blank lines
                 if line.startswith('#') or line.startswith('\n'):
                     continue
-                splits = line.rstrip('\n').split('=')
+                splits = line.rstrip('\n').split(',')
                 value = splits[1].strip()
 
                 # catch 'None' values and convert to None
@@ -273,9 +315,9 @@ def parse_param_value(param_string):
                 return float(param_string)
         except ValueError:
             # string value - try parsing booleans or leave as a string
-            if param_string.lower() in ['true', 'yes', 'y']:
+            if param_string.lower() in ['t', 'true', 'yes', 'y']:
                 return True
-            elif param_string.lower() in ['false', 'no', 'n']:
+            elif param_string.lower() in ['f', 'false', 'no', 'n']:
                 return False
             else:
                 return param_string.strip()
