@@ -146,6 +146,7 @@ class Parameters(object):
         self.gaussian_3_width_max = None
         self.gaussian_4_save_diagnostics = None
         self.gaussian_5_width_fraction = None
+        # self.gaussian_6_min_peak_dist = None
 
         self.feature_cpt_min_length = None
         self.feature_cpt_width_tol = None

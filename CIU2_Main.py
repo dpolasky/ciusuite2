@@ -158,7 +158,7 @@ class CIUSuite2(object):
             for raw_file in raw_files:
                 raw_obj = generate_raw_obj(raw_file)
                 analysis_obj = process_raw_obj(raw_obj, self.params_obj)
-                analysis_filename = save_analysis_obj(analysis_obj)
+                analysis_filename = save_analysis_obj(analysis_obj, self.params_obj)
                 self.analysis_file_list.append(analysis_filename)
                 self.update_progress(raw_files.index(raw_file), len(raw_files))
 
@@ -287,7 +287,7 @@ class CIUSuite2(object):
 
             # update parameters, ciu_data, and axes but retain all other object information
             analysis_obj = reprocess_raw(analysis_obj, self.params_obj)
-            filename = save_analysis_obj(analysis_obj, outputdir=self.output_dir)
+            filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
             output_files.append(filename)
             self.update_progress(files_to_read.index(analysis_file), len(files_to_read))
 
@@ -310,7 +310,7 @@ class CIUSuite2(object):
 
             # update parameters and re-process raw data
             new_obj = process_raw_obj(analysis_obj.raw_obj, self.params_obj)
-            filename = save_analysis_obj(new_obj, outputdir=self.output_dir)
+            filename = save_analysis_obj(new_obj, self.params_obj, outputdir=self.output_dir)
             output_files.append(filename)
             self.update_progress(files_to_read.index(analysis_file), len(files_to_read))
 
@@ -543,7 +543,7 @@ class CIUSuite2(object):
         for file in files_to_read:
             analysis_obj = load_analysis_obj(file)
             shifted_obj = Original_CIU.delta_dt(analysis_obj)
-            newfile = save_analysis_obj(shifted_obj, filename_append='_delta', outputdir=self.output_dir)
+            newfile = save_analysis_obj(shifted_obj, analysis_obj.params, filename_append='_delta', outputdir=self.output_dir)
             new_file_list.append(newfile)
             # also save _raw.csv output if desired
             if self.params_obj.output_1_save_csv:
@@ -557,7 +557,8 @@ class CIUSuite2(object):
 
     def on_button_crop_clicked(self):
         """
-        Open a dialog to ask user for crop inputs, then crop selected data accordingly
+        Open a dialog to ask user for crop inputs, then crop selected data accordingly.
+        NOTE: preserves parameters from original object, as no changes have been made here
         :return: saves new .ciu files
         """
         # run the cropping UI
@@ -577,7 +578,7 @@ class CIUSuite2(object):
             crop_obj = Raw_Processing.crop(analysis_obj, crop_vals)
             crop_obj.crop_vals = crop_vals
             # newfile = save_analysis_obj(crop_obj, filename_append='_crop', outputdir=self.output_dir)
-            newfile = save_analysis_obj(crop_obj, outputdir=self.output_dir)
+            newfile = save_analysis_obj(crop_obj, analysis_obj.params, outputdir=self.output_dir)
             new_file_list.append(newfile)
             # also save _raw.csv output if desired
             if self.params_obj.output_1_save_csv:
@@ -607,7 +608,7 @@ class CIUSuite2(object):
             analysis_obj = load_analysis_obj(file)
             analysis_obj = Gaussian_Fitting.gaussian_fit_ciu(analysis_obj, self.params_obj)
 
-            filename = save_analysis_obj(analysis_obj, outputdir=self.output_dir)
+            filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
             new_file_list.append(filename)
             self.update_progress(files_to_read.index(file), len(files_to_read))
 
@@ -636,8 +637,8 @@ class CIUSuite2(object):
             analysis_obj = load_analysis_obj(file)
 
             # run feature detection
-            analysis_obj = Feature_Detection.ciu50_main(analysis_obj, outputdir=self.output_dir)
-            filename = save_analysis_obj(analysis_obj, outputdir=self.output_dir)
+            analysis_obj = Feature_Detection.ciu50_main(analysis_obj, self.params_obj, outputdir=self.output_dir)
+            filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
             new_file_list.append(filename)
 
             if not analysis_obj.params.output_1_save_csv:
@@ -684,8 +685,8 @@ class CIUSuite2(object):
             analysis_obj = load_analysis_obj(file)
 
             # run feature detection
-            analysis_obj = Feature_Detection.ciu50_gaussians(analysis_obj, outputdir=self.output_dir)
-            filename = save_analysis_obj(analysis_obj, outputdir=self.output_dir)
+            analysis_obj = Feature_Detection.ciu50_gaussians(analysis_obj, self.params_obj, outputdir=self.output_dir)
+            filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
             new_file_list.append(filename)
 
             if not analysis_obj.params.output_1_save_csv:
@@ -735,11 +736,11 @@ class CIUSuite2(object):
                 break
 
             # If gaussian data exists, perform the analysis
-            analysis_obj = Feature_Detection.feature_detect_gaussians(analysis_obj)
-            filename = save_analysis_obj(analysis_obj, outputdir=self.output_dir)
+            analysis_obj = Feature_Detection.feature_detect_gaussians(analysis_obj, self.params_obj)
+            filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
             new_file_list.append(filename)
 
-            Feature_Detection.plot_features(analysis_obj, self.output_dir, mode='gaussian')
+            Feature_Detection.plot_features(analysis_obj, self.params_obj, self.output_dir, mode='gaussian')
             outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_features.csv')
             Feature_Detection.print_features_list(analysis_obj.features_gaussian, outputpath, mode='gaussian')
             self.update_progress(files_to_read.index(file), len(files_to_read))
@@ -763,11 +764,11 @@ class CIUSuite2(object):
             # load file
             analysis_obj = load_analysis_obj(file)
 
-            analysis_obj = Feature_Detection.feature_detect_changept(analysis_obj)
-            filename = save_analysis_obj(analysis_obj, outputdir=self.output_dir)
+            analysis_obj = Feature_Detection.feature_detect_changept(analysis_obj, self.params_obj)
+            filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
             new_file_list.append(filename)
 
-            Feature_Detection.plot_features(analysis_obj, self.output_dir, mode='changept')
+            Feature_Detection.plot_features(analysis_obj, self.params_obj, self.output_dir, mode='changept')
             outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_features.csv')
             Feature_Detection.print_features_list(analysis_obj.features_changept, outputpath, mode='changept')
             self.update_progress(files_to_read.index(file), len(files_to_read))
@@ -1095,22 +1096,27 @@ def average_ciu(analysis_obj_list):
     averaged_obj = CIUAnalysisObj(raw_obj_list[0], avg_data, analysis_obj_list[0].axes)
     averaged_obj.params = analysis_obj_list[0].params
     averaged_obj.raw_obj_list = raw_obj_list
-    averaged_obj.filename = save_analysis_obj(averaged_obj, filename_append='_Avg')
+    averaged_obj.filename = save_analysis_obj(averaged_obj, analysis_obj_list[0].params, filename_append='_Avg')
 
     # save averaged object to file and return it
     return averaged_obj
 
 
-def save_analysis_obj(analysis_obj, filename_append='', outputdir=None):
+def save_analysis_obj(analysis_obj, params_obj, filename_append='', outputdir=None):
     """
     Pickle the CIUAnalysisObj for later retrieval
     :param analysis_obj: CIUAnalysisObj to save
     :type analysis_obj: CIUAnalysisObj
+    :param params_obj: Parameters object to update/save with the analysis object
+    :type params_obj: Parameters
     :param filename_append: Addtional filename to append to the raw_obj name (e.g. 'AVG')
     :param outputdir: (optional) directory in which to save. Default = raw file directory
     :return: full path to save location
     """
     file_extension = '.ciu'
+
+    # update parameters
+    analysis_obj.params = params_obj
 
     if outputdir is not None:
         picklefile = os.path.join(outputdir, analysis_obj.raw_obj.filename.rstrip('_raw.csv')

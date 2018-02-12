@@ -199,6 +199,30 @@ def filter_fits(params_list, peak_width_cutoff, intensity_cutoff, centroid_bound
     return filtered_list
 
 
+def check_peak_dist(popt_list, current_guess_list, min_distance_dt, max_peak_width):
+    """
+    Determine whether the centroid of the current guess is too close to an existing (already fit) peak.
+    Note: excludes peaks above the width cutoff, as these are not used for feature detection/etc anyway
+    and may overlap substantially with signal peaks (removing them may negatively impact fitting)
+    :param popt_list: Current optimized parameter list (flat, as returned from curve_fit)
+    :param current_guess_list: list of parameters for current guess [y0, amplitude, centroid, width]
+    :param min_distance_dt: minimum distance between peaks in drift axis units
+    :param max_peak_width: max width for filtering from Parameters object
+    :return: boolean; True if distance is greater than minimum
+    """
+    # automatically allow any peaks that are too wide, as these will not impact feature detection/etc
+    if current_guess_list[3] > max_peak_width:
+        return True
+
+    guess_centroid = current_guess_list[2]
+    existing_centroids = popt_list[2::4]
+    # return false if any existing centroid is too close to the current guess, excluding noise peaks
+    for existing_centroid in existing_centroids:
+        if abs(existing_centroid - guess_centroid) < min_distance_dt:
+            return False
+    return True
+
+
 def gaussian_fit_ciu(analysis_obj, params_obj):
     """
     Gaussian fitting module for single-gaussian analysis of CIU-type data. Determines estimated
@@ -253,10 +277,17 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
         fit_bounds_lower, fit_bounds_upper = [], []
         fit_bounds_lower_append = [0, 0, min_dt, 0]
         fit_bounds_upper_append = [max_dt, 1.1, max_dt, len(dt_axis)]
+        popt = None
 
         # Iterate through peak detection until convergence criterion is met, adding one additional peak each iteration
-        while adjrsq < analysis_obj.params.gaussian_1_convergence:
+        while adjrsq < params_obj.gaussian_1_convergence:
             try:
+                # NOTE: checking if peaks too close was not helpful - removed
+                # if popt is not None:
+                #     if not check_peak_dist(popt, all_peak_guesses[i], params_obj.gaussian_6_min_peak_dist, params_obj.gaussian_3_width_max):
+                #         # peak is too close to an existing peak; skip this guess and continue
+                #         i += 1
+                #         continue
                 param_guesses_multiple.extend(all_peak_guesses[i])
                 # ensure bounds arrays maintain same shape as parameter guesses
                 fit_bounds_lower.extend(fit_bounds_lower_append)
@@ -266,6 +297,7 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
                 print('Included all {} peaks found, but r^2 still less than convergence criterion. '
                       'Poor fitting possible'.format(i+1))
                 break
+
             try:
                 popt, pcov = curve_fit(multi_gauss_func, dt_axis, cv_col_intensities, method='trf',
                                        p0=param_guesses_multiple, maxfev=5000,
@@ -334,4 +366,4 @@ if __name__ == '__main__':
     for file in files:
         with open(file, 'rb') as analysis_file:
             current_analysis_obj = pickle.load(analysis_file)
-        gaussian_fit_ciu(current_analysis_obj, current_analysis_obj.params)
+        gaussian_fit_ciu(current_analysis_obj, current_analysis_obj.params)  # NOTE: analysis_obj.params is DEPRECATED
