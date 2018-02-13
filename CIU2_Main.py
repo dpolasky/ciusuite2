@@ -641,16 +641,16 @@ class CIUSuite2(object):
             filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
             new_file_list.append(filename)
 
-            if not analysis_obj.params.output_1_save_csv:
+            if not self.params_obj.ciu50_cpt_2_combine_outputs:
                 analysis_obj.save_ciu50_outputs(self.output_dir, mode='changept')
                 analysis_obj.save_ciu50_short(self.output_dir)
                 combine_flag = False
             else:
                 file_string = os.path.basename(filename).rstrip('.ciu') + '\n'
                 all_outputs += file_string
-                all_outputs += analysis_obj.save_ciu50_outputs(self.output_dir, True)
+                all_outputs += analysis_obj.save_ciu50_outputs(self.output_dir, mode='changept', combine=True)
                 short_outputs += os.path.basename(filename).rstrip('.ciu')
-                short_outputs += analysis_obj.save_ciu50_short(self.output_dir, True)
+                short_outputs += analysis_obj.save_ciu50_short(self.output_dir, combine=True)
                 combine_flag = True
             self.update_progress(files_to_read.index(file), len(files_to_read))
 
@@ -689,14 +689,14 @@ class CIUSuite2(object):
             filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
             new_file_list.append(filename)
 
-            if not analysis_obj.params.output_1_save_csv:
+            if not self.params_obj.ciu50_gauss_2_combine_outputs:
                 analysis_obj.save_ciu50_outputs(self.output_dir, mode='gaussian')
                 analysis_obj.save_ciu50_short(self.output_dir)
                 combine_flag = False
             else:
                 file_string = os.path.basename(filename).rstrip('.ciu') + '\n'
                 all_outputs += file_string
-                all_outputs += analysis_obj.save_ciu50_outputs(self.output_dir, True)
+                all_outputs += analysis_obj.save_ciu50_outputs(self.output_dir, mode='gaussian', combine=True)
                 short_outputs += os.path.basename(filename).rstrip('.ciu')
                 short_outputs += analysis_obj.save_ciu50_short(self.output_dir, True)
                 combine_flag = True

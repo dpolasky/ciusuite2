@@ -157,6 +157,8 @@ class Parameters(object):
 
         self.ciu50_cpt_mode = None
         self.ciu50_gauss_mode = None
+        self.ciu50_cpt_2_combine_outputs = None
+        self.ciu50_gauss_2_combine_outputs = None
 
     def set_params(self, params_dict):
         """
