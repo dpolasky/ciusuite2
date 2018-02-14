@@ -9,6 +9,7 @@ import scipy.signal
 import scipy.interpolate
 from CIU_raw import CIURaw
 from CIU_analysis_obj import CIUAnalysisObj
+from CIU_Params import Parameters
 
 
 def get_data(fname):
@@ -55,7 +56,7 @@ def normalize_by_col(raw_data_matrix):
     return norm
 
 
-def sav_gol_smooth(ciu_data_matrix, smooth_window):
+def sav_gol_smooth(ciu_data_matrix, smooth_window, smooth_order):
     """
     Apply savitsky-golay smoothing to each column (CV) of the 2D matrix supplied
     :param ciu_data_matrix: input matrix (2D, columns (axis 1) gets smoothed) - supply without axes
@@ -73,12 +74,133 @@ def sav_gol_smooth(ciu_data_matrix, smooth_window):
     # smooth each column and return the data (axes swapped back to normal)
     index = 0
     while index < len(cv_data):
-        smoothed_col = scipy.signal.savgol_filter(cv_data[index], smooth_window, 2)
+        smoothed_col = scipy.signal.savgol_filter(cv_data[index], smooth_window, polyorder=smooth_order)
         output_data[index] = smoothed_col
         index += 1
     output_data = np.swapaxes(output_data, 0, 1)
 
     return output_data
+
+
+def smooth_main(analysis_obj, params_obj):
+    """
+    Integrated smoothing method for analysis object/parameter object combinations for general use
+    :param analysis_obj: CIU container with data to smooth
+    :type analysis_obj: CIUAnalysisObj
+    :param params_obj: parameter container with smoothing parameters
+    :type params_obj: Parameters
+    :return: updated analysis_obj (.ciu_data updated, no other changes)
+    """
+    norm_data = normalize_by_col(analysis_obj.raw_obj.rawdata)
+
+    if params_obj.smoothing_1_method is not None:
+        # ensure window size is odd
+        if params_obj.smoothing_2_window % 2 == 0:
+            params_obj.smoothing_2_window += 1
+
+        i = 0
+        while i < params_obj.smoothing_3_iterations:
+            if params_obj.smoothing_1_method.lower() == '2d savitzky-golay':
+                norm_data = sgolay2d(norm_data, params_obj.smoothing_2_window, order=2)
+
+            elif params_obj.smoothing_1_method == '1d savitzky-golay':
+                norm_data = sav_gol_smooth(norm_data, params_obj.smoothing_2_window, smooth_order=2)
+
+            else:
+                print('Invalid smoothing method, no smoothing applied')
+                break
+            i += 1
+
+    analysis_obj.ciu_data = norm_data
+    return analysis_obj
+
+
+def sgolay2d(z, window_size, order, derivative=None):
+    """
+    ADAPTED FROM THE SCIPY COOKBOOK, at http://scipy-cookbook.readthedocs.io/items/SavitzkyGolay.html
+    accessed 2/14/2018. Performs a 2D Savitzky-Golay smooth on the the provided 2D array z using parameters
+    window_size and polynomial order.
+    :param z: 2D numpy array of data to smooth
+    :param window_size: filter size (int), must be odd to use for smoothing
+    :param order: polynomial order (int) to use
+    :param derivative: optional (string), values = row, col, both, or None
+    :return: smoothed 2D numpy array
+    """
+
+    # number of terms in the polynomial expression
+    n_terms = (order + 1) * (order + 2) / 2.0
+
+    if window_size % 2 == 0:
+        raise ValueError('window_size must be odd')
+
+    if window_size**2 < n_terms:
+        raise ValueError('order is too high for the window size')
+
+    half_size = window_size // 2
+
+    # exponents of the polynomial.
+    # p(x,y) = a0 + a1*x + a2*y + a3*x^2 + a4*y^2 + a5*x*y + ...
+    # this line gives a list of two item tuple. Each tuple contains
+    # the exponents of the k-th term. First element of tuple is for x
+    # second element for y.
+    # Ex. exps = [(0,0), (1,0), (0,1), (2,0), (1,1), (0,2), ...]
+    exps = [(k-n, n) for k in range(order + 1) for n in range(k+1)]
+
+    # coordinates of points
+    ind = np.arange(-half_size, half_size+1, dtype=np.float64)
+    dx = np.repeat(ind, window_size)
+    dy = np.tile(ind, [window_size, 1]).reshape(window_size**2, )
+
+    # build matrix of system of equation
+    A = np.empty((window_size**2, len(exps)))
+    for i, exp in enumerate(exps):
+        A[:, i] = (dx**exp[0]) * (dy**exp[1])
+
+    # pad input array with appropriate values at the four borders
+    new_shape = z.shape[0] + 2*half_size, z.shape[1] + 2*half_size
+    Z = np.zeros(new_shape)
+    # top band
+    band = z[0, :]
+    Z[:half_size, half_size:-half_size] = band - np.abs(np.flipud(z[1:half_size+1, :]) - band)
+    # bottom band
+    band = z[-1, :]
+    Z[-half_size:, half_size:-half_size] = band + np.abs(np.flipud(z[-half_size-1:-1, :]) - band)
+    # left band
+    band = np.tile(z[:, 0].reshape(-1, 1), [1, half_size])
+    Z[half_size:-half_size, :half_size] = band - np.abs(np.fliplr(z[:, 1:half_size+1]) - band)
+    # right band
+    band = np.tile(z[:, -1].reshape(-1, 1), [1, half_size])
+    Z[half_size:-half_size, -half_size:] = band + np.abs(np.fliplr(z[:, -half_size-1:-1]) - band)
+    # central band
+    Z[half_size:-half_size, half_size:-half_size] = z
+
+    # top left corner
+    band = z[0, 0]
+    Z[:half_size, :half_size] = band - np.abs(np.flipud(np.fliplr(z[1:half_size+1, 1:half_size+1])) - band)
+    # bottom right corner
+    band = z[-1, -1]
+    Z[-half_size:, -half_size:] = band + np.abs(np.flipud(np.fliplr(z[-half_size-1:-1, -half_size-1:-1])) - band)
+    # top right corner
+    band = Z[half_size, -half_size:]
+    Z[:half_size, -half_size:] = band - np.abs(np.flipud(Z[half_size+1:2*half_size+1, -half_size:]) - band)
+    # bottom left corner
+    band = Z[-half_size:, half_size].reshape(-1, 1)
+    Z[-half_size:, :half_size] = band - np.abs(np.fliplr(Z[-half_size:, half_size+1:2*half_size+1]) - band)
+
+    # solve system and convolve
+    if derivative is None:
+        m = np.linalg.pinv(A)[0].reshape((window_size, -1))
+        return scipy.signal.fftconvolve(Z, m, mode='valid')
+    elif derivative == 'col':
+        c = np.linalg.pinv(A)[1].reshape((window_size, -1))
+        return scipy.signal.fftconvolve(Z, -c, mode='valid')
+    elif derivative == 'row':
+        r = np.linalg.pinv(A)[2].reshape((window_size, -1))
+        return scipy.signal.fftconvolve(Z, -r, mode='valid')
+    elif derivative == 'both':
+        c = np.linalg.pinv(A)[1].reshape((window_size, -1))
+        r = np.linalg.pinv(A)[2].reshape((window_size, -1))
+        return scipy.signal.fftconvolve(Z, -r, mode='valid'), scipy.signal.fftconvolve(Z, -c, mode='valid')
 
 
 def find_nearest(array, value):

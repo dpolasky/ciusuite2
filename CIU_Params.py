@@ -97,7 +97,12 @@ def parse_param_descriptions(param_file):
                     upper_bound = float(splits[5].strip())
                 reqs[key] = (param_type, [lower_bound, upper_bound])
             elif param_type == 'string' or param_type == 'bool':
-                reqs[key] = (param_type, splits[6].strip().split(';'))
+                req_vals = [x.strip() for x in splits[6].strip().split(';')]
+                # convert 'none' strings to actual Nonetype
+                # for index, value in enumerate(req_vals):
+                #     if value == 'none':
+                #         req_vals[index] = None
+                reqs[key] = (param_type, req_vals)
             elif param_type == 'anystring':
                 reqs[key] = (param_type, [])
             else:
@@ -370,7 +375,20 @@ class ParamUI(tkinter.Toplevel):
 
             # display the parameter name, value, and description
             ttk.Label(labels_frame, text=PAR_NAMES[param_key]).grid(row=row, column=0, sticky='e')
-            ttk.Entry(labels_frame, textvariable=entry_var, width=25).grid(row=row, column=1)
+
+            # display values the user can enter (int/float, strings) as an entry field
+            param_type = PAR_REQS[param_key][0]
+            if param_type == 'int' or param_type == 'float' or param_type == 'anystring':
+                ttk.Entry(labels_frame, textvariable=entry_var, width=25).grid(row=row, column=1)
+            else:
+                # for fields where the user must choose, display a dropdown menu instead
+                option_vals = [x for x in PAR_REQS[param_key][1]]
+                # prevent the first option from not appearing in menu. Not sure why this duplication is necessary...
+                option_vals.insert(0, option_vals[0])
+                menu = ttk.OptionMenu(labels_frame, entry_var, *option_vals)
+                menu.grid(row=row, column=1)
+                menu['menu'].config(background='white')
+
             ttk.Label(labels_frame, text=PAR_DESCRIPTS[param_key], wraplength=500).grid(row=row, column=2, sticky='w')
 
             self.entry_vars[param_key] = entry_var
@@ -437,7 +455,12 @@ class ParamUI(tkinter.Toplevel):
 
         elif param_type == 'string' or param_type == 'bool':
             # check whether the string or "boolean" (really a string) value is in the allowed list
-            return self.entry_vars[param_key].get() in param_val_list
+            entered_val = self.entry_vars[param_key].get().strip().lower()
+            # if entered_val == 'none':
+            #     return 'none' in param_val_list
+            # else:
+            check_val_list = [x.strip().lower() for x in param_val_list]    # check against lower case/stripped
+            return entered_val in check_val_list
 
         elif param_type == 'anystring':
             # Things like titles can be any string - no checking required
@@ -458,7 +481,15 @@ class ParamUI(tkinter.Toplevel):
         """
         for key in self.entry_vars.keys():
             parsed_val = parse_param_value(self.entry_vars[key].get())
-            self.return_vals[key] = parsed_val
+            try:
+                if parsed_val.strip().lower() == 'none':
+                    self.return_vals[key] = None
+                else:
+                    # not a 'none' string, set it as is
+                    self.return_vals[key] = parsed_val
+            except AttributeError:
+                # not a string, return value as is
+                self.return_vals[key] = parsed_val
         return self.return_vals
 
     def on_close_window(self):

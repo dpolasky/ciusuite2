@@ -78,7 +78,7 @@ class CIUSuite2(object):
             'on_button_feature_changept_clicked': self.on_button_feature_changept_clicked,
             'on_button_classification_supervised_clicked': self.on_button_classification_supervised_clicked,
             'on_button_classify_unknown_clicked': self.on_button_classify_unknown_clicked,
-            'on_section_params_oldciu_clicked': self.on_section_params_oldciu_clicked
+            'on_button_smoothing_clicked': self.on_button_smoothing_clicked
         }
         builder.connect_callbacks(callbacks)
         self.initialize_tooltips()
@@ -373,31 +373,6 @@ class CIUSuite2(object):
         self.builder.get_object('Text_outputdir').insert(tk.INSERT, self.output_dir)
         self.builder.get_object('Text_outputdir').config(state=tk.DISABLED)
 
-    def on_section_params_oldciu_clicked(self):
-        """
-        Run a ParamsUI interface for the old CIU section, then update the Parameters object
-        with any changed parameters (and reprocess data?)
-        :return: void
-        """
-        title = 'Smoothing Parameters'
-        # key_list = ['smoothing_1_method', 'smoothing_2_window', 'smoothing_3_iterations']
-        key_list = [x for x in self.params_obj.params_dict.keys() if 'smoothing' in x]
-        self.run_param_ui(title, key_list)
-        self.run()
-        # param_ui = CIU_Params.ParamUI('Smoothing Parameters', self.params_obj, key_list)
-        #
-        # # wait for user to close the window
-        # param_ui.wait_window()
-        # # print(param_ui.return_code)
-        #
-        # # Only update parameters if the user clicked 'okay' (didn't click cancel or close the window)
-        # if param_ui.return_code == 0:
-        #     return_vals = param_ui.refresh_values()
-        #     # print(return_vals)
-        #     self.params_obj.set_params(return_vals)
-        # # self.params_obj.print_params_to_console()
-        # self.run()
-
     def run_param_ui(self, section_title, list_of_param_keys):
         """
         Run the parameter UI for a given set of parameters.
@@ -510,6 +485,50 @@ class CIUSuite2(object):
                 for rmsd_string in rmsd_print_list:
                     rmsd_file.write(rmsd_string + '\n')
         self.progress_done()
+
+    def on_button_smoothing_clicked(self):
+        """
+        Reprocess raw data with new smoothing (and interpolation?) parameters
+        :return: void
+        """
+        title = 'Smoothing Parameters'
+        key_list = [x for x in self.params_obj.params_dict.keys() if 'smoothing' in x]
+        # key_list = ['smoothing_1_method']
+        self.run_param_ui(title, key_list)
+
+        files_to_read = self.check_file_range_entries()
+        self.progress_started()
+        new_file_list = []
+
+        for file in files_to_read:
+            analysis_obj = load_analysis_obj(file)
+            analysis_obj = Raw_Processing.smooth_main(analysis_obj, self.params_obj)
+            filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
+            new_file_list.append(filename)
+
+            # also save _raw.csv output if desired
+            if self.params_obj.output_1_save_csv:
+                save_path = file.rstrip('.ciu') + '_delta_raw.csv'
+                Original_CIU.write_ciu_csv(save_path, analysis_obj.ciu_data, analysis_obj.axes)
+            self.update_progress(files_to_read.index(file), len(files_to_read))
+
+        self.analysis_file_list = new_file_list
+        self.display_analysis_files()
+        self.progress_done()
+
+        # param_ui = CIU_Params.ParamUI('Smoothing Parameters', self.params_obj, key_list)
+        #
+        # # wait for user to close the window
+        # param_ui.wait_window()
+        # # print(param_ui.return_code)
+        #
+        # # Only update parameters if the user clicked 'okay' (didn't click cancel or close the window)
+        # if param_ui.return_code == 0:
+        #     return_vals = param_ui.refresh_values()
+        #     # print(return_vals)
+        #     self.params_obj.set_params(return_vals)
+        # # self.params_obj.print_params_to_console()
+        # self.run()
 
     def on_button_oldavg_clicked(self):
         """
@@ -1000,23 +1019,13 @@ def process_raw_obj(raw_obj, params_obj):
     norm_data = Raw_Processing.normalize_by_col(raw_obj.rawdata)
     axes = (raw_obj.dt_axis, raw_obj.cv_axis)
 
-    # interpolate data if desired
+    # interpolate data if desired TODO: move to own button/remove from here
     if params_obj.interp_1_method:
         norm_data, axes = Raw_Processing.interpolate_cv(norm_data, axes, params_obj.interp_2_bins)
 
-    # Smooth data if desired (column-by-column)
-    if params_obj.smoothing_1_method is not None and params_obj.smoothing_2_window is not None:
-        i = 0
-        while i < params_obj.smoothing_3_iterations:
-            norm_data = Raw_Processing.sav_gol_smooth(norm_data, params_obj.smoothing_2_window)
-            i += 1
-
     # save a CIUAnalysisObj with the information above
     analysis_obj = CIUAnalysisObj(raw_obj, norm_data, axes)
-
-    # crop if desired and update the analysis_obj
-    # if params_obj.cropping_window_values is not None:  # If no cropping, use the whole matrix
-    #     analysis_obj = Raw_Processing.crop(analysis_obj, params_obj.cropping_window_values)
+    analysis_obj = Raw_Processing.smooth_main(analysis_obj, params_obj)
 
     # save parameters and return
     analysis_obj.params = params_obj
@@ -1049,7 +1058,7 @@ def reprocess_raw(analysis_obj, params_obj):
     :return: the existing analysis object with reprocessed ciu_data and axes
     """
     # ALTERNATIVE METHOD - rename to 'update params' and only change params obj...
-
+    # TODO: move/remove this method?
 
     raw_obj = analysis_obj.raw_obj
     norm_data = Raw_Processing.normalize_by_col(raw_obj.rawdata)
@@ -1057,16 +1066,19 @@ def reprocess_raw(analysis_obj, params_obj):
     analysis_obj.ciu_data = norm_data
     analysis_obj.axes = axes
 
+    # smooth
+    analysis_obj = Raw_Processing.smooth_main(analysis_obj, params_obj)
+
     # interpolate data if desired
     if params_obj.interp_1_method:
         norm_data, axes = Raw_Processing.interpolate_cv(norm_data, axes, params_obj.interp_2_bins)
 
     # Smooth data if desired (column-by-column)
-    if params_obj.smoothing_1_method is not None:
-        i = 0
-        while i < params_obj.smoothing_3_iterations:
-            norm_data = Raw_Processing.sav_gol_smooth(norm_data, params_obj.smoothing_2_window)
-            i += 1
+    # if params_obj.smoothing_1_method is not None:
+    #     i = 0
+    #     while i < params_obj.smoothing_3_iterations:
+    #         norm_data = Raw_Processing.sav_gol_smooth(norm_data, params_obj.smoothing_2_window)
+    #         i += 1
 
     # check for previously saved cropping and use those values if present
     if analysis_obj.crop_vals is not None:

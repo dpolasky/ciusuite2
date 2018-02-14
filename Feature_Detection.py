@@ -155,6 +155,9 @@ def feature_detect_gaussians(analysis_obj, params_obj):
             features.append(new_feature)
     # filter features to remove 'loners' without a sufficient number of points
     filtered_features = filter_features(features, params_obj.feature_gauss_min_length, mode='gaussian')
+    # for feature in filtered_features:
+    #     cv_index_list = []
+    #     feature.init_feature_data_gauss()
     analysis_obj.features_gaussian = filtered_features
     return analysis_obj
 
@@ -446,7 +449,7 @@ class Transition(object):
         trans_distance = trans_end_cv - trans_start_cv
 
         # Perform interpolation as specified by the user parameters
-        if fit_mode == 1:   # DEPRECATED - basic interpolation always gives better results
+        if fit_mode == 1:   # DEPRECATED - basic interpolation always (?) gives better results
             final_x_vals = self.combined_x_axis
             final_y_vals = self.combined_y_vals
 
@@ -856,6 +859,7 @@ def ciu50_gaussians(analysis_obj, params_obj, outputdir):
 
     # Adjust Features to avoid inclusion of any points without col maxes
     adj_features = adjust_gauss_features(analysis_obj, params_obj)
+    # analysis_obj.features_gaussian = adj_features
 
     # Catch bad inputs (not enough features to compute a transition)
     if len(adj_features) <= 1:

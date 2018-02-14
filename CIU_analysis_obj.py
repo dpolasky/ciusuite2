@@ -221,21 +221,22 @@ class CIUAnalysisObj(object):
         output_name = os.path.join(outputpath, self.filename + '_features.csv')
         output_string = ''
 
+        # DEPRECATED, now that Feature detection has its own output methods
         # assemble the output
-        output_string += 'Features:, CV_lower (V),CV_upper (V),DT mode,DT_lower,DT_upper, rsq\n'
-        feat_index = 1
-        if mode == 'gaussian':
-            features_list = self.features_gaussian
-        else:
-            features_list = self.features_changept
+        # output_string += 'Features:, CV_lower (V),CV_upper (V),DT mode,DT_lower,DT_upper, rsq\n'
+        # feat_index = 1
+        # if mode == 'gaussian':
+        #     features_list = self.features_gaussian
+        # else:
+        #     features_list = self.features_changept
 
-        for feature in features_list:
-            output_string += 'Feature {},'.format(feat_index)
-            output_string += '{},{},'.format(feature.start_cv_val, feature.end_cv_val)
-            output_string += '{:.2f},'.format(scipy.stats.mode(feature.dt_max_vals)[0][0])
-            output_string += '{:.2f},{:.2f}\n'.format(np.min(feature.dt_max_vals),
-                                                      np.max(feature.dt_max_vals))
-            feat_index += 1
+        # for feature in features_list:
+        #     output_string += 'Feature {},'.format(feat_index)
+        #     output_string += '{},{},'.format(feature.start_cv_val, feature.end_cv_val)
+        #     output_string += '{:.2f},'.format(scipy.stats.mode(feature.dt_max_vals)[0][0])
+        #     output_string += '{:.2f},{:.2f}\n'.format(np.min(feature.dt_max_vals),
+        #                                               np.max(feature.dt_max_vals))
+        #     feat_index += 1
         output_string += 'Transitions:,y0 (ms),ymax (ms),CIU-50 (V),k (steepness),r_squared\n'
         trans_index = 1
         for transition in self.transitions:
