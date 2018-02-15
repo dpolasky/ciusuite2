@@ -164,6 +164,9 @@ class Parameters(object):
         self.ciu50_gauss_mode = None
         self.ciu50_cpt_2_combine_outputs = None
         self.ciu50_gauss_2_combine_outputs = None
+        self.ciu50_3_interp_factor = None
+        self.ciu50_4_trans_interp_factor = None
+        self.ciu50_5_pad_transitions_cv = None
 
     def set_params(self, params_dict):
         """

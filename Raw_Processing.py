@@ -103,7 +103,7 @@ def smooth_main(analysis_obj, params_obj):
             if params_obj.smoothing_1_method.lower() == '2d savitzky-golay':
                 norm_data = sgolay2d(norm_data, params_obj.smoothing_2_window, order=2)
 
-            elif params_obj.smoothing_1_method == '1d savitzky-golay':
+            elif params_obj.smoothing_1_method.lower() == '1d savitzky-golay':
                 norm_data = sav_gol_smooth(norm_data, params_obj.smoothing_2_window, smooth_order=2)
 
             else:

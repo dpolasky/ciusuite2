@@ -391,8 +391,9 @@ class CIUSuite2(object):
         if param_ui.return_code == 0:
             return_vals = param_ui.refresh_values()
             self.params_obj.set_params(return_vals)
-        self.check_params()
-        # self.run()
+            self.check_params()
+            return True
+        return False
 
     def on_button_oldplot_clicked(self):
         """
@@ -400,7 +401,9 @@ class CIUSuite2(object):
         :return: void (saves to output dir)
         """
         plot_keys = [x for x in self.params_obj.params_dict.keys() if 'ciuplot' in x]
-        self.run_param_ui('Plot parameters', plot_keys)
+        if not self.run_param_ui('Plot parameters', plot_keys):
+            # user hit 'cancel' - don't perform the analysis
+            return
 
         # Determine if a file range has been specified
         files_to_read = self.check_file_range_entries()
@@ -494,7 +497,9 @@ class CIUSuite2(object):
         title = 'Smoothing Parameters'
         key_list = [x for x in self.params_obj.params_dict.keys() if 'smoothing' in x]
         # key_list = ['smoothing_1_method']
-        self.run_param_ui(title, key_list)
+        if not self.run_param_ui(title, key_list):
+            # user hit 'cancel' - don't perform the analysis
+            return
 
         files_to_read = self.check_file_range_entries()
         self.progress_started()
@@ -503,6 +508,7 @@ class CIUSuite2(object):
         for file in files_to_read:
             analysis_obj = load_analysis_obj(file)
             analysis_obj = Raw_Processing.smooth_main(analysis_obj, self.params_obj)
+            analysis_obj.refresh_data()
             filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
             new_file_list.append(filename)
 
@@ -595,6 +601,7 @@ class CIUSuite2(object):
         for file in files_to_read:
             analysis_obj = load_analysis_obj(file)
             crop_obj = Raw_Processing.crop(analysis_obj, crop_vals)
+            analysis_obj.refresh_data()
             crop_obj.crop_vals = crop_vals
             # newfile = save_analysis_obj(crop_obj, filename_append='_crop', outputdir=self.output_dir)
             newfile = save_analysis_obj(crop_obj, analysis_obj.params, outputdir=self.output_dir)
@@ -616,7 +623,9 @@ class CIUSuite2(object):
         :return: void
         """
         param_keys = [x for x in self.params_obj.params_dict.keys() if 'gaussian' in x]
-        self.run_param_ui('Gaussian Fitting Parameters', param_keys)
+        if not self.run_param_ui('Gaussian Fitting Parameters', param_keys):
+            # user hit 'cancel' - don't perform the analysis
+            return
 
         # Determine if a file range has been specified
         files_to_read = self.check_file_range_entries()
@@ -640,8 +649,10 @@ class CIUSuite2(object):
         files
         :return: void
         """
-        param_keys = [x for x in self.params_obj.params_dict.keys() if 'ciu50_cpt' in x]
-        self.run_param_ui('CIU-50 Parameters', param_keys)
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'ciu50' in x]
+        if not self.run_param_ui('CIU-50 Parameters', param_keys):
+            # user hit 'cancel' - don't perform the analysis
+            return
 
         files_to_read = self.check_file_range_entries()
         self.progress_started()
@@ -689,7 +700,9 @@ class CIUSuite2(object):
         :return: void
         """
         param_keys = [x for x in self.params_obj.params_dict.keys() if 'ciu50_gauss' in x]
-        self.run_param_ui('CIU-50 Parameters', param_keys)
+        if not self.run_param_ui('CIU-50 Parameters', param_keys):
+            # user hit 'cancel' - don't perform the analysis
+            return
 
         files_to_read = self.check_file_range_entries()
         self.progress_started()
@@ -737,7 +750,9 @@ class CIUSuite2(object):
         :return: void
         """
         param_keys = [x for x in self.params_obj.params_dict.keys() if 'feature_gauss' in x]
-        self.run_param_ui('Feature Detection Parameters from Gaussians', param_keys)
+        if not self.run_param_ui('Feature Detection Parameters from Gaussians', param_keys):
+            # user hit 'cancel' - don't perform the analysis
+            return
 
         files_to_read = self.check_file_range_entries()
         self.progress_started()
@@ -773,7 +788,9 @@ class CIUSuite2(object):
         :return: void
         """
         param_keys = [x for x in self.params_obj.params_dict.keys() if 'feature_cpt' in x]
-        self.run_param_ui('Feature Detection Parameters', param_keys)
+        if not self.run_param_ui('Feature Detection Parameters', param_keys):
+            # user hit 'cancel' - don't perform the analysis
+            return
 
         files_to_read = self.check_file_range_entries()
         self.progress_started()
