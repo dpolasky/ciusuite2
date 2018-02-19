@@ -25,7 +25,7 @@ class Gaussian(object):
     """
     Container for fitted gaussian information. Holds fit parameters and any associated metadata
     """
-    def __init__(self, baseline, amplitude, centroid, width, collision_voltage):
+    def __init__(self, baseline, amplitude, centroid, width, collision_voltage, pcov):
         self.baseline = baseline
         self.amplitude = amplitude
         self.centroid = centroid
@@ -33,6 +33,8 @@ class Gaussian(object):
         self.cv = collision_voltage
         self.fwhm = 2*(math.sqrt(2*math.log(2)))*self.width
         self.resolution = self.centroid/self.fwhm
+        self.fit_covariances = pcov
+        self.fit_errors = np.sqrt(np.diag(pcov))
 
     def __str__(self):
         return 'Gaussian: x0={:.2f} A={:.1f} w={:.1f} cv={}'.format(self.centroid,
@@ -302,6 +304,7 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
                 popt, pcov = curve_fit(multi_gauss_func, dt_axis, cv_col_intensities, method='trf',
                                        p0=param_guesses_multiple, maxfev=5000,
                                        bounds=(fit_bounds_lower, fit_bounds_upper))
+                perr = np.sqrt(np.diag(pcov))
             except RuntimeError:
                 popt = []
                 pcov = []
@@ -322,13 +325,13 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
         index = 0
         gaussians_at_this_cv = []
         while index < len(popt):
-            gaussians_at_this_cv.append(Gaussian(popt[index], popt[index+1], popt[index+2], popt[index+3], cv_axis[cv_index]))
+            gaussians_at_this_cv.append(Gaussian(popt[index], popt[index+1], popt[index+2], popt[index+3], cv_axis[cv_index], pcov))
             index += 4
         gaussians.append(gaussians_at_this_cv)
         index = 0
         filt_gaussians_at_cv = []
         while index < len(filt_popt):
-            filt_gaussians_at_cv.append(Gaussian(filt_popt[index], filt_popt[index + 1], filt_popt[index + 2], filt_popt[index + 3], cv_axis[cv_index]))
+            filt_gaussians_at_cv.append(Gaussian(filt_popt[index], filt_popt[index + 1], filt_popt[index + 2], filt_popt[index + 3], cv_axis[cv_index], pcov))
             index += 4
         filtered_gaussians.append(filt_gaussians_at_cv)
 

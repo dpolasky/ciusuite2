@@ -18,6 +18,8 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 from sklearn.feature_selection import f_classif, GenericUnivariateSelect
 from sklearn.svm import SVC
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
 from sklearn.ensemble import RandomForestClassifier
 
 import numpy as np
@@ -27,6 +29,10 @@ import pickle
 import os
 import itertools
 from typing import List
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from CIU_analysis_obj import CIUAnalysisObj
+    from CIU_Params import Parameters
 
 
 class ClassificationScheme(object):
@@ -49,39 +55,44 @@ class ClassificationScheme(object):
         self.transformed_test_data = None
 
     def __str__(self):
-        label_string = ','.join(self.class_labels)
+        label_string = ','.join(self.unique_labels)
         return '<Classif_Scheme> type: {}, data: {}'.format(self.classifier_type, label_string)
     __repr__ = __str__
 
-    def classify_unknown(self, ciudata):
+    def classify_unknown(self, unk_ciu_obj, output_path):
         """
         Classify a test dataset according to this classification scheme. Selects features from
         the test dataset (ciudata), classifies, and returns output and score metrics.
-        :param ciudata: normalized CIU dataset (2D numpy array)
+        :param unk_ciu_obj: CIUAnalysisObj containing the ciu_data from unknown to be fitted
+        :type unk_ciu_obj: CIUAnalysisObj
+        :param output_path: directory in which to save output
         :return:
         """
-        # prepare data for classification by concatenating selected feature (CV) columns
-        concat_data = []
-        append_data = []
-        transpose_data = ciudata.T
-        feature_cv_indices = [x.cv_index for x in self.selected_features]
-        for cv_index in feature_cv_indices:
-            concat_data = np.concatenate((concat_data, transpose_data[cv_index]))
-            append_data.append(transpose_data[cv_index])
+        unk_ciudata = unk_ciu_obj.ciu_data
+        unk_input_x = []
+        # selected_cv_indices = [x.cv_index for x in features_list]
 
-        # classify
-        concat2 = concat_data.reshape(-1, 1)
-        concat2shape = np.shape(concat2)
-        prediction = self.classifier.predict(concat2)
-        logp_prediction = self.classifier.predict_log_proba(concat2)
-        prob_prediction = self.classifier.predict_proba(concat2)
+        # Assemble feature data for fitting
+        selected_cv_indices = [x.cv_index for x in self.selected_features]
+        for i in selected_cv_indices:
+            unk_input_x.append(unk_ciudata.T[i])
 
-        most_common_pred = scipy.stats.mode(prediction)
-        label_pred = self.unique_labels[most_common_pred[0][0] - 1]
-        prob_prediction_t = prob_prediction.T
-        avg_prob1 = np.mean(prob_prediction_t[0])
-        avg_prob2 = np.mean(prob_prediction_t[1])
-        return prediction
+        # Fit/classify data according to scheme LDA and classifier
+        unk_transform_lda = self.lda.transform(unk_input_x)
+        unk_predict_class_lab = self.classifier.predict(unk_transform_lda)
+        unk_predict_log_prob = self.classifier.predict_log_proba(unk_transform_lda)
+        unk_predict_proba = self.classifier.predict_proba(unk_transform_lda)
+
+        # save output (TODO: move to other method)
+        cvs = [x.cv for x in self.selected_features]
+        arr = np.array([cvs, unk_predict_class_lab, unk_predict_proba[:, 0], unk_predict_proba[:, 1]])
+
+        labels_out = '-'.join(self.unique_labels)
+        output_name = os.path.basename(unk_ciu_obj.filename.rstrip('.ciu')) + '_clf_{}.csv'.format(labels_out)
+        np.savetxt(os.path.join(output_path, output_name), arr.T, fmt='%s', delimiter=',',
+                   header='features, predict_class, predict_prob_0, predict_prob_1')
+
+        return unk_transform_lda, unk_predict_class_lab, unk_predict_log_prob, unk_predict_proba
 
 
 def get_unique_labels(label_list):
@@ -217,12 +228,12 @@ def univariate_feature_selection(shaped_label_list, analysis_obj_list_by_label):
         feature = CFeature(cv, cv_index, mean_score[cv_index], std_score[cv_index])
         features.append(feature)
 
-    # todo: make this selection its own method with multiple ways (best N features, all above cutoff)
+    # # todo: make this selection its own method with multiple ways (best N features, all above cutoff)
     sorted_features = sorted(features, key=lambda x: x.mean_score, reverse=True)
-    num_features = 1
-    selected_features = sorted_features[0: num_features]
+    # num_features = 1
+    # selected_features = sorted_features[0: num_features]
 
-    return selected_features, features
+    return sorted_features
 
 
 def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_label_list):
@@ -244,16 +255,16 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
 
     # create a concatenated array with the selected CV columns from each raw dataset
     input_x_ciu_data = []
-    for ciuraw_data in flat_ciuraw_list:
-        selected_cols = []
-        # concatenate all selected columns
+    input_label_data = []
+    for i, (ciuraw_data, label_data) in enumerate(zip(flat_ciuraw_list, flat_label_list)):
+        # assemble selected feature data for LDA
         for cv_index in selected_cv_indices:
-            selected_cols = np.concatenate((selected_cols, ciuraw_data[cv_index]), axis=0)
-        input_x_ciu_data.append(selected_cols)
+            input_x_ciu_data.append(ciuraw_data.T[cv_index])
+            input_label_data.append(label_data)
 
     # finalize input data for LDA
     input_x_ciu_data = np.asarray(input_x_ciu_data)
-    input_y_labels, target_label = createtargetarray_featureselect(flat_label_list)
+    input_y_labels, target_label = createtargetarray_featureselect(input_label_data)
 
     # run LDA
     lda = LinearDiscriminantAnalysis(solver='svd', n_components=5)
@@ -262,10 +273,8 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
 
     # build classification scheme
     # clf = LogisticRegression(C=10)
-
-    clf = SVC(kernel='linear', C=10, probability=True)
+    clf = SVC(kernel='linear', C=1, probability=True)
     # clf = RandomForestClassifier(n_estimators=10, criterion='entropy', n_jobs=-1)
-
     # clf = KNC(n_neighbors=2,p=2,metric='minkowski', n_jobs=-1)
     clf.fit(x_lda, input_y_labels)
 
@@ -283,6 +292,80 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
     # scheme.input_ciu_data = input_x_ciu_data
 
     return scheme
+
+
+def all_feature_crossval_lda(features_list, analysis_obj_list_by_label, shaped_label_list, output_path):
+    """
+    Run LDA and Classification for ALL features in features_list and generate an output plot of
+    scoring by feature. Intended to be used to determine which features to include in a final classification
+    scheme.
+    :param features_list: list of selected features from feature selection
+    :type features_list: list[CFeature]
+    :param analysis_obj_list_by_label: list of lists of CIUAnalysisObj's, sorted by class label
+    :type analysis_obj_list_by_label: list[list[CIUAnalysisObj]]
+    :param shaped_label_list: list of lists of class labels with matching shape of analysis_obj_by_label
+    :param output_path: directory in which to save outputs
+    :return:
+    """
+    # flatten input lists (sorted by class label) into a single list
+    flat_ciuraw_list = [x.ciu_data for label_obj_list in analysis_obj_list_by_label for x in label_obj_list]
+    flat_label_list = [x for label_list in shaped_label_list for x in label_list]
+
+    features_list = sorted(features_list, key=lambda x: x.mean_score, reverse=True)
+    selected_cv_indices = [x.cv_index for x in features_list]
+
+    # create a concatenated array with the selected CV columns from each raw dataset
+    input_x_ciu_data = []
+    input_label_data = []
+    num_arr = []
+    score = []
+    margin_dist = []
+    num = 1
+    pdf_out = PdfPages(output_path + 'USF_lda_lr_cross_val_out.pdf')
+    for iter_cv in selected_cv_indices:
+        num_arr.append(num)
+        for i, (ciu_rawdata, label_data) in enumerate(zip(flat_ciuraw_list, flat_label_list)):
+            input_x_ciu_data.append(ciu_rawdata.T[iter_cv])
+            input_label_data.append(label_data)
+        input_x_data = np.asarray(input_x_ciu_data)
+        input_y_labels, target_label = createtargetarray_featureselect(input_label_data)
+        lda = LinearDiscriminantAnalysis(solver='svd', n_components=5)
+        # lr = LogisticRegression()
+        svc = SVC(kernel='linear', C=1.0)
+        clf = Pipeline([('lda', lda), ('svc', svc)])
+        xlda = lda.fit_transform(input_x_data, input_y_labels)
+        svc.fit(xlda, input_y_labels)
+        support_vecs = svc.support_vectors_
+        dist = abs(support_vecs[0]-support_vecs[1])
+        margin_dist.append(dist)
+        sc = clf.score(input_x_data, input_y_labels)
+        # print(sc)
+        score.append(sc)
+        xlda = lda.fit_transform(input_x_data, input_y_labels)
+        plot_sklearn_lda_1ld(xlda, input_y_labels, target_label)
+        plt.title(str(num))
+        pdf_out.savefig()
+        plt.close()
+        num += 1
+    pdf_out.close()
+
+    # determine the max distance (currently based on margin distance) to return
+    best_num_features = np.argmax(margin_dist)
+    best_features = features_list[0: best_num_features]
+
+    x_ax = np.arange(1, len(selected_cv_indices)+1)
+    plt.plot(x_ax, score, color='blue')
+    plt.savefig(os.path.join(output_path, 'USF_lda_svc_score.pdf'))
+    plt.close()
+
+    plt.plot(x_ax, margin_dist, color='blue')
+    plt.savefig(os.path.join(output_path, 'Score_vs_Features.png'))
+    plt.close()
+
+    outarr = np.array([x_ax, margin_dist], dtype=float)
+    np.savetxt(os.path.join(output_path,'USF_lda_SVC_C1_margin_distance.csv'), outarr.T, delimiter=',', fmt='%s', header='num_features, margin_dist')
+
+    return best_features
 
 
 def main_build_classification(labels, analysis_obj_list_by_label, output_dir):
@@ -303,18 +386,96 @@ def main_build_classification(labels, analysis_obj_list_by_label, output_dir):
         shaped_label_list.append([label for _ in range(len(analysis_obj_list_by_label[index]))])
 
     # run feature selection
-    best_features, all_features = univariate_feature_selection(shaped_label_list, analysis_obj_list_by_label)
+    all_features = univariate_feature_selection(shaped_label_list, analysis_obj_list_by_label)
+
+    # assess all features to determine which to use in the final scheme
+    best_features = all_feature_crossval_lda(all_features, analysis_obj_list_by_label, shaped_label_list, output_dir)
 
     # perform LDA and classification on the selected/best features
     constructed_scheme = lda_ufs_best_features(best_features, analysis_obj_list_by_label, shaped_label_list)
 
     # plot output here for now, will probably move eventually
-    labels_name = 'Univariatefeatureselection' + '_'.join(labels) + '_'
-    output_path = os.path.join(output_dir, labels_name)
-    plot_stuff_suggie(constructed_scheme, output_path)
-    plot_feature_scores(all_features, analysis_obj_list_by_label[0][0].axes[1], output_path)
+    # labels_name = 'Univariatefeatureselection' + '_'.join(labels) + '_'
+    # output_path = os.path.join(output_dir, labels_name)
+    plot_stuff_suggie(constructed_scheme, output_dir)
+    plot_feature_scores(all_features, analysis_obj_list_by_label[0][0].axes[1], output_dir)
 
     return constructed_scheme
+
+
+def classify_1_eval_features(labels, analysis_obj_list_by_label, output_dir):
+    """
+    Run initial setup for classification and generate a plot of feature scores to enable the
+    user to choose the number of features to include in the final scheme.
+    :param labels: list of class labels (strings)
+    :param analysis_obj_list_by_label: list of lists of analysis objects, sorted by class
+    :type analysis_obj_list_by_label: list[list[CIUAnalysisObj]]
+    :param output_dir: directory in which to save plots/output
+    :return: list of ALL features (and print output of scores)
+    :rtype: list[CFeature]
+    """
+    # generate a list of lists of labels in the same shape as the analysis object list
+    shaped_label_list = []
+    for index, label in enumerate(labels):
+        shaped_label_list.append([label for _ in range(len(analysis_obj_list_by_label[index]))])
+
+    # run feature selection
+    best_features, all_features = univariate_feature_selection(shaped_label_list, analysis_obj_list_by_label)
+
+    # assess all features to determine which to use in the final scheme
+    all_feature_crossval_lda(all_features, analysis_obj_list_by_label, shaped_label_list, output_dir)
+    return all_features
+
+
+def classify_2_build_scheme(selected_features, labels, analysis_obj_list_by_label, output_dir):
+    """
+
+    :param selected_features:
+    :param labels:
+    :param analysis_obj_list_by_label:
+    :param output_dir:
+    :return:
+    """
+    # generate a list of lists of labels in the same shape as the analysis object list
+    shaped_label_list = []
+    for index, label in enumerate(labels):
+        shaped_label_list.append([label for _ in range(len(analysis_obj_list_by_label[index]))])
+
+    # perform LDA and classification on the selected/best features
+    constructed_scheme = lda_ufs_best_features(selected_features, analysis_obj_list_by_label, shaped_label_list)
+
+    # plot output here for now, will probably move eventually
+    # labels_name = 'Univariatefeatureselection' + '_'.join(labels) + '_'
+    # output_path = os.path.join(output_dir, labels_name)
+    plot_stuff_suggie(constructed_scheme, output_dir)
+    # plot_feature_scores(all_features, analysis_obj_list_by_label[0][0].axes[1], output_path)
+
+    return constructed_scheme
+
+
+def select_features(all_features_list, params_obj):
+    """
+    Select the features to use out of self.all_features based on either top_N scoring features
+    or those above a minimum score. Sets self.selected features to the Features selected
+    :param all_features_list: List of all CFeature objects
+    :param params_obj: Parameters object with classification parameters set
+    :type params_obj: Parameters
+    :return: List of selected features
+    """
+    selected_features = []
+    feat_index = 0
+    all_features_list = sorted(all_features_list, key=lambda x: x.mean_score, reverse=True)
+    while feat_index < params_obj.classif_feats_1_num_feats and feat_index < len(all_features_list):
+        this_feature = all_features_list[feat_index]
+
+        # if a minimum score has been provided, use it; otherwise, ignore
+        if params_obj.classif_feats_2_min_score > 0:
+            if this_feature.mean_score > params_obj.classif_feats_2_min_score:
+                selected_features.append(this_feature)
+        else:
+            selected_features.append(this_feature)
+        feat_index += 1
+    return selected_features
 
 
 def plot_feature_scores(feature_list, cv_axis, output_path):
@@ -333,8 +494,46 @@ def plot_feature_scores(feature_list, cv_axis, output_path):
     plt.axhline(y=0.0, color='black', ls='--')
     plt.xlabel('Feature')
     plt.ylabel('-Log10(pvalues)')
-    plt.savefig(output_path + 'fclassif_logpscorevals.pdf')
+    plt.savefig(os.path.join(output_path, 'fclassif_logpscorevals.pdf'))
     # plt.show()
+    plt.close()
+
+
+def plot_svc_decision_function_2d(class_scheme, output_path, plot_support=True, plot_unknown=True, unkdata=None):
+    """
+
+    :param class_scheme:
+    :param output_path:
+    :param plot_support:
+    :param plot_unknown:
+    :param unkdata:
+    :return:
+    """
+    #create a grid to evaluate model
+    xmin, xmax=np.floor(class_scheme.transformed_test_data.min()), np.ceil(class_scheme.transformed_test_data.max())
+    ymin, ymax=-3, 3
+    XX, YY = np.mgrid[xmin:xmax:100j, ymin:ymax:100j]
+    XXY = np.c_[XX.ravel(), YY.ravel()]
+    Z = class_scheme.classifier.decision_function(XX.ravel().reshape(-1, 1))
+    Z = Z.reshape(XX.shape)
+
+    plt.contour(XX, YY, Z, alpha = 0.5, colors='k', levels=[-1, 0, 1], linestyles=['--','-','--'])
+
+    if plot_support:
+        plt.scatter(class_scheme.classifier.support_vectors_[0], class_scheme.classifier.support_vectors_[1], s=300, color='black', linewidth=3, facecolors='None')
+
+    plot_sklearn_lda_1ld(class_scheme.transformed_test_data, class_scheme.numeric_labels, class_scheme.class_labels)
+
+    if plot_unknown:
+        plt.scatter(unkdata, np.zeros(np.shape(unkdata)), marker='o', color='black', facecolors='none',
+                    alpha=1, label='Unk')
+
+    cv_string = ','.join([str(x.cv) for x in class_scheme.selected_features])
+    plt.title('From CVs: {}'.format(cv_string))
+
+    plt.show()
+
+    plt.savefig(os.path.join(output_path, 'USF_SVM_C1_linear_classif.pdf'))
     plt.close()
 
 

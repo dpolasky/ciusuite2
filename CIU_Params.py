@@ -168,6 +168,9 @@ class Parameters(object):
         self.ciu50_4_trans_interp_factor = None
         self.ciu50_5_pad_transitions_cv = None
 
+        self.classif_feats_1_num_feats = None
+        self.classif_feats_2_min_score = None
+
     def set_params(self, params_dict):
         """
         Set a series of parameters given a dictionary of (parameter name, value) pairs

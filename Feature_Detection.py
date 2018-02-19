@@ -415,6 +415,7 @@ class Transition(object):
         self.fit_params = None
         self.fit_covariances = None
         self.rsq = None
+        self.fit_param_errors = None
 
     def __str__(self):
         # display the transition range and CIU50 and R2 if they have been calculated
@@ -516,6 +517,8 @@ class Transition(object):
         try:
             popt, pcov = fit_logistic(final_x_vals, final_y_vals, center_guess, self.min_guess, self.max_guess,
                                       steepness_guess)
+            perr = np.sqrt(np.diag(pcov))
+            self.fit_param_errors = perr
         except RuntimeError:
             print('fitting failed for {}'.format(self))
             popt = [0, 0, 0, 0]
@@ -672,7 +675,7 @@ class Transition(object):
         # prepare and plot the actual transition using fitted parameters
         interp_x = np.linspace(x_axis[0], x_axis[len(x_axis) - 1], 200)
         y_fit = logistic_func(interp_x, *self.fit_params)
-        plt.plot(interp_x, y_fit, 'white', label='CIU50: {:.1f}, r2=: {:.2f}'.format(self.ciu50, self.rsq))
+        plt.plot(interp_x, y_fit, 'white', label='CIU50: {:.1f} +/- {:.2f}, r2=: {:.2f}'.format(self.ciu50, self.fit_param_errors[2], self.rsq))
         plt.legend(loc='best')
         filename = os.path.basename(analysis_obj.filename).rstrip('.ciu') + '_transition' + params_obj.ciuplot_4_extension
         output_path = os.path.join(outputdir, filename)

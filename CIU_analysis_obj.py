@@ -63,6 +63,8 @@ class CIUAnalysisObj(object):
         self.features_gaussian = None   # type: List[Feature]
         self.features_changept = None   # type: List[Feature]
 
+        self.classif_predicted_outputs = None
+
     def __str__(self):
         """
         Display the filename of the object as reference

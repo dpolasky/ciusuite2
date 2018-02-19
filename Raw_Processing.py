@@ -228,6 +228,19 @@ def crop(analysis_obj, crop_vals):
     # Determine the indices corresponding to the values nearest to those entered by the user
     dt_axis = analysis_obj.axes[0]
     cv_axis = analysis_obj.axes[1]
+    new_axes = analysis_obj.axes
+    ciu_data_matrix = analysis_obj.ciu_data
+
+    # check for interpolation
+    if not len(dt_axis) == crop_vals[4]:
+        ciu_data_matrix, new_axes = interpolate_axis(ciu_data_matrix, new_axes, 0, crop_vals[4])
+    if not len(cv_axis) == crop_vals[5]:
+        ciu_data_matrix, new_axes = interpolate_axis(ciu_data_matrix, new_axes, 1, crop_vals[5])
+
+    dt_axis = new_axes[0]
+    cv_axis = new_axes[1]
+
+    # Crop
     dt_low = find_nearest(dt_axis, crop_vals[0])
     dt_high = find_nearest(dt_axis, crop_vals[1])
     cv_low = find_nearest(cv_axis, crop_vals[2])
@@ -242,7 +255,7 @@ def crop(analysis_obj, crop_vals):
         crop_cv = False
 
     # crop the data and axes
-    ciu_data_matrix = analysis_obj.ciu_data
+    # ciu_data_matrix = analysis_obj.ciu_data
     if crop_dt:
         ciu_data_matrix = ciu_data_matrix[dt_low:dt_high + 1]  # crop the rows
         dt_axis = dt_axis[dt_low:dt_high + 1]
@@ -263,29 +276,40 @@ def crop(analysis_obj, crop_vals):
     return analysis_obj
 
 
-def interpolate_cv(norm_data, axes, num_bins=200):
+def interpolate_axis(norm_data, axes, axis_to_interp, num_bins):
     """
     interpolate along the collision voltage (x) axis to allow for unevenly spaced data collection
     :param norm_data: input data (with axes still present) to interpolate
     :param axes: axes list to use for interpolation (x-axis, y-axis)
-    :param num_bins: number of bins to have after interpolate (default 200)
-    :return: interpolated data matrix with x-axis, but not y-axis???
+    :param axis_to_interp: which axis (DT = 0, CV = 1) to interpolate
+    :param num_bins: number of bins to have after interpolate
+    :return: interpolated data matrix, updated axes
     """
-    # get starting and ending cv values
-    xaxis = axes[0]
-    start_cv = xaxis[0]
-    end_cv = xaxis[len(xaxis) - 1]
-    new_cv_axis = np.linspace(start_cv, end_cv, num_bins)
-    newaxes = [new_cv_axis, axes[1]]
+    # Update the desired axis
+    interp_axis = axes[axis_to_interp]
+    start_val = interp_axis[0]
+    end_val = interp_axis[len(interp_axis) - 1]
+    new_axis_vals = np.linspace(start_val, end_val, num_bins)
 
-    interpolated_data = []
+    if axis_to_interp == 0:
+        # interpolate DT (rows)
+        new_axes = [new_axis_vals, axes[1]]
+    else:
+        new_axes = [axes[0], new_axis_vals]
 
-    for ycolumn in norm_data[:, :]:
-        interp_func = scipy.interpolate.interp1d(xaxis, ycolumn)
-        new_intensities = interp_func(new_cv_axis)
-        interpolated_data.append(new_intensities)
+    for x in [axes[0], axes[1], norm_data]:
+        print(np.shape(x))
+    interp_func = scipy.interpolate.interp2d(axes[0], axes[1], norm_data.T)
+    interp_data = interp_func(new_axes[0], new_axes[1])
+    ciu_interp_data = interp_data.T
 
-    return interpolated_data, newaxes
+    # interpolated_data = []
+    # for ycolumn in norm_data[:, :]:
+    #     interp_func = scipy.interpolate.interp1d(xaxis, ycolumn)
+    #     new_intensities = interp_func(new_cv_axis)
+    #     interpolated_data.append(new_intensities)
+
+    return ciu_interp_data, new_axes
 
 
 def average_ciu(list_of_data_matrices):
