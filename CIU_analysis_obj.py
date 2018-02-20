@@ -138,7 +138,7 @@ class CIUAnalysisObj(object):
             plt.plot(self.axes[0], self.gauss_fits[cv_index], ls='--', color='black')
 
             # plot each fitted gaussian and centroid
-            for gaussian in self.gaussians[cv_index]:
+            for gaussian in self.filtered_gaussians[cv_index]:
                 fit = gaussfunc(self.axes[0], 0, gaussian.amplitude, gaussian.centroid, gaussian.width)
                 plt.plot(self.axes[0], fit)
                 plt.plot(gaussian.centroid, abs(gaussian.amplitude), '+', color='red')

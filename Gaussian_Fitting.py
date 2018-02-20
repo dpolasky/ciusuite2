@@ -7,12 +7,15 @@ import numpy as np
 from scipy.optimize import curve_fit
 from scipy.stats import linregress
 import os
+import itertools
 import math
 import peakutils
 import pickle
 import tkinter
 from tkinter import filedialog
 import scipy.signal
+
+import matplotlib.pyplot as plt
 
 # imports for type checking
 from typing import TYPE_CHECKING
@@ -34,7 +37,8 @@ class Gaussian(object):
         self.fwhm = 2*(math.sqrt(2*math.log(2)))*self.width
         self.resolution = self.centroid/self.fwhm
         self.fit_covariances = pcov
-        self.fit_errors = np.sqrt(np.diag(pcov))
+        if pcov is not None:
+            self.fit_errors = np.sqrt(np.diag(pcov))
 
     def __str__(self):
         return 'Gaussian: x0={:.2f} A={:.1f} w={:.1f} cv={}'.format(self.centroid,
@@ -56,6 +60,14 @@ class Gaussian(object):
                                                                      self.baseline,
                                                                      self.fwhm,
                                                                      self.resolution)
+
+    def return_popt(self):
+        """
+        Re-generate Gaussian function parameter list (e.g. popt style from curve_fit) from
+        gaussian object
+        :return: [baseline, amplitude, centroid, width]
+        """
+        return [self.baseline, self.amplitude, self.centroid, self.width]
 
 
 def multi_gauss_func(x, *params):
@@ -203,6 +215,9 @@ def filter_fits(params_list, peak_width_cutoff, intensity_cutoff, centroid_bound
 
 def check_peak_dist(popt_list, current_guess_list, min_distance_dt, max_peak_width):
     """
+
+    DEPRECATED
+
     Determine whether the centroid of the current guess is too close to an existing (already fit) peak.
     Note: excludes peaks above the width cutoff, as these are not used for feature detection/etc anyway
     and may overlap substantially with signal peaks (removing them may negatively impact fitting)
@@ -223,6 +238,49 @@ def check_peak_dist(popt_list, current_guess_list, min_distance_dt, max_peak_wid
         if abs(existing_centroid - guess_centroid) < min_distance_dt:
             return False
     return True
+
+
+def check_peak_dists(popt_list, params_obj):
+    """
+    Look through all fitted peak parameters and determine if any peaks are too close to each other.
+    If so, return True and the parameters list with the lower intensity of the overlapping peaks removed.
+    WILL ONLY REMOVE 1 PEAK - since it is intended to function in the loop as peaks are added one
+    at a time, if a peak is added too close to another, it is removed and the iteration is stopped.
+    :param popt_list: list of output/fitted gaussian parameters
+    :param params_obj: Parameters object
+    :type params_obj: Parameters
+    :return: boolean (True if peaks are too close), updated popt_list with 'bad' peak removed
+    """
+    # convert popt_list to Gaussian objects for easier handling
+    index = 0
+    gaussians = []
+    while index < len(popt_list):
+        gaussian = Gaussian(popt_list[index], popt_list[index + 1], popt_list[index + 2], popt_list[index + 3], None, None)
+        # ignore peaks that are above width max - they are allowed to be close to others (noise can be anywhere)
+        if not gaussian.width > params_obj.gaussian_3_width_max:
+            gaussians.append(gaussian)
+        index += 4
+
+    # examine all Gaussians and determine if any are too close together
+    for gaussian_combo in itertools.combinations(gaussians, 2):
+        gaussian1 = gaussian_combo[0]
+        gaussian2 = gaussian_combo[1]
+        if abs(gaussian1.centroid - gaussian2.centroid) < params_obj.gaussian_6_min_peak_dist:
+            print('dist too close, was: {:.2f}'.format(abs(gaussian1.centroid - gaussian2.centroid)))
+            # these peaks are too close, return
+            if gaussian1.amplitude > gaussian2.amplitude:
+                gaussians.remove(gaussian2)
+            else:
+                gaussians.remove(gaussian1)
+
+            # reassemble popt_list
+            final_popt = []
+            for gaussian in gaussians:
+                final_popt.extend(gaussian.return_popt())
+            return True, final_popt
+
+    # if no peaks are too close, return False and the original popt list
+    return False, popt_list
 
 
 def gaussian_fit_ciu(analysis_obj, params_obj):
@@ -273,16 +331,19 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
         slope, intercept, rvalue, pvalue, stderr = 0, 0, 0, 0, 0
         adjrsq = 0
         i = 0
+        previous_rsq = 0
+
         # set bounds for fitting: keep baseline and centroid on DT axis, amplitude 0 to 1.5, width 0 to len(dt_axis)
         max_dt = dt_axis[len(dt_axis) - 1]
         min_dt = dt_axis[0]
         fit_bounds_lower, fit_bounds_upper = [], []
         fit_bounds_lower_append = [0, 0, min_dt, 0]
-        fit_bounds_upper_append = [max_dt, 1.1, max_dt, len(dt_axis)]
+        fit_bounds_upper_append = [1, 1.1, max_dt, len(dt_axis)]
         popt = None
 
         # Iterate through peak detection until convergence criterion is met, adding one additional peak each iteration
-        while adjrsq < params_obj.gaussian_1_convergence:
+        iterate_gaussian_flag = True
+        while iterate_gaussian_flag:
             try:
                 # NOTE: checking if peaks too close was not helpful - removed
                 # if popt is not None:
@@ -305,15 +366,49 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
                                        p0=param_guesses_multiple, maxfev=5000,
                                        bounds=(fit_bounds_lower, fit_bounds_upper))
                 perr = np.sqrt(np.diag(pcov))
-            except RuntimeError:
+            except (RuntimeError, ValueError):
                 popt = []
                 pcov = []
+
+            # check to see if peaks are too close, and reduce number of guesses by 1 if so
+            reduce_flag, reduced_guesses = check_peak_dists(popt, params_obj)
+            if reduce_flag:
+                try:
+                    popt, pcov = curve_fit(multi_gauss_func, dt_axis, cv_col_intensities, method='trf',
+                                           p0=reduced_guesses, maxfev=5000,
+                                           bounds=(fit_bounds_lower[0: len(fit_bounds_lower) - 4],
+                                                   fit_bounds_upper[0: len(fit_bounds_lower) - 4]))
+                    perr = np.sqrt(np.diag(pcov))
+                    i -= 1
+                    iterate_gaussian_flag = False
+                except RuntimeError:
+                    popt = []
+                    pcov = []
+
             yfit = multi_gauss_func(dt_axis, *popt)
             slope, intercept, rvalue, pvalue, stderr = linregress(cv_col_intensities, yfit)
             adjrsq = adjrsquared(rvalue ** 2, len(cv_col_intensities))
+
+            # stop iterating once convergence criteria have been reached
+            if not adjrsq < params_obj.gaussian_1_convergence:
+                iterate_gaussian_flag = False
+
+            # also stop iterating if the fit stops improving
+            # if adjrsq - previous_rsq < 0.001 and not reduce_flag:
+            #     print('peak removed, rsq improvement was {:.3f}'.format(adjrsq - previous_rsq))
+            #     iterate_gaussian_flag = False
+            #     # remove gaussian from analysis and refit data
+            #     popt = popt[0: len(popt) - 4]
+            #     popt, pcov = curve_fit(multi_gauss_func, dt_axis, cv_col_intensities, method='trf',
+            #                            p0=popt, maxfev=5000,
+            #                            bounds=(fit_bounds_lower[0: len(fit_bounds_lower) - 4],
+            #                                    fit_bounds_upper[0: len(fit_bounds_lower) - 4]))
+            #     yfit = multi_gauss_func(dt_axis, *popt)
+            #     slope, intercept, rvalue, pvalue, stderr = linregress(cv_col_intensities, yfit)
+            #     adjrsq = adjrsquared(rvalue ** 2, len(cv_col_intensities))
+            # previous_rsq = adjrsq
             i += 1
-            # if i > 10:
-            #     break
+
         # filter peaks by width if desired
         print('performed {} iterations'.format(i))
         filt_popt = popt

@@ -297,8 +297,6 @@ def interpolate_axis(norm_data, axes, axis_to_interp, num_bins):
     else:
         new_axes = [axes[0], new_axis_vals]
 
-    for x in [axes[0], axes[1], norm_data]:
-        print(np.shape(x))
     interp_func = scipy.interpolate.interp2d(axes[0], axes[1], norm_data.T)
     interp_data = interp_func(new_axes[0], new_axes[1])
     ciu_interp_data = interp_data.T

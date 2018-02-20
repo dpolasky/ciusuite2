@@ -600,16 +600,16 @@ class CIUSuite2(object):
             new_file_list = []
             for file in files_to_read:
                 analysis_obj = load_analysis_obj(file)
-                crop_obj = Raw_Processing.crop(analysis_obj, crop_vals)
+                analysis_obj = Raw_Processing.crop(analysis_obj, crop_vals)
                 analysis_obj.refresh_data()
-                crop_obj.crop_vals = crop_vals
+                analysis_obj.crop_vals = crop_vals
                 # newfile = save_analysis_obj(crop_obj, filename_append='_crop', outputdir=self.output_dir)
-                newfile = save_analysis_obj(crop_obj, analysis_obj.params, outputdir=self.output_dir)
+                newfile = save_analysis_obj(analysis_obj, analysis_obj.params, outputdir=self.output_dir)
                 new_file_list.append(newfile)
                 # also save _raw.csv output if desired
                 if self.params_obj.output_1_save_csv:
                     save_path = file.rstrip('.ciu') + '_crop_raw.csv'
-                    Original_CIU.write_ciu_csv(save_path, crop_obj.ciu_data, crop_obj.axes)
+                    Original_CIU.write_ciu_csv(save_path, analysis_obj.ciu_data, analysis_obj.axes)
                 self.update_progress(files_to_read.index(file), len(files_to_read))
 
             self.analysis_file_list = new_file_list
