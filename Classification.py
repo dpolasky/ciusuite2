@@ -398,7 +398,7 @@ def main_build_classification(labels, analysis_obj_list_by_label, output_dir):
     # labels_name = 'Univariatefeatureselection' + '_'.join(labels) + '_'
     # output_path = os.path.join(output_dir, labels_name)
     plot_stuff_suggie(constructed_scheme, output_dir)
-    plot_feature_scores(all_features, analysis_obj_list_by_label[0][0].axes[1], output_dir)
+    plot_feature_scores(all_features, output_dir)
 
     return constructed_scheme
 
@@ -478,7 +478,7 @@ def select_features(all_features_list, params_obj):
     return selected_features
 
 
-def plot_feature_scores(feature_list, cv_axis, output_path):
+def plot_feature_scores(feature_list, output_path):
     """
     Plot feature score by collision voltage
     :param feature_list: list of CFeatures
@@ -489,6 +489,7 @@ def plot_feature_scores(feature_list, cv_axis, output_path):
     """
     mean_scores = [x.mean_score for x in feature_list]
     std_scores = [x.std_dev_score for x in feature_list]
+    cv_axis = [x.cv for x in feature_list]
 
     plt.errorbar(x=cv_axis, y=mean_scores, yerr=std_scores, ls='none', marker='o', color='black')
     plt.axhline(y=0.0, color='black', ls='--')

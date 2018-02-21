@@ -19,6 +19,7 @@ def get_data(fname):
     :rtype: CIURaw
     :return: CIURaw object with rawdata, axes, and filename initialized
     """
+    # TODO: ADD ROBUST ERROR CHECKING HERE
     rawdata = np.genfromtxt(fname, missing_values=[""], filling_values=[0], delimiter=",")
     row_axis = rawdata[1:, 0]
     col_axis = rawdata[0, 1:]
@@ -61,6 +62,7 @@ def sav_gol_smooth(ciu_data_matrix, smooth_window, smooth_order):
     Apply savitsky-golay smoothing to each column (CV) of the 2D matrix supplied
     :param ciu_data_matrix: input matrix (2D, columns (axis 1) gets smoothed) - supply without axes
     :param smooth_window: Savitsky golay smoothing window to apply
+    :param smooth_order: polynomial order to use for smoothing
     :return: smoothed data (same size/format as input)
     """
     # ensure window length is odd
@@ -152,55 +154,55 @@ def sgolay2d(z, window_size, order, derivative=None):
     dy = np.tile(ind, [window_size, 1]).reshape(window_size**2, )
 
     # build matrix of system of equation
-    A = np.empty((window_size**2, len(exps)))
+    a_mat = np.empty((window_size ** 2, len(exps)))
     for i, exp in enumerate(exps):
-        A[:, i] = (dx**exp[0]) * (dy**exp[1])
+        a_mat[:, i] = (dx ** exp[0]) * (dy ** exp[1])
 
     # pad input array with appropriate values at the four borders
     new_shape = z.shape[0] + 2*half_size, z.shape[1] + 2*half_size
-    Z = np.zeros(new_shape)
+    z_mat = np.zeros(new_shape)
     # top band
     band = z[0, :]
-    Z[:half_size, half_size:-half_size] = band - np.abs(np.flipud(z[1:half_size+1, :]) - band)
+    z_mat[:half_size, half_size:-half_size] = band - np.abs(np.flipud(z[1:half_size+1, :]) - band)
     # bottom band
     band = z[-1, :]
-    Z[-half_size:, half_size:-half_size] = band + np.abs(np.flipud(z[-half_size-1:-1, :]) - band)
+    z_mat[-half_size:, half_size:-half_size] = band + np.abs(np.flipud(z[-half_size-1:-1, :]) - band)
     # left band
     band = np.tile(z[:, 0].reshape(-1, 1), [1, half_size])
-    Z[half_size:-half_size, :half_size] = band - np.abs(np.fliplr(z[:, 1:half_size+1]) - band)
+    z_mat[half_size:-half_size, :half_size] = band - np.abs(np.fliplr(z[:, 1:half_size+1]) - band)
     # right band
     band = np.tile(z[:, -1].reshape(-1, 1), [1, half_size])
-    Z[half_size:-half_size, -half_size:] = band + np.abs(np.fliplr(z[:, -half_size-1:-1]) - band)
+    z_mat[half_size:-half_size, -half_size:] = band + np.abs(np.fliplr(z[:, -half_size-1:-1]) - band)
     # central band
-    Z[half_size:-half_size, half_size:-half_size] = z
+    z_mat[half_size:-half_size, half_size:-half_size] = z
 
     # top left corner
     band = z[0, 0]
-    Z[:half_size, :half_size] = band - np.abs(np.flipud(np.fliplr(z[1:half_size+1, 1:half_size+1])) - band)
+    z_mat[:half_size, :half_size] = band - np.abs(np.flipud(np.fliplr(z[1:half_size+1, 1:half_size+1])) - band)
     # bottom right corner
     band = z[-1, -1]
-    Z[-half_size:, -half_size:] = band + np.abs(np.flipud(np.fliplr(z[-half_size-1:-1, -half_size-1:-1])) - band)
+    z_mat[-half_size:, -half_size:] = band + np.abs(np.flipud(np.fliplr(z[-half_size-1:-1, -half_size-1:-1])) - band)
     # top right corner
-    band = Z[half_size, -half_size:]
-    Z[:half_size, -half_size:] = band - np.abs(np.flipud(Z[half_size+1:2*half_size+1, -half_size:]) - band)
+    band = z_mat[half_size, -half_size:]
+    z_mat[:half_size, -half_size:] = band - np.abs(np.flipud(z_mat[half_size+1:2*half_size+1, -half_size:]) - band)
     # bottom left corner
-    band = Z[-half_size:, half_size].reshape(-1, 1)
-    Z[-half_size:, :half_size] = band - np.abs(np.fliplr(Z[-half_size:, half_size+1:2*half_size+1]) - band)
+    band = z_mat[-half_size:, half_size].reshape(-1, 1)
+    z_mat[-half_size:, :half_size] = band - np.abs(np.fliplr(z_mat[-half_size:, half_size+1:2*half_size+1]) - band)
 
     # solve system and convolve
     if derivative is None:
-        m = np.linalg.pinv(A)[0].reshape((window_size, -1))
-        return scipy.signal.fftconvolve(Z, m, mode='valid')
+        m = np.linalg.pinv(a_mat)[0].reshape((window_size, -1))
+        return scipy.signal.fftconvolve(z_mat, m, mode='valid')
     elif derivative == 'col':
-        c = np.linalg.pinv(A)[1].reshape((window_size, -1))
-        return scipy.signal.fftconvolve(Z, -c, mode='valid')
+        c = np.linalg.pinv(a_mat)[1].reshape((window_size, -1))
+        return scipy.signal.fftconvolve(z_mat, -c, mode='valid')
     elif derivative == 'row':
-        r = np.linalg.pinv(A)[2].reshape((window_size, -1))
-        return scipy.signal.fftconvolve(Z, -r, mode='valid')
+        r = np.linalg.pinv(a_mat)[2].reshape((window_size, -1))
+        return scipy.signal.fftconvolve(z_mat, -r, mode='valid')
     elif derivative == 'both':
-        c = np.linalg.pinv(A)[1].reshape((window_size, -1))
-        r = np.linalg.pinv(A)[2].reshape((window_size, -1))
-        return scipy.signal.fftconvolve(Z, -r, mode='valid'), scipy.signal.fftconvolve(Z, -c, mode='valid')
+        c = np.linalg.pinv(a_mat)[1].reshape((window_size, -1))
+        r = np.linalg.pinv(a_mat)[2].reshape((window_size, -1))
+        return scipy.signal.fftconvolve(z_mat, -r, mode='valid'), scipy.signal.fftconvolve(z_mat, -c, mode='valid')
 
 
 def find_nearest(array, value):
@@ -321,5 +323,4 @@ def average_ciu(list_of_data_matrices):
     std_matrix = np.std(list_of_data_matrices, axis=0)
 
     return avg_matrix, std_matrix
-
 

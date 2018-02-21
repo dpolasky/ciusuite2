@@ -155,9 +155,6 @@ def feature_detect_gaussians(analysis_obj, params_obj):
             features.append(new_feature)
     # filter features to remove 'loners' without a sufficient number of points
     filtered_features = filter_features(features, params_obj.feature_gauss_min_length, mode='gaussian')
-    # for feature in filtered_features:
-    #     cv_index_list = []
-    #     feature.init_feature_data_gauss()
     analysis_obj.features_gaussian = filtered_features
     return analysis_obj
 
@@ -198,7 +195,7 @@ def compute_transitions_gaussian(analysis_obj, params_obj, adjusted_features):
         # check to make sure this is a transition that should be fitted (upper feature has a col max)
         if current_transition.check_features(analysis_obj, params_obj):
             current_transition.fit_transition(analysis_obj.bin_spacing, dt_min=analysis_obj.axes[0][0],
-                                              params_obj=params_obj, gaussian_bool=False)
+                                              params_obj=params_obj, gaussian_bool=True)
             transition_list.append(current_transition)
         else:
             print('feature {} never reaches 50% intensity, '
@@ -250,11 +247,14 @@ def adjust_gauss_features(analysis_obj, params_obj):
             # check if the ciu_data column max value is appropriate for this feature at this CV
             cv_index = list(analysis_obj.axes[1]).index(cv)
             dt_diff = abs(analysis_obj.col_max_dts[cv_index] - feature.gauss_median_centroid)
-            if dt_diff < bin_to_dt(params_obj.feature_gauss_width_tol,
-                                   analysis_obj.axes[0][0],
-                                   analysis_obj.bin_spacing):
-                # difference is within tolerance; include this CV in the adjusted feature
-                final_cvs.append(cv)
+            if dt_diff < bin_to_ms(params_obj.feature_gauss_width_tol, analysis_obj.bin_spacing):
+                # also check if a gap has formed and exclude features after the gap if so
+                if len(final_cvs) > 0:
+                    if cv - final_cvs[len(final_cvs) - 1] <= params_obj.feature_gauss_gap_tol:
+                        # difference is within tolerances; include this CV in the adjusted feature
+                        final_cvs.append(cv)
+                else:
+                    final_cvs.append(cv)
 
         # initialize the new feature using the CV list (it will only have CV and centroid data)
         if len(final_cvs) > 0:
@@ -441,17 +441,20 @@ class Transition(object):
         """
         # initial fitting guesses: center is in between the features, min/max are median DTs of features 1 and 2
         center_guess = self.feature2.start_cv_val - (self.feat_distance / 2.0)   # halfway between features
-        # TODO: Change for Gaussian mode or no?
-        self.min_guess = dt_min + (np.median(self.feature1.dt_max_bins) - 1) * bin_spacing
-        self.max_guess = dt_min + (np.median(self.feature2.dt_max_bins) - 1) * bin_spacing
-        # guess steepness as a function of between feature1 end and feature2 start
-        steepness_guess = 2 * 1 / self.feat_distance
+        if gaussian_bool:
+            self.min_guess = self.feature1.gauss_median_centroid
+            self.max_guess = self.feature2.gauss_median_centroid
+            steepness_guess = abs(2 * 1 / (self.feat_distance + 1))
+        else:
+            self.min_guess = dt_min + (np.median(self.feature1.dt_max_bins) - 1) * bin_spacing
+            self.max_guess = dt_min + (np.median(self.feature2.dt_max_bins) - 1) * bin_spacing
+            # guess steepness as a function of between feature1 end and feature2 start
+            steepness_guess = 2 * 1 / (self.feat_distance + 1)
 
         # for interpolation of transition modes - determine transition region to interpolate
         pad_cv = params_obj.ciu50_5_pad_transitions_cv
         trans_start_cv = self.feature1.end_cv_val - pad_cv
         trans_end_cv = self.feature2.start_cv_val + pad_cv
-        # trans_distance = trans_end_cv - trans_start_cv
         trans_distance = self.feat_distance
 
         if params_obj.ciu50_3_interp_factor > 0:
@@ -485,29 +488,6 @@ class Transition(object):
                                                                        trans_end_cv, trans_distance,
                                                                        interp_trans_factor=params_obj.ciu50_4_trans_interp_factor,
                                                                        trans_interp_fn=interp_function_raw)
-
-        # Perform interpolation as specified by the user parameters
-        # if fit_mode == 1:   # DEPRECATED - basic interpolation always (?) gives better results
-        #     # final_x_vals = self.combined_x_axis
-        #     # final_y_vals = self.combined_y_vals
-        #     interp_function = scipy.interpolate.interp1d(self.combined_x_axis, self.combined_y_vals)
-        #     final_x_vals, final_y_vals = self.interpolate_transition(interp_function, trans_start_cv, trans_end_cv, trans_distance)
-        #
-        # elif fit_mode == 2:
-        #     final_x_vals = np.linspace(self.combined_x_axis[0], self.combined_x_axis[len(self.combined_x_axis) - 1],
-        #                                len(self.combined_x_axis) * 10)
-        #     interp_function = scipy.interpolate.interp1d(self.combined_x_axis, self.combined_y_vals)
-        #     final_y_vals = interp_function(final_x_vals)
-        #
-        # elif fit_mode == 3:
-        #     interp_function_raw = scipy.interpolate.interp1d(self.combined_x_axis, self.combined_y_avg_raw)
-        #     final_x_vals, final_y_vals = self.interpolate_transition(interp_function_raw, trans_start_cv, trans_end_cv,
-        #                                                              trans_distance)
-        #
-        # elif fit_mode == 4:
-        #     interp_function_raw = scipy.interpolate.interp1d(self.combined_x_axis, self.combined_y_median_raw)
-        #     final_x_vals, final_y_vals = self.interpolate_transition(interp_function_raw, trans_start_cv, trans_end_cv,
-        #                                                              trans_distance)
 
         else:
             print('Invalid fitting mode, skipping CIU-50')
@@ -563,12 +543,6 @@ class Transition(object):
             transition_x_vals = interpd_x_vals[trans_start_index: trans_end_index + 1]
             transition_y_vals = fit_y_vals[trans_start_index: trans_end_index + 1]
 
-            # transition_x_vals = np.linspace(trans_start_cv, trans_end_cv, ((trans_end_cv - trans_start_cv) / interpd_cv_step))
-            # transition_y_vals = []
-            # for index, value in enumerate(transition_x_vals):
-            #     transition_y_vals.append(fit_y_vals[index])
-            # transition_y_vals = np.asarray(transition_y_vals)
-
         final_x_vals = interpd_x_vals[0: trans_start_index]
         final_x_vals = np.append(final_x_vals, transition_x_vals)
         second_half_xvals = interpd_x_vals[trans_end_index + 1: len(interpd_x_vals) - 1]
@@ -583,6 +557,9 @@ class Transition(object):
 
     def interpolate_transition(self, interp_function_raw, interp_start_cv, interp_end_cv, trans_distance):
         """
+
+        TODO: DEPRECATED
+
         Helper function for interpolating transition region, using the provided interpolation function.
         :param interp_function_raw: Interpolation function from SciPy to use for interpolation
         :param interp_start_cv: CV at which to begin interpolation (start of transition region)
@@ -675,7 +652,8 @@ class Transition(object):
         # prepare and plot the actual transition using fitted parameters
         interp_x = np.linspace(x_axis[0], x_axis[len(x_axis) - 1], 200)
         y_fit = logistic_func(interp_x, *self.fit_params)
-        plt.plot(interp_x, y_fit, 'white', label='CIU50: {:.1f} +/- {:.2f}, r2=: {:.2f}'.format(self.ciu50, self.fit_param_errors[2], self.rsq))
+        # plt.plot(interp_x, y_fit, 'white', label='CIU50: {:.1f} +/- {:.2f}, r2=: {:.2f}'.format(self.ciu50, self.fit_param_errors[2], self.rsq))
+        plt.plot(interp_x, y_fit, 'white', label='CIU50: {:.1f}, r2=: {:.2f}'.format(self.ciu50, self.rsq))
         plt.legend(loc='best')
         filename = os.path.basename(analysis_obj.filename).rstrip('.ciu') + '_transition' + params_obj.ciuplot_4_extension
         output_path = os.path.join(outputdir, filename)
@@ -805,6 +783,9 @@ def compute_transitions(analysis_obj, params_obj, features):
     index = 0
     transition_list = []
     while index < len(features) - 1:
+        # ignore downward sloping features
+        # if np.median(features[index].dt_max_vals) < np.median(features[index + 1].dt_max_vals):
+        #     continue
         current_transition = Transition(features[index],
                                         features[index + 1],
                                         analysis_obj)
@@ -844,7 +825,30 @@ def fit_flat_feature(data_segment, x_axis_data, starting_index, bin_tolerance):
 
 
 def bin_to_dt(bin_val, min_dt, bin_spacing):
+    """
+    Convert a bin value to a fingerprint-relative drift time. Adjusts for the minimum DT of
+    the fingerprint to give accurate drift axis results. Should NOT be used for conversion
+    of absolute bin -> DT
+    :param bin_val: (int) bin number to convert to DT space
+    :param min_dt: minimum DT of fingerprint
+    :param bin_spacing: spacing between DT bins (conversion factor)
+    :return: DT in drift axis units
+    """
     dt = min_dt + (bin_val - 1) * bin_spacing
+    return dt
+
+
+def bin_to_ms(bin_val, bin_spacing):
+    """
+    Conversion from a number of bins to the corresponding time in ms (or other drift units)
+    for the provided spacing. Differs from bin to dt in that the output time is NOT adjusted
+    for the minimum of the fingerprint (an absolute conversion, rather than a fingerprint-relative
+    conversion).
+    :param bin_val: (int) number of bins to convert
+    :param bin_spacing: distance between bins in time units (conversion factor)
+    :return: time in drift axis units corresponding to bin val
+    """
+    dt = bin_val * bin_spacing
     return dt
 
 

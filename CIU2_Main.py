@@ -115,9 +115,9 @@ class CIUSuite2(object):
         Register tooltips for all buttons/widgets that need tooltips
         :return: void
         """
-        tooltip.create(self.builder.get_object('Text_analysis_list'), 'Selected .ciu files appear here. Any processing will be '
-                                                                      '\nperformed on all files in the table, unless the '
-                                                                      '\nboxes below indicate only a subset of the files.')
+        # tooltip.create(self.builder.get_object('Text_analysis_list'), 'Selected .ciu files appear here. Any processing will be '
+        #                                                               '\nperformed on all files in the table, unless the '
+        #                                                               '\nboxes below indicate only a subset of the files.')
         tooltip.create(self.builder.get_object('Text_ParamsMatch'), 'When parameters are edited, this box displays if edits have been saved to the .ciu files')
         tooltip.create(self.builder.get_object('Button_RawFile'), 'Select text files to analyze. Data will be loaded and converted to generate a .ciu file, '
                                                                   '\nwhich will appear in the table below')
