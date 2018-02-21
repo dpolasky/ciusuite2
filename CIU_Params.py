@@ -155,6 +155,7 @@ class Parameters(object):
 
         self.feature_cpt_min_length = None
         self.feature_cpt_width_tol = None
+        self.feature_cpt_gap_tol = None
 
         self.feature_gauss_min_length = None
         self.feature_gauss_width_tol = None

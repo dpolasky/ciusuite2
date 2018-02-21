@@ -787,7 +787,9 @@ class CIUSuite2(object):
                 # load file
                 analysis_obj = load_analysis_obj(file)
 
-                analysis_obj = Feature_Detection.feature_detect_changept(analysis_obj, self.params_obj)
+                # analysis_obj = Feature_Detection.feature_detect_changept(analysis_obj, self.params_obj)
+                analysis_obj = Feature_Detection.feature_detect_col_max(analysis_obj, self.params_obj)
+
                 filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
                 new_file_list.append(filename)
 
