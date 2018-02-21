@@ -91,7 +91,7 @@ def smooth_main(analysis_obj, params_obj):
     :type params_obj: Parameters
     :return: updated analysis_obj (.ciu_data updated, no other changes)
     """
-    norm_data = normalize_by_col(analysis_obj.raw_obj.rawdata)
+    norm_data = analysis_obj.ciu_data
 
     if params_obj.smoothing_1_method is not None:
         # ensure window size is odd

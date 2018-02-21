@@ -1046,8 +1046,8 @@ def process_raw_obj(raw_obj, params_obj):
     axes = (raw_obj.dt_axis, raw_obj.cv_axis)
 
     # interpolate data if desired TODO: move to own button/remove from here
-    if params_obj.interp_1_method:
-        norm_data, axes = Raw_Processing.interpolate_cv(norm_data, axes, params_obj.interp_2_bins)
+    # if params_obj.interp_1_method:
+    #     norm_data, axes = Raw_Processing.interpolate_cv(norm_data, axes, params_obj.interp_2_bins)
 
     # save a CIUAnalysisObj with the information above
     analysis_obj = CIUAnalysisObj(raw_obj, norm_data, axes)
