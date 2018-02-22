@@ -128,18 +128,14 @@ class DataProduct(object):
     """
     Container for label and product information for data combinations used in feature selection.
     """
-    def __init__(self, data1, data2, label1, label2):
+    def __init__(self, data_list, label_list):
         """
         Initialize a new DataProduct with associated label and data
-        :param data1: ciu_data (normalized)
-        :param data2: ciu_data (normalized)
-        :param label1: label for data1
-        :param label2: label for data2
+        :param data_list: list of ciu_data matrices (normalized)
+        :param label_list: list of class labels (same length as data_list)
         """
-        self.data1 = data1
-        self.data2 = data2
-        self.label1 = label1
-        self.label2 = label2
+        self.data_input = data_list
+        self.labels_input = label_list
 
         self.combined_data = None
         self.combined_label_arr = None
@@ -158,11 +154,15 @@ class DataProduct(object):
         Manipulate data into concatenated arrays suitable for input into feature selection algorithm.
         :return: void
         """
-        self.combined_data = np.concatenate((self.data1, self.data2))
+        self.combined_data = np.concatenate(self.data_input)
 
-        label_arr_1 = np.asarray([self.label1 for _ in range(len(self.data1))])
-        label_arr_2 = np.asarray([self.label2 for _ in range(len(self.data2))])
-        self.combined_label_arr = np.concatenate((label_arr_1, label_arr_2))
+        label_array_list = []
+        index = 0
+        for label in self.labels_input:
+            label_array = [label for _ in range(len(self.data_input[index]))]
+            label_array_list.append(label_array)
+            index += 1
+        self.combined_label_arr = np.concatenate(label_array_list)
 
         # use the label encoder to generate a numeric label list (could just do this manually??)
         # output is just the class numbers in an array the shape of the input
@@ -171,7 +171,8 @@ class DataProduct(object):
         self.numeric_label_arr = label_list.transform(self.combined_label_arr) + 1
 
     def __str__(self):
-        return '<DataProduct> labels: {}, {}'.format(self.label1, self.label2)
+        label_string = ','.join(self.labels_input)
+        return '<DataProduct> labels: {}'.format(label_string)
     __repr__ = __str__
 
 
@@ -188,9 +189,9 @@ def generate_products_for_ufs(analysis_obj_list_by_label, shaped_label_list):
     products = []
     for object_tuple, label_tuple in zip(itertools.product(*analysis_obj_list_by_label), itertools.product(*shaped_label_list)):
         # create a DataProduct object for this combination
-        data1 = object_tuple[0].ciu_data
-        data2 = object_tuple[1].ciu_data
-        product = DataProduct(data1, data2, label_tuple[0], label_tuple[1])
+        data_list = [x.ciu_data for x in object_tuple]
+        label_list = [x for x in label_tuple]
+        product = DataProduct(data_list, label_list)
 
         # Run feature selection for this combination
         # todo: make these parameters accessible
@@ -362,8 +363,8 @@ def all_feature_crossval_lda(features_list, analysis_obj_list_by_label, shaped_l
     plt.savefig(os.path.join(output_path, 'Score_vs_Features.png'))
     plt.close()
 
-    outarr = np.array([x_ax, margin_dist], dtype=float)
-    np.savetxt(os.path.join(output_path,'USF_lda_SVC_C1_margin_distance.csv'), outarr.T, delimiter=',', fmt='%s', header='num_features, margin_dist')
+    # outarr = np.array([x_ax, margin_dist], dtype=float)
+    # np.savetxt(os.path.join(output_path,'USF_lda_SVC_C1_margin_distance.csv'), outarr.T, delimiter=',', fmt='%s', header='num_features, margin_dist')
 
     return best_features
 
@@ -397,7 +398,7 @@ def main_build_classification(labels, analysis_obj_list_by_label, output_dir):
     # plot output here for now, will probably move eventually
     # labels_name = 'Univariatefeatureselection' + '_'.join(labels) + '_'
     # output_path = os.path.join(output_dir, labels_name)
-    plot_stuff_suggie(constructed_scheme, output_dir)
+    # plot_stuff_suggie(constructed_scheme, output_dir)
     plot_feature_scores(all_features, output_dir)
 
     return constructed_scheme
