@@ -45,6 +45,7 @@ class ClassificationScheme(object):
         self.classifier = None
         self.classifier_type = None
         self.params = None
+        self.final_axis_cropvals = None
 
         self.selected_features = []     # type: List[CFeature]
         self.all_features = None    # type: List[CFeature]

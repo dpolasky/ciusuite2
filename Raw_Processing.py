@@ -94,6 +94,8 @@ def smooth_main(analysis_obj, params_obj):
     :return: updated analysis_obj (.ciu_data updated, no other changes)
     """
     norm_data = analysis_obj.ciu_data
+    # norm_data = analysis_obj.raw_obj.rawdata
+    # norm_data = normalize_by_col(norm_data)
 
     if params_obj.smoothing_1_method is not None:
         # ensure window size is odd
@@ -230,17 +232,7 @@ def crop(analysis_obj, crop_vals):
     # Determine the indices corresponding to the values nearest to those entered by the user
     dt_axis = analysis_obj.axes[0]
     cv_axis = analysis_obj.axes[1]
-    new_axes = analysis_obj.axes
     ciu_data_matrix = analysis_obj.ciu_data
-
-    # check for interpolation
-    if not len(dt_axis) == crop_vals[4]:
-        ciu_data_matrix, new_axes = interpolate_axis(ciu_data_matrix, new_axes, 0, crop_vals[4])
-    if not len(cv_axis) == crop_vals[5]:
-        ciu_data_matrix, new_axes = interpolate_axis(ciu_data_matrix, new_axes, 1, crop_vals[5])
-
-    dt_axis = new_axes[0]
-    cv_axis = new_axes[1]
 
     # Crop
     dt_low = find_nearest(dt_axis, crop_vals[0])
@@ -257,7 +249,6 @@ def crop(analysis_obj, crop_vals):
         crop_cv = False
 
     # crop the data and axes
-    # ciu_data_matrix = analysis_obj.ciu_data
     if crop_dt:
         ciu_data_matrix = ciu_data_matrix[dt_low:dt_high + 1]  # crop the rows
         dt_axis = dt_axis[dt_low:dt_high + 1]
@@ -268,48 +259,32 @@ def crop(analysis_obj, crop_vals):
     ciu_data_matrix = np.swapaxes(ciu_data_matrix, 0, 1)
     new_axes = [dt_axis, cv_axis]
 
-    # crop_obj = CIUAnalysisObj(analysis_obj.raw_obj, ciu_data_matrix, new_axes,
-    #                           analysis_obj.gauss_params)
-    # crop_obj.params = analysis_obj.params
-    # crop_obj.raw_obj_list = analysis_obj.raw_obj_list
     # save output to the analysis object
     analysis_obj.ciu_data = ciu_data_matrix
     analysis_obj.axes = new_axes
     return analysis_obj
 
 
-def interpolate_axis(norm_data, axes, axis_to_interp, num_bins):
+def interpolate_axes(analysis_obj, new_axes):
     """
     interpolate along the collision voltage (x) axis to allow for unevenly spaced data collection
-    :param norm_data: input data (with axes still present) to interpolate
-    :param axes: axes list to use for interpolation (x-axis, y-axis)
-    :param axis_to_interp: which axis (DT = 0, CV = 1) to interpolate
-    :param num_bins: number of bins to have after interpolate
-    :return: interpolated data matrix, updated axes
+    :param analysis_obj: input data object
+    :type analysis_obj: CIUAnalysisObj
+    :param new_axes: new axes onto which to interpolate in form [dt_axis, cv_axis]
+    :return: updated object with interpolate CIUData and axes
+    :rtype: CIUAnalysisObj
     """
-    # Update the desired axis
-    interp_axis = axes[axis_to_interp]
-    start_val = interp_axis[0]
-    end_val = interp_axis[len(interp_axis) - 1]
-    new_axis_vals = np.linspace(start_val, end_val, num_bins)
-
-    if axis_to_interp == 0:
-        # interpolate DT (rows)
-        new_axes = [new_axis_vals, axes[1]]
-    else:
-        new_axes = [axes[0], new_axis_vals]
-
-    interp_func = scipy.interpolate.interp2d(axes[0], axes[1], norm_data.T)
+    # interpolate the existing data, then reframe on new axes
+    interp_func = scipy.interpolate.interp2d(analysis_obj.axes[0],
+                                             analysis_obj.axes[1],
+                                             analysis_obj.ciu_data.T)
     interp_data = interp_func(new_axes[0], new_axes[1])
     ciu_interp_data = interp_data.T
 
-    # interpolated_data = []
-    # for ycolumn in norm_data[:, :]:
-    #     interp_func = scipy.interpolate.interp1d(xaxis, ycolumn)
-    #     new_intensities = interp_func(new_cv_axis)
-    #     interpolated_data.append(new_intensities)
-
-    return ciu_interp_data, new_axes
+    # save to analysis object and return
+    analysis_obj.ciu_data = ciu_interp_data
+    analysis_obj.axes = new_axes
+    return analysis_obj
 
 
 def average_ciu(list_of_data_matrices):
@@ -324,3 +299,95 @@ def average_ciu(list_of_data_matrices):
 
     return avg_matrix, std_matrix
 
+
+def equalize_axes(flat_analysisobj_list, crop_vals_plus_flag=None):
+    """
+    Ensure that all objects have identical axes. If not, crop to the smallest shared
+    region and interpolate so that all axes are identical. Return updated obj list
+    :param flat_analysisobj_list: flat list of CIUAnalysisObj's
+    :type flat_analysisobj_list: list[CIUAnalysisObj]
+    :param crop_vals_plus_flag: list of axis values to enable comparison across lists
+    :return: updated object list with equalized axes, list of final cropping values used
+    :rtype: list[CIUAnalysisObj], list
+    """
+    if crop_vals_plus_flag is None:
+        base_axes = flat_analysisobj_list[0].axes
+        dt_start_min = base_axes[0][0]
+        dt_start_max = base_axes[0][len(base_axes[0]) - 1]
+        cv_start_min = base_axes[1][0]
+        cv_start_max = base_axes[1][len(base_axes[1]) - 1]
+        max_len_dt = len(base_axes[0])
+        max_len_cv = len(base_axes[1])
+        adjust_flag = False     # if at least one file has different axes, ALL will be adjusted
+        crop_vals_plus_flag = [dt_start_min, dt_start_max, cv_start_min, cv_start_max, max_len_dt, max_len_cv, adjust_flag]
+    else:
+        dt_start_min = crop_vals_plus_flag[0]
+        dt_start_max = crop_vals_plus_flag[1]
+        cv_start_min = crop_vals_plus_flag[2]
+        cv_start_max = crop_vals_plus_flag[3]
+        max_len_dt = crop_vals_plus_flag[4]
+        max_len_cv = crop_vals_plus_flag[5]
+        adjust_flag = crop_vals_plus_flag[6]
+
+        base_dt_axis = np.linspace(dt_start_min, dt_start_max, max_len_dt)
+        base_cv_axis = np.linspace(cv_start_min, cv_start_max, max_len_cv)
+        base_axes = [base_dt_axis, base_cv_axis]
+
+    for analysis_obj in flat_analysisobj_list:
+        if np.array_equal(analysis_obj.axes[0], base_axes[0]) and np.array_equal(analysis_obj.axes[1], base_axes[1]):
+            continue
+        else:
+            # Determine minimum shared region in both dimensions
+            if analysis_obj.axes[0][0] > dt_start_min:
+                dt_start_min = analysis_obj.axes[0][0]
+            if analysis_obj.axes[0][len(analysis_obj.axes[0]) - 1] < dt_start_max:
+                dt_start_max = analysis_obj.axes[0][len(analysis_obj.axes[0]) - 1]
+            if analysis_obj.axes[1][0] > cv_start_min:
+                cv_start_min = analysis_obj.axes[1][0]
+            if analysis_obj.axes[1][len(analysis_obj.axes[1]) - 1] < cv_start_max:
+                cv_start_max = analysis_obj.axes[1][len(analysis_obj.axes[1]) - 1]
+
+            # Determine max axis length for interpolation (to ensure no files are undersampled)
+            if len(analysis_obj.axes[0]) > max_len_dt:
+                max_len_dt = len(analysis_obj.axes[0])
+            if len(analysis_obj.axes[1]) > max_len_cv:
+                max_len_cv = len(analysis_obj.axes[1])
+
+            adjust_flag = True
+
+    if adjust_flag:
+        print('Axes differed in some files; interpolating to equalize...')
+        output_obj_list = []
+        # adjust ALL files to the same final axes
+        crop_vals = [dt_start_min, dt_start_max, cv_start_min, cv_start_max, max_len_dt, max_len_cv]
+        for analysis_obj in flat_analysisobj_list:
+            new_dt_axis = np.linspace(dt_start_min, dt_start_max, max_len_dt)
+            new_cv_axis = np.linspace(cv_start_min, cv_start_max, max_len_cv)
+            analysis_obj = interpolate_axes(analysis_obj, new_axes=[new_dt_axis, new_cv_axis])
+            output_obj_list.append(analysis_obj)
+        crop_vals_plus_flag = crop_vals
+        crop_vals_plus_flag.append(True)
+        return output_obj_list, crop_vals_plus_flag
+    else:
+        return flat_analysisobj_list, crop_vals_plus_flag
+
+
+def equalize_axes_2d_list(analysis_obj_list_by_label):
+    """
+    Axis checking method for 2D lists (e.g. in classification) where list order/shape must be
+    preserved. Axes are equalized across ALL sublists (every object anywhere in the 2D list)
+    :param analysis_obj_list_by_label: list of lists of CIUAnalysisObjs
+    :type analysis_obj_list_by_label: list[list[CIUAnalysisObj]]
+    :return: updated list of lists with axes equalized
+    :rtype: list[list[CIUAnalysisObj]], output_axes_list
+    """
+    output_list_by_label = []
+    crop_vals_to_equalize = None
+    for analysis_obj_list in analysis_obj_list_by_label:
+        output_list, crop_vals_to_equalize = equalize_axes(analysis_obj_list, crop_vals_to_equalize)
+
+    # loop through a second time in case any changes occurred in later lists (e.g. if list 2 is cropped, this will also get list 1)
+    for analysis_obj_list in analysis_obj_list_by_label:
+        output_list, crop_vals_to_equalize = equalize_axes(analysis_obj_list, crop_vals_to_equalize)
+        output_list_by_label.append(output_list)
+    return output_list_by_label, crop_vals_to_equalize
