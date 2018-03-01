@@ -2,16 +2,12 @@
 Dan Polasky
 10/6/17
 """
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
 import os
 import numpy as np
-from Gaussian_Fitting import gaussfunc
 import tkinter
 from tkinter import filedialog
 import pickle
 from CIU_Params import Parameters
-import scipy.stats
 from Feature_Detection import Feature, Transition
 from CIU_raw import CIURaw
 from typing import List
@@ -116,110 +112,6 @@ class CIUAnalysisObj(object):
         else:
             return [getattr(gaussian, attribute) for cv_sublist in self.gaussians for gaussian in cv_sublist]
 
-    def save_gaussfits_pdf(self, outputpath):
-        """
-        Save a pdf containing an image of the data and gaussian fit for each column to pdf in outputpath.
-        :param outputpath: directory in which to save output
-        :return: void
-        """
-        # ensure gaussian data has been initialized
-        if self.gauss_fits is None:
-            print('No gaussian fit data in this object yet, returning')
-            return
-
-        print('Saving Gausfitdata_' + str(self.raw_obj.filename) + '_.pdf .....')
-        pdf_fig = PdfPages(os.path.join(outputpath, 'Gausfitdata_' + str(self.raw_obj.filename) + '_.pdf'))
-        intarray = np.swapaxes(self.ciu_data, 0, 1)
-        for cv_index in range(len(self.axes[1])):
-            plt.figure()
-            # plot the original raw data as a scatter plot
-            plt.scatter(self.axes[0], intarray[cv_index])
-            # plot the fit data as a black dashed line
-            plt.plot(self.axes[0], self.gauss_fits[cv_index], ls='--', color='black')
-
-            # plot each fitted gaussian and centroid
-            for gaussian in self.filtered_gaussians[cv_index]:
-                fit = gaussfunc(self.axes[0], 0, gaussian.amplitude, gaussian.centroid, gaussian.width)
-                plt.plot(self.axes[0], fit)
-                plt.plot(gaussian.centroid, abs(gaussian.amplitude), '+', color='red')
-            plt.title('CV: {}, R2: {:.3f}, stderr: {:.4f}'.format(self.axes[1][cv_index], self.gauss_r2s[cv_index],
-                                                                  self.gauss_fit_stats[cv_index][5]))
-            pdf_fig.savefig()
-            plt.close()
-        pdf_fig.close()
-        print('Saving Gausfitdata_' + str(self.raw_obj.filename) + '.pdf')
-
-    def plot_centroids(self, outputpath, y_bounds=None):
-        """
-        Save a png image of the centroid DTs fit by gaussians. USES FILTERED peak data
-        :param outputpath: directory in which to save output
-        :param y_bounds: [lower bound, upper bound] to crop the plot to (in y-axis units, typically ms)
-        :return: void
-        """
-        # Get a list of centroids, sorted by collision voltage
-        filt_centroids = self.get_attribute_by_cv('centroid', True)
-
-        for x, y in zip(self.axes[1], filt_centroids):
-            plt.scatter([x] * len(y), y)
-        # plt.scatter(self.axes[1], self.gauss_centroids)
-        plt.xlabel('Trap CV')
-        plt.ylabel('ATD_centroid')
-        if y_bounds is not None:
-            plt.ylim(y_bounds)
-        plt.title('Centroids filtered by peak width')
-        plt.grid('on')
-        plt.savefig(os.path.join(outputpath, str(self.raw_obj.filename.rstrip('_raw.csv')) + '_centroids.png'),
-                    dpi=500)
-        plt.close()
-        print('Saved TrapCVvsArrivtimecentroid ' + str(self.raw_obj.filename) + '_.png')
-
-    def plot_fwhms(self, outputpath):
-        """
-        Save a png image of the FWHM (widths) fit by gaussians.
-        :param outputpath: directory in which to save output
-        :return: void
-        """
-        print('Saving TrapcCVvsFWHM_' + str(self.raw_obj.filename) + '_.png .....')
-        gauss_fwhms = self.get_attribute_by_cv('fwhm', False)
-
-        for x, y in zip(self.axes[1], gauss_fwhms):
-            plt.scatter([x] * len(y), y)
-        # plt.scatter(self.axes[1], self.gauss_fwhms)
-        plt.xlabel('Trap CV')
-        plt.ylabel('ATD_FWHM')
-        plt.grid('on')
-        plt.savefig(os.path.join(outputpath, str(self.raw_obj.filename) + '_FWHM.png'), dpi=500)
-        plt.close()
-        print('Saving TrapCVvsFWHM_' + str(self.raw_obj.filename) + '_.png')
-
-    def save_gauss_params(self, outputpath):
-        """
-        Save all gaussian information to file
-        :param outputpath: directory in which to save output
-        :return: void
-        """
-        with open(os.path.join(outputpath, str(self.raw_obj.filename.rstrip('_raw.csv')) + '_GaussFits.csv'), 'w') as output:
-            output.write('Filtered Gaussians\n')
-            output.write('Trap CV,Centroid,Amplitude,Peak Width,Baseline(y0),FWHM,Resolution\n')
-            index = 0
-            while index < len(self.axes[1]):
-                # outputline = '{},'.format(self.axes[1][index])
-                outputline = ','.join([gaussian.print_info() for gaussian in self.filtered_gaussians[index]])
-                # outputline += ','.join(['{:.2f}'.format(x) for x in self.gauss_filt_params[index]])
-                output.write(outputline + '\n')
-                index += 1
-
-            index = 0
-            output.write('All gaussians fit to data\n')
-            output.write('R^2,Adj R^2,Trap CV,Centroid,Amplitude,Peak Width,Baseline(y0),FWHM,Resolution\n')
-            while index < len(self.axes[1]):
-                gauss_line = '{:.3f},{:.3f},'.format(self.gauss_r2s[index], self.gauss_adj_r2s[index])
-                # gauss_line += ','.join(['{:.2f}'.format(x) for x in self.gauss_params[index]])
-                gauss_line += ','.join([gaussian.print_info() for gaussian in self.gaussians[index]])
-
-                # gauss_line += ','.join([str(x) for x in self.gauss_params[index]])
-                output.write(gauss_line + '\n')
-                index += 1
 
     def save_ciu50_outputs(self, outputpath, mode, combine=False):
         """

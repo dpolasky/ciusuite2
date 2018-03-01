@@ -14,7 +14,7 @@ import pickle
 import tkinter
 from tkinter import filedialog
 import scipy.signal
-
+import matplotlib.backends.backend_pdf
 import matplotlib.pyplot as plt
 
 # imports for type checking
@@ -448,12 +448,136 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
     analysis_obj.gauss_fit_stats = stats
 
     if params_obj.gaussian_4_save_diagnostics:
-        analysis_obj.save_gaussfits_pdf(outputpath)
-        analysis_obj.plot_centroids(outputpath)
-        analysis_obj.plot_fwhms(outputpath)
-        analysis_obj.save_gauss_params(outputpath)
+        save_gaussfits_pdf(analysis_obj, outputpath)
+        plot_centroids(analysis_obj, outputpath)
+        plot_fwhms(analysis_obj, outputpath)
+        save_gauss_params(analysis_obj, outputpath)
 
     return analysis_obj
+
+
+def save_gaussfits_pdf(analysis_obj, outputpath):
+    """
+    Save a pdf containing an image of the data and gaussian fit for each column to pdf in outputpath.
+    :param analysis_obj: container with gaussian fits to save
+    :type analysis_obj: CIUAnalysisObj
+    :param outputpath: directory in which to save output
+    :return: void
+    """
+    # TODO: make all plot parameters accessible
+
+    # ensure gaussian data has been initialized
+    if analysis_obj.gauss_fits is None:
+        print('No gaussian fit data in this object yet, returning')
+        return
+
+    # print('Saving Gausfitdata_' + str(analysis_obj.raw_obj.filename) + '_.pdf .....')
+    gauss_name = os.path.basename(analysis_obj.filename).rstrip('.ciu') + '_gaussFit.pdf'
+    pdf_fig = matplotlib.backends.backend_pdf.PdfPages(os.path.join(outputpath, gauss_name))
+
+    intarray = np.swapaxes(analysis_obj.ciu_data, 0, 1)
+    for cv_index in range(len(analysis_obj.axes[1])):
+        plt.figure()
+        # plot the original raw data as a scatter plot
+        plt.scatter(analysis_obj.axes[0], intarray[cv_index])
+        # plot the fit data as a black dashed line
+        plt.plot(analysis_obj.axes[0], analysis_obj.gauss_fits[cv_index], ls='--', color='black')
+
+        # plot each fitted gaussian and centroid
+        for gaussian in analysis_obj.filtered_gaussians[cv_index]:
+            fit = gaussfunc(analysis_obj.axes[0], 0, gaussian.amplitude, gaussian.centroid, gaussian.width)
+            plt.plot(analysis_obj.axes[0], fit)
+            plt.plot(gaussian.centroid, abs(gaussian.amplitude), '+', color='red')
+        plt.title('CV: {}, R2: {:.3f}, stderr: {:.4f}'.format(analysis_obj.axes[1][cv_index], analysis_obj.gauss_r2s[cv_index],
+                                                              analysis_obj.gauss_fit_stats[cv_index][5]))
+        pdf_fig.savefig()
+        plt.close()
+    pdf_fig.close()
+    # print('Saving Gausfitdata_' + str(analysis_obj.raw_obj.filename) + '.pdf')
+
+
+def plot_centroids(analysis_obj, outputpath, y_bounds=None):
+    """
+    Save a png image of the centroid DTs fit by gaussians. USES FILTERED peak data
+    :param analysis_obj: container with gaussian fits to save
+    :type analysis_obj: CIUAnalysisObj
+    :param outputpath: directory in which to save output
+    :param y_bounds: [lower bound, upper bound] to crop the plot to (in y-axis units, typically ms)
+    :return: void
+    """
+    # TODO: make all plot parameters accessible
+    # Get a list of centroids, sorted by collision voltage
+    filt_centroids = analysis_obj.get_attribute_by_cv('centroid', True)
+
+    for x, y in zip(analysis_obj.axes[1], filt_centroids):
+        plt.scatter([x] * len(y), y)
+    # plt.scatter(self.axes[1], self.gauss_centroids)
+    plt.xlabel('Trap CV')
+    plt.ylabel('ATD_centroid')
+    if y_bounds is not None:
+        plt.ylim(y_bounds)
+    plt.title('Centroids filtered by peak width')
+    plt.grid('on')
+    output_name = os.path.basename(analysis_obj.filename).rstrip('.ciu') + '_centroids.png'
+    plt.savefig(os.path.join(outputpath, output_name), dpi=500)
+    plt.close()
+    # print('Saved TrapCVvsArrivtimecentroid ' + str(analysis_obj.raw_obj.filename) + '_.png')
+
+
+def plot_fwhms(analysis_obj, outputpath):
+    """
+    Save a png image of the FWHM (widths) fit by gaussians.
+    :param analysis_obj: container with gaussian fits to save
+    :type analysis_obj: CIUAnalysisObj
+    :param outputpath: directory in which to save output
+    :return: void
+    """
+    print('Saving TrapcCVvsFWHM_' + str(analysis_obj.raw_obj.filename) + '_.png .....')
+    gauss_fwhms = analysis_obj.get_attribute_by_cv('fwhm', False)
+
+    for x, y in zip(analysis_obj.axes[1], gauss_fwhms):
+        plt.scatter([x] * len(y), y)
+    # plt.scatter(self.axes[1], self.gauss_fwhms)
+    plt.xlabel('Trap CV')
+    plt.ylabel('ATD_FWHM')
+    plt.grid('on')
+    output_name = os.path.basename(analysis_obj.filename).rstrip('.ciu') + '_FWHM.png'
+    plt.savefig(os.path.join(outputpath, output_name), dpi=500)
+    plt.close()
+    # print('Saving TrapCVvsFWHM_' + str(analysis_obj.raw_obj.filename) + '_.png')
+
+
+def save_gauss_params(analysis_obj, outputpath):
+    """
+    Save all gaussian information to file
+    :param analysis_obj: container with gaussian fits to save
+    :type analysis_obj: CIUAnalysisObj
+    :param outputpath: directory in which to save output
+    :return: void
+    """
+    output_name = os.path.basename(analysis_obj.filename).rstrip('.ciu') + '_gaussians.csv'
+    with open(os.path.join(outputpath, output_name), 'w') as output:
+        output.write('Filtered Gaussians\n')
+        output.write('Trap CV,Centroid,Amplitude,Peak Width,Baseline(y0),FWHM,Resolution\n')
+        index = 0
+        while index < len(analysis_obj.axes[1]):
+            # outputline = '{},'.format(self.axes[1][index])
+            outputline = ','.join([gaussian.print_info() for gaussian in analysis_obj.filtered_gaussians[index]])
+            # outputline += ','.join(['{:.2f}'.format(x) for x in self.gauss_filt_params[index]])
+            output.write(outputline + '\n')
+            index += 1
+
+        index = 0
+        output.write('All gaussians fit to data\n')
+        output.write('R^2,Adj R^2,Trap CV,Centroid,Amplitude,Peak Width,Baseline(y0),FWHM,Resolution\n')
+        while index < len(analysis_obj.axes[1]):
+            gauss_line = '{:.3f},{:.3f},'.format(analysis_obj.gauss_r2s[index], analysis_obj.gauss_adj_r2s[index])
+            # gauss_line += ','.join(['{:.2f}'.format(x) for x in self.gauss_params[index]])
+            gauss_line += ','.join([gaussian.print_info() for gaussian in analysis_obj.gaussians[index]])
+
+            # gauss_line += ','.join([str(x) for x in self.gauss_params[index]])
+            output.write(gauss_line + '\n')
+            index += 1
 
 
 if __name__ == '__main__':

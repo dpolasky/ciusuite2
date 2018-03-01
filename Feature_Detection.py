@@ -65,7 +65,7 @@ class Feature(object):
         # self.cvs = [x.cv for x in self.gaussians if x.cv not in self.cvs]   # get all CV's included (without repeats)
         self.cvs = sorted(self.cvs)
 
-    def accept_centroid(self, centroid, width_tol, collision_voltage, cv_tol):
+    def accept_centroid(self, centroid, width_tol, collision_voltage, cv_tol, cv_spacing):
         """
         Determine whether the provided centroid is within tolerance of the feature or not. Uses
         feature detection parameters (flat width tolerance) to decide.
@@ -73,10 +73,15 @@ class Feature(object):
         :param width_tol: tolerance in DT units (float) to compare to centroid
         :param collision_voltage: CV position of the gaussian to compare against feature for gaps
         :param cv_tol: distance in collision voltage space that can be skipped and still accept a gaussian
+        :param cv_spacing: distance between discrete points along collision voltage axis of CIU data
         :return: boolean
         """
         # Refresh current median and cvs in case more gaussians have been added since last calculation
         self.refresh()
+
+        # ensure cv_tol is at least the cv bin spacing
+        if cv_tol < cv_spacing:
+            cv_tol = cv_spacing
 
         if abs(self.get_median() - centroid) <= width_tol:
             # centroid is within the Feature's bounds, check for gaps
@@ -147,15 +152,15 @@ def feature_detect_col_max(analysis_obj, params_obj):
     # compute width tolerance in DT units
     width_tol_dt = params_obj.feature_cpt_width_tol * analysis_obj.bin_spacing
     gap_tol_cv = params_obj.feature_cpt_gap_tol  # * analysis_obj.cv_spacing
+    cv_spacing = analysis_obj.axes[1][1] - analysis_obj.axes[1][0]
 
     # Search each gaussian for features it matches (based on centroid)
-    # get the flat list of filtered gaussians
     cv_axis = analysis_obj.axes[1]
     for cv_index, col_max_dt in enumerate(analysis_obj.col_max_dts):
         # check if any current features will accept the Gaussian
         found_feature = False
         for feature in features:
-            if feature.accept_centroid(col_max_dt, width_tol_dt, cv_axis[cv_index], gap_tol_cv):
+            if feature.accept_centroid(col_max_dt, width_tol_dt, cv_axis[cv_index], gap_tol_cv, cv_spacing):
                 feature.cvs.append(cv_axis[cv_index])
                 feature.dt_max_vals.append(col_max_dt)
                 feature.cv_indices.append(cv_index)
@@ -197,6 +202,7 @@ def feature_detect_gaussians(analysis_obj, params_obj):
     # compute width tolerance in DT units
     width_tol_dt = params_obj.feature_gauss_width_tol * analysis_obj.bin_spacing
     gap_tol_cv = params_obj.feature_gauss_gap_tol  # * analysis_obj.cv_spacing
+    cv_spacing = analysis_obj.axes[1][1] - analysis_obj.axes[1][0]
 
     # Search each gaussian for features it matches (based on centroid)
     # get the flat list of filtered gaussians
@@ -205,7 +211,7 @@ def feature_detect_gaussians(analysis_obj, params_obj):
         # check if any current features will accept the Gaussian
         found_feature = False
         for feature in features:
-            if feature.accept_centroid(gaussian.centroid, width_tol_dt, gaussian.cv, gap_tol_cv):
+            if feature.accept_centroid(gaussian.centroid, width_tol_dt, gaussian.cv, gap_tol_cv, cv_spacing):
                 feature.gaussians.append(gaussian)
                 found_feature = True
                 break
@@ -511,6 +517,9 @@ class Transition(object):
 
         # guess steepness as a function of between feature1 end and feature2 start
         steepness_guess = 2 * 1 / (self.feat_distance + 1)
+        if steepness_guess < 0:
+            steepness_guess = -1 * steepness_guess
+            print('Caution: negative slope transition observed. Data may require additional smoothing if this is unexpected')
 
         # for interpolation of transition modes - determine transition region to interpolate
         pad_cv = params_obj.ciu50_5_pad_transitions_cv
@@ -948,8 +957,12 @@ def fit_logistic(x_axis, y_data, guess_center, guess_min, guess_max, steepness_g
     # constrain all parameters to positive values
     fit_bounds_lower = [0, 0, 0, 0]
     fit_bounds_upper = [np.inf, np.inf, np.inf, np.inf]
-    popt, pcov = scipy.optimize.curve_fit(logistic_func, x_axis, y_data, p0=p0, maxfev=5000,
-                                          bounds=(fit_bounds_lower, fit_bounds_upper))
+    try:
+        popt, pcov = scipy.optimize.curve_fit(logistic_func, x_axis, y_data, p0=p0, maxfev=5000,
+                                              bounds=(fit_bounds_lower, fit_bounds_upper))
+    except ValueError:
+        print('Error: fitting failed due to bad input values. Please try smoothing the input data more')
+        popt, pcov = [], []
     # popt, pcov = scipy.optimize.curve_fit(logistic_func, x_axis, y_data, p0=p0, maxfev=5000)
     return popt, pcov
 

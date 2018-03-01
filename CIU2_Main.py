@@ -118,7 +118,7 @@ class CIUSuite2(object):
         # tooltip.create(self.builder.get_object('Text_analysis_list'), 'Selected .ciu files appear here. Any processing will be '
         #                                                               '\nperformed on all files in the table, unless the '
         #                                                               '\nboxes below indicate only a subset of the files.')
-        tooltip.create(self.builder.get_object('Text_ParamsMatch'), 'When parameters are edited, this box displays if edits have been saved to the .ciu files')
+        # tooltip.create(self.builder.get_object('Text_ParamsMatch'), 'When parameters are edited, this box displays if edits have been saved to the .ciu files')
         tooltip.create(self.builder.get_object('Button_RawFile'), 'Select text files to analyze. Data will be loaded and converted to generate a .ciu file, '
                                                                   '\nwhich will appear in the table below')
         tooltip.create(self.builder.get_object('Button_AnalysisFile'), 'Select previously processed .ciu files to load. Files will be displayed in the table below')
@@ -153,7 +153,6 @@ class CIUSuite2(object):
         """
         # clear analysis list
         self.analysis_file_list = []
-
         raw_files = open_files([('_raw.csv', '_raw.csv')])
         if len(raw_files) > 0:
             self.progress_started()
@@ -389,7 +388,9 @@ class CIUSuite2(object):
         param_ui = CIU_Params.ParamUI(section_name=section_title,
                                       params_obj=self.params_obj,
                                       key_list=list_of_param_keys)
+        param_ui.grab_set()     # prevent users from hitting multiple windows simultaneously
         param_ui.wait_window()
+        param_ui.grab_release()
 
         # Only update parameters if the user clicked 'okay' (didn't click cancel or close the window)
         if param_ui.return_code == 0:
@@ -1150,8 +1151,11 @@ def save_analysis_obj(analysis_obj, params_obj, outputdir, filename_append=''):
     #                               analysis_obj.raw_obj.filename.rstrip('_raw.csv') + filename_append + file_extension)
 
     analysis_obj.filename = picklefile
-    with open(picklefile, 'wb') as pkfile:
-        pickle.dump(analysis_obj, pkfile)
+    try:
+        with open(picklefile, 'wb') as pkfile:
+            pickle.dump(analysis_obj, pkfile)
+    except IOError:
+        messagebox.showerror('File Save Error', 'Error: file {} could not be saved!'.format(picklefile))
 
     return picklefile
 
@@ -1197,7 +1201,9 @@ class CropUI(object):
         Run the UI and return the output values
         :return: List of crop values [dt low, dt high, cv low, cv high]
         """
+        self.builder.get_object('Crop_toplevel').grab_set()     # prevent users from clicking other stuff while crop is active
         self.mainwindow.mainloop()
+        self.builder.get_object('Crop_toplevel').grab_release()
         return self.return_values()
 
     def on_close_window(self):
