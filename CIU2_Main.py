@@ -837,11 +837,25 @@ class CIUSuite2(object):
         # check axes
         obj_list_by_label, equalized_axes_list = Raw_Processing.equalize_axes_2d_list(obj_list_by_label)
 
-        # Run the classification
-        self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
-        scheme = Classification.main_build_classification(data_labels, obj_list_by_label, self.output_dir)
-        scheme.final_axis_cropvals = equalized_axes_list
-        Classification.save_scheme(scheme, self.output_dir)
+        # get classification parameters
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'classif' in x]
+        if self.run_param_ui('Classification Parameters', param_keys):
+
+            # check training size
+            min_data_size = np.min([len(x) for x in obj_list_by_label])
+            if self.params_obj.classif_1_training_size > min_data_size - 1:
+                messagebox.showerror('Training Size Too Large', 'Error: The training size specified is too large for the '
+                                                                'number of files provided. At least 1 file must be available '
+                                                                'for testing, so training size cannot be larger than the number'
+                                                                ' of files in the smallest class - 1. Classification canceled: '
+                                                                ' please adjust training size and try again.')
+                self.progress_done()
+
+            # Run the classification
+            self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
+            scheme = Classification.main_build_classification(data_labels, obj_list_by_label, self.params_obj, self.output_dir)
+            scheme.final_axis_cropvals = equalized_axes_list
+            Classification.save_scheme(scheme, self.output_dir)
 
         self.progress_done()
 
@@ -861,9 +875,11 @@ class CIUSuite2(object):
             self.progress_started()
             new_file_list = []
 
+            unk_objs = []
             for file in files_to_read:
                 # load file
                 analysis_obj = load_analysis_obj(file)
+                unk_objs.append(analysis_obj)
 
                 prediction_outputs = scheme.classify_unknown(analysis_obj, self.output_dir)
                 analysis_obj.classif_predicted_outputs = prediction_outputs
@@ -871,6 +887,8 @@ class CIUSuite2(object):
                 filename = save_analysis_obj(analysis_obj, params_obj=self.params_obj, outputdir=self.output_dir)
                 new_file_list.append(filename)
                 self.update_progress(files_to_read.index(file), len(files_to_read))
+
+            scheme.plot_all_unknowns(unk_objs, self.output_dir)
 
             self.display_analysis_files()
         self.progress_done()
@@ -1151,6 +1169,7 @@ def save_analysis_obj(analysis_obj, params_obj, outputdir, filename_append=''):
     #                               analysis_obj.raw_obj.filename.rstrip('_raw.csv') + filename_append + file_extension)
 
     analysis_obj.filename = picklefile
+    analysis_obj.short_filename = os.path.basename(picklefile.rstrip('.ciu'))
     try:
         with open(picklefile, 'wb') as pkfile:
             pickle.dump(analysis_obj, pkfile)
@@ -1170,6 +1189,7 @@ def load_analysis_obj(analysis_filename):
     with open(analysis_filename, 'rb') as analysis_file:
         analysis_obj = pickle.load(analysis_file)
         analysis_obj.filename = analysis_filename
+        analysis_obj.short_filename = os.path.basename(analysis_filename).rstrip('.ciu')
     return analysis_obj
 
 
