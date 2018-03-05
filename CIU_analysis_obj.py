@@ -61,6 +61,7 @@ class CIUAnalysisObj(object):
         self.features_changept = None   # type: List[Feature]
 
         self.classif_predicted_outputs = None
+        self.classif_data = None
 
     def __str__(self):
         """

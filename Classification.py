@@ -47,6 +47,7 @@ class ClassificationScheme(object):
         self.classifier_type = None
         self.params = None
         self.final_axis_cropvals = None
+        self.classif_mode = None
 
         self.selected_features = []     # type: List[CFeature]
         self.all_features = None    # type: List[CFeature]
@@ -66,22 +67,29 @@ class ClassificationScheme(object):
         self.pred_prob = None
         self.transformed_unk_data = None
 
+        self.num_gaussians = None
+
     def __str__(self):
         label_string = ','.join(self.unique_labels)
         return '<Classif_Scheme> type: {}, data: {}'.format(self.classifier_type, label_string)
     __repr__ = __str__
 
-    def classify_unknown(self, unk_ciu_obj, output_path, unk_label='Unknown'):
+    def classify_unknown(self, unk_ciu_obj, params_obj, output_path, unk_label='Unknown'):
         """
         Classify a test dataset according to this classification scheme. Selects features from
         the test dataset (ciudata), classifies, and returns output and score metrics.
         :param unk_ciu_obj: CIUAnalysisObj containing the ciu_data from unknown to be fitted
         :type unk_ciu_obj: CIUAnalysisObj
         :param unk_label: label for the unknown data
+        :param params_obj: parameters information
+        :type params_obj: Parameters
         :param output_path: directory in which to save output
         :return:
         """
-        unk_ciudata = unk_ciu_obj.ciu_data
+        # unk_ciudata = unk_ciu_obj.ciu_data
+        # todo: FIX MAX NUM GAUSSIAN COMMUNICATION
+        unk_ciudata = get_classif_data(unk_ciu_obj, params_obj, num_gaussian_override=5)
+
         self.unk_label = unk_label
         unk_input_x = []
 
@@ -89,6 +97,9 @@ class ClassificationScheme(object):
         selected_cv_indices = [x.cv_index for x in self.selected_features]
         for i in selected_cv_indices:
             unk_input_x.append(unk_ciudata.T[i])
+
+        # if params_obj.classif_3_mode == 'Gaussian':
+        #     unk_input_x = np.asarray(unk_input_x).T
 
         # Fit/classify data according to scheme LDA and classifier
         unknown_transformed_lda = self.lda.transform(unk_input_x)
@@ -101,18 +112,21 @@ class ClassificationScheme(object):
         plot_classification_decision_regions(self, output_path, unknown_tups=unknown_plot_info, filename=unk_ciu_obj.short_filename)
         # return unk_predict_class_lab, unk_predict_log_prob, unk_predict_proba, unknown_transformed_lda
 
-    def plot_all_unknowns(self, unk_ciuobj_list, output_path):
+    def plot_all_unknowns(self, unk_ciuobj_list, params_obj, output_path):
         """
         Same as classify unknown, except that all unknowns are plotted on a single output plot
         and labeled by filename
         :param unk_ciuobj_list: list of CIUAnalysis containers for each unknown
         :type unk_ciuobj_list: list[CIUAnalysisObj]
+        :param params_obj: parameters information
+        :type params_obj: Parameters
         :param output_path: directory in which to save output
         :return: void
         """
         all_plot_tups = []
         for unknown_ciuobj in unk_ciuobj_list:
-            unk_ciudata = unknown_ciuobj.ciu_data
+            unk_ciudata = get_classif_data(unknown_ciuobj, params_obj)
+
             unk_input_x = []
 
             # Assemble feature data for fitting
@@ -226,9 +240,11 @@ class CrossValProduct(object):
         self.numeric_label_train = []
         self.numeric_label_test = []
 
-    def assemble_class_combinations(self):
+    def assemble_class_combinations(self, params_obj):
         """
         Generate training and test datasets with labels with the given training size
+        :param params_obj: parameters information
+        :type params_obj: Parameters
         :return: List of class combination lists for all classes. Each class combo list is a list of DataCombination
         objects. Intended to go directly into itertools.product
         :rtype: list[list[DataCombination]]
@@ -247,9 +263,11 @@ class CrossValProduct(object):
             # class_ciu_data_list = [x.ciu_data for x in class_ciu_list]
             for training_data_tuple, training_label_tuple in zip(itertools.combinations(class_ciu_list, self.training_size),
                                                                  itertools.combinations(shaped_label_list[class_index], self.training_size)):
-                training_data_list = [x.ciu_data for x in training_data_tuple]
+                # training_data_list = [x.ciu_data for x in training_data_tuple]
+                training_data_list = [get_classif_data(x, params_obj) for x in training_data_tuple]
+
                 test_data_list = [x for x in class_ciu_list if x not in training_data_tuple]
-                test_data_list = [x.ciu_data for x in test_data_list]
+                test_data_list = [get_classif_data(x, params_obj) for x in test_data_list]
                 # [self.test_labels_tup[test_index] for _ in range(len((test_data[0])))]
                 test_label_list = [shaped_label_list[class_index][0] for _ in range(len(test_data_list))]
 
@@ -416,6 +434,75 @@ class DataProduct(object):
     __repr__ = __str__
 
 
+def get_classif_data(analysis_obj, params_obj, num_gaussian_override=None, ufs_mode=False):
+    """
+    Initialize a classification data matrix in each analysis object in the lists according to the
+    classification mode specified in the parameters object. In All_Data mode, this is simply the
+    ciu_data matrix. In Gaussian mode, it will be Gaussian information from the object's fitted Gaussian
+    lists.
+    :param analysis_obj: analysis objects
+    :type analysis_obj: CIUAnalysisObj
+    :param params_obj: Parameters object with classification parameter information
+    :type params_obj: Parameters
+    :param ufs_mode: boolean, True if using for UFS (feature selection), which requires only centroids from gaussian fitting
+    :return: classification data matrix
+    """
+    classif_data = None
+
+    if params_obj.classif_3_mode == 'All_Data':
+        classif_data = analysis_obj.ciu_data
+
+    elif params_obj.classif_3_mode == 'Gaussian':
+        # determine the maximum number of Gaussians that were fit to shape the matrices
+        max_num_gaussians = np.max([len(x) for x in analysis_obj.filtered_gaussians]) + 2
+        if num_gaussian_override is not None:
+            max_num_gaussians = num_gaussian_override
+        classif_data = []
+
+        if not ufs_mode:
+            # assemble matrix of gaussian data
+            for gaussian_list in analysis_obj.filtered_gaussians:
+                attributes = ['cent', 'width', 'amp']
+                num_attributes = len(attributes)
+                attribute_list = np.zeros(max_num_gaussians * num_attributes)
+
+                attribute_index = 0
+                for gaussian in gaussian_list:
+                    attribute_list[attribute_index] = gaussian.centroid
+                    attribute_index += 1
+                    attribute_list[attribute_index] = gaussian.width
+                    attribute_index += 1
+                    attribute_list[attribute_index] = gaussian.amplitude
+                    attribute_index += 1
+
+                # cent_list = np.zeros(max_num_gaussians)
+                # width_list = np.zeros(max_num_gaussians)
+                # amp_list = np.zeros(max_num_gaussians)
+                # for gauss_index, gaussian in enumerate(gaussian_list):
+                #     cent_list[gauss_index] = gaussian.centroid
+                #     width_list[gauss_index] = gaussian.width
+                #     amp_list[gauss_index] = gaussian.amplitude
+                # classif_data.append(cent_list)
+                # classif_data.append(width_list)
+                # classif_data.append(amp_list)
+                classif_data.append(attribute_list)
+            classif_data = np.asarray(classif_data).T
+        else:
+            # for UFS, only use centroids
+            for gaussian_list in analysis_obj.filtered_gaussians:
+                cent_list = np.zeros(max_num_gaussians)
+                for gauss_index, gaussian in enumerate(gaussian_list):
+                    cent_list[gauss_index] = gaussian.centroid
+
+                classif_data.append(cent_list)
+            classif_data = np.asarray(classif_data).T
+
+    else:
+        print('WARNING: INVALID CLASSIFICATION MODE: {}'.format(params_obj.classif_3_mode))
+
+    return classif_data
+
+
 def main_build_classification(labels, analysis_obj_list_by_label, params_obj, output_dir):
     """
     Main method for classification. Performs feature selection followed by LDA and classification
@@ -436,14 +523,14 @@ def main_build_classification(labels, analysis_obj_list_by_label, params_obj, ou
         shaped_label_list.append([label for _ in range(len(analysis_obj_list_by_label[index]))])
 
     # run feature selection
-    all_features = univariate_feature_selection(shaped_label_list, analysis_obj_list_by_label)
+    all_features = univariate_feature_selection(shaped_label_list, analysis_obj_list_by_label, params_obj, output_dir)
 
     # assess all features to determine which to use in the final scheme
     # best_features = all_feature_crossval_lda(all_features, analysis_obj_list_by_label, shaped_label_list, output_dir)
     best_features, crossval_score, all_crossval_data = crossval_main(analysis_obj_list_by_label, labels, output_dir, params_obj, all_features)
 
     # perform LDA and classification on the selected/best features
-    constructed_scheme = lda_ufs_best_features(best_features, analysis_obj_list_by_label, shaped_label_list)
+    constructed_scheme = lda_ufs_best_features(best_features, analysis_obj_list_by_label, shaped_label_list, params_obj)
     constructed_scheme.crossval_test_score = crossval_score
     constructed_scheme.all_crossval_data = all_crossval_data
 
@@ -457,18 +544,21 @@ def main_build_classification(labels, analysis_obj_list_by_label, params_obj, ou
     return constructed_scheme
 
 
-def univariate_feature_selection(shaped_label_list, analysis_obj_list_by_label):
+def univariate_feature_selection(shaped_label_list, analysis_obj_list_by_label, params_obj, output_path):
     """
 
     :param shaped_label_list: list of lists of class labels with the same shape as the analysis object list
     :param analysis_obj_list_by_label: list of lists of analysis objects, sorted by class
     :type analysis_obj_list_by_label: list[list[CIUAnalysisObj]]
+    :param params_obj: parameters information
+    :type params_obj: Parameters
+    :param output_path: directory in which to save plot
     :return: list of selected features, list of all features (both CFeature object lists)
     """
     cv_axis = analysis_obj_list_by_label[0][0].axes[1]
 
     # generate all combinations of replicate datasets within the labels
-    products = generate_products_for_ufs(analysis_obj_list_by_label, shaped_label_list)
+    products = generate_products_for_ufs(analysis_obj_list_by_label, shaped_label_list, params_obj)
 
     # Create a CFeature object to hold the information for this CV (feature)
     scores = [product.fit_sc for product in products]
@@ -484,24 +574,29 @@ def univariate_feature_selection(shaped_label_list, analysis_obj_list_by_label):
     sorted_features = sorted(features, key=lambda x: x.mean_score, reverse=True)
     # num_features = 1
     # selected_features = sorted_features[0: num_features]
-
+    # todo: plot feature scores here
+    plot_feature_scores(sorted_features, output_path)
     return sorted_features
 
 
-def generate_products_for_ufs(analysis_obj_list_by_label, shaped_label_list):
+def generate_products_for_ufs(analysis_obj_list_by_label, shaped_label_list, params_obj):
     """
     Generate all combinations of replicate data across classes for feature selection. Will
     create a DataProduct object with the key information for each combination.
     :param analysis_obj_list_by_label: list of lists of CIUAnalysisObj's, sorted by class label
     :type analysis_obj_list_by_label: list[list[CIUAnalysisObj]]
     :param shaped_label_list: list of lists of class labels with matching shape of analysis_obj_by_label
+    :param params_obj: parameter info
+    :type params_obj: Parameters
     :return: list of DataProduct objects for each combination
     :rtype: list[DataProduct]
     """
     products = []
     for object_tuple, label_tuple in zip(itertools.product(*analysis_obj_list_by_label), itertools.product(*shaped_label_list)):
         # create a DataProduct object for this combination
-        data_list = [x.ciu_data for x in object_tuple]
+        # data_list = [x.ciu_data for x in object_tuple]
+        data_list = [get_classif_data(x, params_obj, ufs_mode=True) for x in object_tuple]
+
         label_list = [x for x in label_tuple]
         product = DataProduct(data_list, label_list)
 
@@ -548,7 +643,7 @@ def crossval_main(analysis_obj_list_by_label, labels, outputdir, params_obj, fea
 
         # Generate all combinations
         crossval_obj = CrossValProduct(analysis_obj_list_by_label, labels, training_size, current_features_list)
-        crossval_combos = crossval_obj.assemble_class_combinations()
+        crossval_combos = crossval_obj.assemble_class_combinations(params_obj)
         crossval_obj.assemble_products(crossval_combos)
 
         # get scores and plot and stuff
@@ -675,7 +770,7 @@ def lda_clf_pipeline(stacked_train_data, stacked_train_labels, stacked_test_data
     return train_score, test_score, probas
 
 
-def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_label_list):
+def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_label_list, param_obj):
     """
 
     :param features_list: list of selected features from feature selection
@@ -683,11 +778,14 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
     :param analysis_obj_list_by_label: list of lists of CIUAnalysisObj's, sorted by class label
     :type analysis_obj_list_by_label: list[list[CIUAnalysisObj]]
     :param shaped_label_list: list of lists of class labels with matching shape of analysis_obj_by_label
+    :param param_obj: parameters information
+    :type param_obj: Parameters
     :return: generated classification scheme object with LDA and SVC performed
     :rtype: ClassificationScheme
     """
     # flatten input lists (sorted by class label) into a single list
-    flat_ciuraw_list = [x.ciu_data for label_obj_list in analysis_obj_list_by_label for x in label_obj_list]
+    # flat_ciuraw_list = [x.ciu_data for label_obj_list in analysis_obj_list_by_label for x in label_obj_list]
+    flat_ciuraw_list = [get_classif_data(x, param_obj) for label_obj_list in analysis_obj_list_by_label for x in label_obj_list]
     flat_label_list = [x for label_list in shaped_label_list for x in label_list]
 
     selected_cv_indices = [x.cv_index for x in features_list]

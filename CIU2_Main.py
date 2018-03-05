@@ -840,6 +840,8 @@ class CIUSuite2(object):
         # get classification parameters
         param_keys = [x for x in self.params_obj.params_dict.keys() if 'classif' in x]
         if self.run_param_ui('Classification Parameters', param_keys):
+            # determine mode (Gaussian or all data)
+            # todo: ensure Gaussians have been fit
 
             # check training size
             min_data_size = np.min([len(x) for x in obj_list_by_label])
@@ -867,30 +869,35 @@ class CIUSuite2(object):
         """
         # TODO: add axis exact match checking against scheme
 
-        scheme_file = filedialog.askopenfilename(filetypes=[('Classification File', '.clf')])
-        if not scheme_file == '':
-            scheme = Classification.load_scheme(scheme_file)
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'classif' in x]
+        if self.run_param_ui('Classification Parameters', param_keys):
+            # determine mode (Gaussian or all data)
+            # todo: ensure Gaussians have been fit
 
-            files_to_read = self.check_file_range_entries()
-            self.progress_started()
-            new_file_list = []
+            scheme_file = filedialog.askopenfilename(filetypes=[('Classification File', '.clf')])
+            if not scheme_file == '':
+                scheme = Classification.load_scheme(scheme_file)
 
-            unk_objs = []
-            for file in files_to_read:
-                # load file
-                analysis_obj = load_analysis_obj(file)
-                unk_objs.append(analysis_obj)
+                files_to_read = self.check_file_range_entries()
+                self.progress_started()
+                new_file_list = []
 
-                prediction_outputs = scheme.classify_unknown(analysis_obj, self.output_dir)
-                analysis_obj.classif_predicted_outputs = prediction_outputs
+                unk_objs = []
+                for file in files_to_read:
+                    # load file
+                    analysis_obj = load_analysis_obj(file)
+                    unk_objs.append(analysis_obj)
 
-                filename = save_analysis_obj(analysis_obj, params_obj=self.params_obj, outputdir=self.output_dir)
-                new_file_list.append(filename)
-                self.update_progress(files_to_read.index(file), len(files_to_read))
+                    prediction_outputs = scheme.classify_unknown(analysis_obj, self.params_obj, self.output_dir)
+                    analysis_obj.classif_predicted_outputs = prediction_outputs
 
-            scheme.plot_all_unknowns(unk_objs, self.output_dir)
+                    filename = save_analysis_obj(analysis_obj, params_obj=self.params_obj, outputdir=self.output_dir)
+                    new_file_list.append(filename)
+                    self.update_progress(files_to_read.index(file), len(files_to_read))
 
-            self.display_analysis_files()
+                scheme.plot_all_unknowns(unk_objs, self.params_obj, self.output_dir)
+
+                self.display_analysis_files()
         self.progress_done()
 
     def check_params(self):
