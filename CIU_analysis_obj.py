@@ -62,6 +62,7 @@ class CIUAnalysisObj(object):
 
         self.classif_predicted_outputs = None
         self.classif_data = None
+        self.classif_gaussfeats = None
 
     def __str__(self):
         """

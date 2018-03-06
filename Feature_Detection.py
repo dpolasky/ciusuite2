@@ -329,6 +329,7 @@ def adjust_gauss_features(analysis_obj, params_obj):
             adj_feature.gauss_median_centroid = feature.gauss_median_centroid
             adj_feature.cvs = final_cvs
             adjusted_features.append(adj_feature)
+            adj_feature.gaussians = feature.gaussians
     return adjusted_features
 
 

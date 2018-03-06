@@ -24,6 +24,8 @@ from sklearn.svm import SVC
 from sklearn.metrics import roc_curve, auc
 from scipy import interp
 
+from Gaussian_Fitting import Gaussian
+
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
@@ -34,6 +36,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from CIU_analysis_obj import CIUAnalysisObj
     from CIU_Params import Parameters
+    from Feature_Detection import Feature
 
 
 class ClassificationScheme(object):
@@ -434,7 +437,84 @@ class DataProduct(object):
     __repr__ = __str__
 
 
-def get_classif_data(analysis_obj, params_obj, num_gaussian_override=None, ufs_mode=False):
+def prep_gaussfeats_for_classif(features_list, analysis_obj):
+    """
+    Assemble a Gaussian-list-by-CV list from input features data. Fills any gaps between and within
+    features with Gaussian data from the filtered_gaussians list and assembles a complete list of
+    Gaussians by CV.
+    :param features_list: list of Features
+    :type features_list: list[Feature]
+    :param analysis_obj: CIUAnalysisObj with gaussian fitting and gaussian feature detect performed
+    :type analysis_obj: CIUAnalysisObj
+    :return: List of (Gaussian lists) sorted by CV
+    :rtype: list[list[Gaussian]]
+    """
+    # make an empty list for Gaussians at each CV
+    final_gaussian_lists = [[] for _ in analysis_obj.axes[1]]
+
+    features_list = close_feature_gaps(features_list, analysis_obj.axes[1])
+
+    # iterate over features, filling any gaps within the feature and entering Gaussians into the final list
+    for feature in features_list:
+        # determine if the feature contains gaps
+        gaussian_cvs = [gaussian.cv for gaussian in feature.gaussians]
+
+        for cv in feature.cvs:
+            # append Gaussian(s) at this CV to the final list
+            cv_index = np.where(analysis_obj.axes[1] == cv)[0][0]
+            this_cv_gaussian = [x for x in feature.gaussians if x.cv == cv]
+            final_gaussian_lists[cv_index].extend(this_cv_gaussian)
+
+            if cv not in gaussian_cvs:
+                # a gap is present within this feature- create a Gaussian at median centroid/values to fill it
+                new_gaussian = Gaussian(baseline=0,
+                                        amplitude=np.median([x.amplitude for x in feature.gaussians]),
+                                        centroid=feature.gauss_median_centroid,
+                                        width=np.median([x.width for x in feature.gaussians]),
+                                        collision_voltage=cv,
+                                        pcov=None)
+                final_gaussian_lists[cv_index].append(new_gaussian)
+
+    # Finally, check if all CVs have been covered by features. If not, add highest amplitude Gaussian from non-feature list
+    for cv_index, cv in enumerate(analysis_obj.axes[1]):
+        if len(final_gaussian_lists[cv_index]) == 0:
+            # no Gaussians have been added here yet. Include highest amplitude one from filtered_gaussians
+            cv_gaussians_from_obj = analysis_obj.filtered_gaussians[cv_index]
+            sorted_by_amp = sorted(cv_gaussians_from_obj, key=lambda x: x.amplitude)
+            final_gaussian_lists[cv_index].append(sorted_by_amp[0])
+
+    analysis_obj.classif_gaussfeats = final_gaussian_lists
+    return final_gaussian_lists
+
+
+def close_feature_gaps(features_list, cv_axis):
+    """
+    Check all features for gaps in their CV lists, and fill in the gaps if any exist by inserting
+    appropriate CV values
+    :param features_list: list of Features
+    :type features_list list[Feature]
+    :param cv_axis: analysis_obj.axes[1]
+    :return: updated features list with gaps closed (in feature.cvs ONLY)
+    :rtype: list[Feature]
+    """
+    cv_step = cv_axis[1] - cv_axis[0]
+
+    for feature in features_list:
+        for index, current_cv in enumerate(feature.cvs):
+            try:
+                next_cv = feature.cvs[index + 1]
+            except IndexError:
+                # reached the end, ignore
+                continue
+            while not (next_cv - current_cv) == cv_step:
+                # a gap is present - insert the next value to fill it
+                correct_next = current_cv + cv_step
+                feature.cvs.insert(index + 1, correct_next)
+                next_cv = feature.cvs[index + 1]
+    return features_list
+
+
+def get_classif_data(analysis_obj, params_obj, use_gauss_feats=True, num_gaussian_override=None, ufs_mode=False):
     """
     Initialize a classification data matrix in each analysis object in the lists according to the
     classification mode specified in the parameters object. In All_Data mode, this is simply the
@@ -454,14 +534,24 @@ def get_classif_data(analysis_obj, params_obj, num_gaussian_override=None, ufs_m
 
     elif params_obj.classif_3_mode == 'Gaussian':
         # determine the maximum number of Gaussians that were fit to shape the matrices
-        max_num_gaussians = np.max([len(x) for x in analysis_obj.filtered_gaussians]) + 2
+        max_num_gaussians = np.max([len(x) for x in analysis_obj.filtered_gaussians])
         if num_gaussian_override is not None:
             max_num_gaussians = num_gaussian_override
         classif_data = []
 
+        # max_num_gaussians = 5
+
+        if use_gauss_feats:
+            if analysis_obj.classif_gaussfeats is None:
+                gaussian_list_by_cv = prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
+            else:
+                gaussian_list_by_cv = analysis_obj.classif_gaussfeats
+        else:
+            gaussian_list_by_cv = analysis_obj.filtered_gaussians
+
         if not ufs_mode:
             # assemble matrix of gaussian data
-            for gaussian_list in analysis_obj.filtered_gaussians:
+            for gaussian_list in gaussian_list_by_cv:
                 attributes = ['cent', 'width', 'amp']
                 num_attributes = len(attributes)
                 attribute_list = np.zeros(max_num_gaussians * num_attributes)
@@ -489,7 +579,7 @@ def get_classif_data(analysis_obj, params_obj, num_gaussian_override=None, ufs_m
             classif_data = np.asarray(classif_data).T
         else:
             # for UFS, only use centroids
-            for gaussian_list in analysis_obj.filtered_gaussians:
+            for gaussian_list in gaussian_list_by_cv:
                 cent_list = np.zeros(max_num_gaussians)
                 for gauss_index, gaussian in enumerate(gaussian_list):
                     cent_list[gauss_index] = gaussian.centroid
