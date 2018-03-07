@@ -593,11 +593,11 @@ class CIUSuite2(object):
             new_file_list = []
             # for file in files_to_read:
             for analysis_obj in loaded_files:
-                analysis_obj = Raw_Processing.crop(analysis_obj, crop_vals)
-                analysis_obj.refresh_data()
-                analysis_obj.crop_vals = crop_vals
+                new_obj = Raw_Processing.crop(analysis_obj, crop_vals)
+                new_obj.refresh_data()
+                new_obj.crop_vals = crop_vals
                 # newfile = save_analysis_obj(crop_obj, filename_append='_crop', outputdir=self.output_dir)
-                newfile = save_analysis_obj(analysis_obj, analysis_obj.params, outputdir=self.output_dir)
+                newfile = save_analysis_obj(new_obj, new_obj.params, outputdir=self.output_dir)
                 new_file_list.append(newfile)
                 # also save _raw.csv output if desired
                 # if self.params_obj.output_1_save_csv:
@@ -840,8 +840,28 @@ class CIUSuite2(object):
         # get classification parameters
         param_keys = [x for x in self.params_obj.params_dict.keys() if 'classif' in x]
         if self.run_param_ui('Classification Parameters', param_keys):
-            # determine mode (Gaussian or all data)
-            # todo: ensure Gaussians have been fit
+            if self.params_obj.classif_3_mode == 'Gaussian':
+                # Ensure Gaussian features are present and prepare them for classification
+                max_num_gaussians = 0
+                for obj_list in obj_list_by_label:
+                    for analysis_obj in obj_list:
+                        if analysis_obj.features_gaussian is None:
+                            messagebox.showerror('No Gaussian Features Fitted', 'Error: Gaussian feature classification selected, '
+                                                                                'but Gaussian Feature Detection has not been performed yet. '
+                                                                                'Please run Gaussian Feature Detection on all files being used'
+                                                                                'for classification and try again.')
+                            # cancel the classification
+                            self.progress_done()
+                        else:
+                            # make ready the gaussians (saved into analysis object and length checked)
+                            gaussians_by_cv = Classification.prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
+                            for gaussian_list in gaussians_by_cv:
+                                if len(gaussian_list) > max_num_gaussians:
+                                    max_num_gaussians = len(gaussian_list)
+                # save num Gaussians to ensure all matrices same size
+                self.params_obj.silent_clf_4_num_gauss = max_num_gaussians
+            else:
+                max_num_gaussians = 0   # no Gaussians in non-Gaussian mode
 
             # check training size
             min_data_size = np.min([len(x) for x in obj_list_by_label])
@@ -857,6 +877,7 @@ class CIUSuite2(object):
             self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
             scheme = Classification.main_build_classification(data_labels, obj_list_by_label, self.params_obj, self.output_dir)
             scheme.final_axis_cropvals = equalized_axes_list
+            scheme.num_gaussians = max_num_gaussians
             Classification.save_scheme(scheme, self.output_dir)
 
         self.progress_done()
@@ -867,35 +888,76 @@ class CIUSuite2(object):
         classification on all loaded .ciu files against that scheme.
         :return: void
         """
-        # TODO: add axis exact match checking against scheme
+        # load files from table
+        files_to_read = self.check_file_range_entries()
+        self.progress_started()
+        new_file_list = []
+        analysis_obj_list = []
+        for file in files_to_read:
+            # load file
+            analysis_obj = load_analysis_obj(file)
+            analysis_obj_list.append(analysis_obj)
 
+        # check parameters
         param_keys = [x for x in self.params_obj.params_dict.keys() if 'classif' in x]
         if self.run_param_ui('Classification Parameters', param_keys):
-            # determine mode (Gaussian or all data)
-            # todo: ensure Gaussians have been fit
 
+            # ensure Gaussian features are present if requested
+            if self.params_obj.classif_3_mode == 'Gaussian':
+                for analysis_obj in analysis_obj_list:
+                    if analysis_obj.features_gaussian is None:
+                        messagebox.showerror('No Gaussian Features Fitted',
+                                             'Error: No Gaussian Features in file: {} . Gaussian Feature classification selected, '
+                                             'but Gaussian Feature Detection has not been performed yet. '
+                                             'Please run Gaussian Feature Detection on all files being used'
+                                             'and try again.')
+                        # cancel the classification
+                        self.progress_done()
+
+            # load classification scheme file
             scheme_file = filedialog.askopenfilename(filetypes=[('Classification File', '.clf')])
             if not scheme_file == '':
                 scheme = Classification.load_scheme(scheme_file)
 
-                files_to_read = self.check_file_range_entries()
-                self.progress_started()
-                new_file_list = []
+                # check axes against Scheme's saved axes and equalize if needed
+                analysis_obj_list, equalized_axes = Raw_Processing.equalize_axes(analysis_obj_list, scheme.final_axis_cropvals)
 
-                unk_objs = []
-                for file in files_to_read:
-                    # load file
-                    analysis_obj = load_analysis_obj(file)
-                    unk_objs.append(analysis_obj)
+                # analyze unknowns using the scheme and save outputs
+                successful_objs_for_plot = []
+                for analysis_obj in analysis_obj_list:
+                    # if using Gaussian mode, prepare file and check # Gaussians
+                    if self.params_obj.classif_3_mode == 'Gaussian':
+                        if analysis_obj.features_gaussian is None:
+                            print('Error: Gaussian feature classification selected, but Gaussian Feature Detection has not been performed for file {}. '
+                                  'File skipped. To classify, please run Gaussian Feature Detection on this file and try again.'.format(analysis_obj.short_filename))
+                            # skip this file
+                            continue
+                        else:
+                            # make ready the gaussians (saved into analysis object and length checked)
+                            gaussians_by_cv = Classification.prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
+                            skip_flag = False
+                            for gaussian_list in gaussians_by_cv:
+                                if len(gaussian_list) > scheme.num_gaussians:
+                                    messagebox.showerror('Gaussian Extrapolation Error', 'Warning: there are more overlapping features in file {} than in any of the training data used the classification scheme. '
+                                                                                         'To fit, ensure that the Gaussian Feature Detection outputs for this file are similar to the data used to build the chosen '
+                                                                                         'classification scheme (especially in the maximum number of features that overlap at one CV)'.format(analysis_obj.short_filename))
+                                    # skip file
+                                    skip_flag = True
+                                    break
+                            if skip_flag:
+                                continue
 
+                    # Finally, perform the classification and save outputs
                     prediction_outputs = scheme.classify_unknown(analysis_obj, self.params_obj, self.output_dir)
                     analysis_obj.classif_predicted_outputs = prediction_outputs
+                    successful_objs_for_plot.append(analysis_obj)
 
                     filename = save_analysis_obj(analysis_obj, params_obj=self.params_obj, outputdir=self.output_dir)
                     new_file_list.append(filename)
-                    self.update_progress(files_to_read.index(file), len(files_to_read))
+                    self.update_progress(analysis_obj_list.index(analysis_obj), len(analysis_obj_list))
 
-                scheme.plot_all_unknowns(unk_objs, self.params_obj, self.output_dir)
+                if len(successful_objs_for_plot) > 0:
+                    scheme.plot_all_unknowns(successful_objs_for_plot, self.params_obj, self.output_dir)
 
                 self.display_analysis_files()
         self.progress_done()
@@ -1045,11 +1107,9 @@ def process_raw_obj(raw_obj, params_obj):
     #     norm_data, axes = Raw_Processing.interpolate_cv(norm_data, axes, params_obj.interp_2_bins)
 
     # save a CIUAnalysisObj with the information above
-    analysis_obj = CIUAnalysisObj(raw_obj, norm_data, axes)
+    analysis_obj = CIUAnalysisObj(raw_obj, norm_data, axes, params_obj)
     analysis_obj = Raw_Processing.smooth_main(analysis_obj, params_obj)
 
-    # save parameters and return
-    analysis_obj.params = params_obj
     return analysis_obj
 
 
@@ -1143,8 +1203,7 @@ def average_ciu(analysis_obj_list, outputdir):
 
     # generate the average object
     avg_data = np.mean(ciu_data_list, axis=0)
-    averaged_obj = CIUAnalysisObj(raw_obj_list[0], avg_data, analysis_obj_list[0].axes)
-    averaged_obj.params = analysis_obj_list[0].params
+    averaged_obj = CIUAnalysisObj(raw_obj_list[0], avg_data, analysis_obj_list[0].axes, analysis_obj_list[0].params)
     averaged_obj.raw_obj_list = raw_obj_list
     averaged_obj.filename = save_analysis_obj(averaged_obj, analysis_obj_list[0].params, outputdir, filename_append='_Avg')
 

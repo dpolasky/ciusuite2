@@ -169,11 +169,12 @@ class Parameters(object):
         self.ciu50_4_trans_interp_factor = None
         self.ciu50_5_pad_transitions_cv = None
 
-        self.classif_feats_1_num_feats = None
-        self.classif_feats_2_min_score = None
+        # self.classif_feats_1_num_feats = None
+        # self.classif_feats_2_min_score = None
         self.classif_2_score_dif_tol = None
         self.classif_1_training_size = None
         self.classif_3_mode = None
+        self.silent_clf_4_num_gauss = None
 
     def set_params(self, params_dict):
         """

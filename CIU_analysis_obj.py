@@ -18,14 +18,14 @@ class CIUAnalysisObj(object):
     Container for analysis/processed information from a CIU fingerprint. Requires a CIURaw object
     to start, additional fields added as data is processed.
     """
-    def __init__(self, ciu_raw_obj, ciu_data, axes, gauss_params=None):
+    def __init__(self, ciu_raw_obj, ciu_data, axes, params_obj):
         """
         Initialize with raw data and axes. Allows addition of Gaussian fitting data later
         :param ciu_raw_obj: Object containing initial raw data, axes, and filepath of the analysis
         :param ciu_data: pre-processed data (smoothed/interpolated/cropped/etc) - can be modified repeatedly
         :param axes: modified axes corresponding to ciu_data (axes[0] = DT, axes[1] = CV)
-        :param gauss_params: List of lists of parameters for gaussians fitted to each CV (column of ciu_data)
-        params are [baseline height, amplitude, centroid, width]
+        :param params_obj: Parameters object with information about how this object was processed
+        :type params_obj: Parameters
         """
         # basic information and objects
         self.raw_obj = ciu_raw_obj  # type: CIURaw
@@ -33,7 +33,7 @@ class CIUAnalysisObj(object):
         self.ciu_data = ciu_data
         self.axes = axes            # convention: axis 0 = DT, axis 1 = CV
         self.crop_vals = None
-        self.params = Parameters()  # type: Parameters
+        self.params = params_obj  # type: Parameters
         self.filename = None        # filename of .ciu file saved
         self.short_filename = None
 
@@ -44,9 +44,9 @@ class CIUAnalysisObj(object):
         self.col_max_dts = [self.axes[0][0] + (x - 1) * self.bin_spacing for x in self.col_maxes]  # DT of maximum value
 
         # Feature detection results
-        self.changepoint_cvs = []
-        # self.features = []      # type: List[Feature]
         self.transitions = []   # type: List[Transition]
+        self.features_gaussian = None   # type: List[Feature]
+        self.features_changept = None   # type: List[Feature]
 
         # Gaussian fitting parameters - not always initialized with the object
         self.gaussians = None
@@ -56,9 +56,6 @@ class CIUAnalysisObj(object):
         self.gauss_covariances = None
         self.gauss_r2s = None
         self.gauss_fit_stats = None
-
-        self.features_gaussian = None   # type: List[Feature]
-        self.features_changept = None   # type: List[Feature]
 
         self.classif_predicted_outputs = None
         self.classif_data = None
@@ -114,7 +111,6 @@ class CIUAnalysisObj(object):
             return [getattr(gaussian, attribute) for cv_sublist in self.filtered_gaussians for gaussian in cv_sublist]
         else:
             return [getattr(gaussian, attribute) for cv_sublist in self.gaussians for gaussian in cv_sublist]
-
 
     def save_ciu50_outputs(self, outputpath, mode, combine=False):
         """

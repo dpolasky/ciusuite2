@@ -260,9 +260,13 @@ def crop(analysis_obj, crop_vals):
     new_axes = [dt_axis, cv_axis]
 
     # save output to the analysis object
-    analysis_obj.ciu_data = ciu_data_matrix
-    analysis_obj.axes = new_axes
-    return analysis_obj
+    # analysis_obj.ciu_data = ciu_data_matrix
+    # analysis_obj.axes = new_axes
+
+    # save output to a new analysis object (clears fitting results/etc that can fail if axes are different)
+    new_obj = CIUAnalysisObj(analysis_obj.raw_obj, ciu_data_matrix, new_axes, analysis_obj.params)
+
+    return new_obj
 
 
 def interpolate_axes(analysis_obj, new_axes):
@@ -306,7 +310,7 @@ def equalize_axes(flat_analysisobj_list, crop_vals_plus_flag=None):
     region and interpolate so that all axes are identical. Return updated obj list
     :param flat_analysisobj_list: flat list of CIUAnalysisObj's
     :type flat_analysisobj_list: list[CIUAnalysisObj]
-    :param crop_vals_plus_flag: list of axis values to enable comparison across lists
+    :param crop_vals_plus_flag: list of previously saved axis values to enable comparison across lists
     :return: updated object list with equalized axes, list of final cropping values used
     :rtype: list[CIUAnalysisObj], list
     """

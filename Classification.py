@@ -91,7 +91,7 @@ class ClassificationScheme(object):
         """
         # unk_ciudata = unk_ciu_obj.ciu_data
         # todo: FIX MAX NUM GAUSSIAN COMMUNICATION
-        unk_ciudata = get_classif_data(unk_ciu_obj, params_obj, num_gaussian_override=5)
+        unk_ciudata = get_classif_data(unk_ciu_obj, params_obj, ufs_mode=False, num_gauss_override=self.num_gaussians)
 
         self.unk_label = unk_label
         unk_input_x = []
@@ -128,7 +128,7 @@ class ClassificationScheme(object):
         """
         all_plot_tups = []
         for unknown_ciuobj in unk_ciuobj_list:
-            unk_ciudata = get_classif_data(unknown_ciuobj, params_obj)
+            unk_ciudata = get_classif_data(unknown_ciuobj, params_obj, ufs_mode=False, num_gauss_override=self.num_gaussians)
 
             unk_input_x = []
 
@@ -300,13 +300,15 @@ class CrossValProduct(object):
 
             self.stacked_train_data = np.vstack(np.vstack(x for x in stacked_train_data))
             stacked_train_labels = np.concatenate(np.vstack(stacked_train_labels))
-            self.stacked_test_data = np.vstack(np.vstack(np.vstack(x for x in stacked_test_data)))
+            try:
+                self.stacked_test_data = np.vstack(np.vstack(np.vstack(x for x in stacked_test_data)))
+            except ValueError:
+                print('wtf')
             stacked_test_labels = np.concatenate(np.vstack(stacked_test_labels))
 
             enc = LabelEncoder()
             enc.fit(stacked_train_labels)
 
-            # TODO: ask D whether to save the numeric label in object or not
             self.numeric_label_train = enc.transform(stacked_train_labels) + 1
             self.numeric_label_test = enc.transform(stacked_test_labels) + 1
 
@@ -316,12 +318,6 @@ class CrossValProduct(object):
             self.probabs.append(probas)
             self.train_scores.append(train_score)
             self.test_scores.append(test_score)
-
-            # fig, mean_tpr, mean_fpr = roc_clf(probas=probas, ytest = self.numeric_label_test, iter=iter)
-
-            # plt.plot([0, 1], [0, 1], linestyle='--', color='blue', label='random guessing')
-
-            # roc_clf(probas=probas, ytest=self.numeric_label_test, mean_tpr=0.0, pos_class=1)
 
         self.train_scores_mean = np.mean(self.train_scores)
         self.train_scores_std = np.std(self.train_scores)
@@ -481,7 +477,11 @@ def prep_gaussfeats_for_classif(features_list, analysis_obj):
             # no Gaussians have been added here yet. Include highest amplitude one from filtered_gaussians
             cv_gaussians_from_obj = analysis_obj.filtered_gaussians[cv_index]
             sorted_by_amp = sorted(cv_gaussians_from_obj, key=lambda x: x.amplitude)
-            final_gaussian_lists[cv_index].append(sorted_by_amp[0])
+            try:
+                final_gaussian_lists[cv_index].append(sorted_by_amp[0])
+            except IndexError:
+                # no Gaussians found at this CV in the original fitting - leave empty
+                continue
 
     analysis_obj.classif_gaussfeats = final_gaussian_lists
     return final_gaussian_lists
@@ -514,7 +514,7 @@ def close_feature_gaps(features_list, cv_axis):
     return features_list
 
 
-def get_classif_data(analysis_obj, params_obj, use_gauss_feats=True, num_gaussian_override=None, ufs_mode=False):
+def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_override=None):
     """
     Initialize a classification data matrix in each analysis object in the lists according to the
     classification mode specified in the parameters object. In All_Data mode, this is simply the
@@ -525,6 +525,7 @@ def get_classif_data(analysis_obj, params_obj, use_gauss_feats=True, num_gaussia
     :param params_obj: Parameters object with classification parameter information
     :type params_obj: Parameters
     :param ufs_mode: boolean, True if using for UFS (feature selection), which requires only centroids from gaussian fitting
+    :param num_gauss_override: MUST be provided for Unknown data fitting (in Gaussian mode ONLY) - the number of gaussians in the scheme being used
     :return: classification data matrix
     """
     classif_data = None
@@ -534,14 +535,19 @@ def get_classif_data(analysis_obj, params_obj, use_gauss_feats=True, num_gaussia
 
     elif params_obj.classif_3_mode == 'Gaussian':
         # determine the maximum number of Gaussians that were fit to shape the matrices
-        max_num_gaussians = np.max([len(x) for x in analysis_obj.filtered_gaussians])
-        if num_gaussian_override is not None:
-            max_num_gaussians = num_gaussian_override
+        # max_num_gaussians = np.max([len(x) for x in analysis_obj.filtered_gaussians])
+        # if num_gaussian_override is not None:
+        #     max_num_gaussians = num_gaussian_override
         classif_data = []
 
-        # max_num_gaussians = 5
+        # for unknown data, num gaussians is provided (use it); for building scheme, num gaussians comes from params object (as a convenient save location)
+        if num_gauss_override is not None:
+            max_num_gaussians = num_gauss_override
+        else:
+            max_num_gaussians = params_obj.silent_clf_4_num_gauss
 
-        if use_gauss_feats:
+        # use Gaussian features if available, otherwise just all filtered Gaussians
+        if analysis_obj.features_gaussian is not None:
             if analysis_obj.classif_gaussfeats is None:
                 gaussian_list_by_cv = prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
             else:
@@ -557,6 +563,8 @@ def get_classif_data(analysis_obj, params_obj, use_gauss_feats=True, num_gaussia
                 attribute_list = np.zeros(max_num_gaussians * num_attributes)
 
                 attribute_index = 0
+                if len(gaussian_list) == 0:
+                    continue
                 for gaussian in gaussian_list:
                     attribute_list[attribute_index] = gaussian.centroid
                     attribute_index += 1
@@ -660,11 +668,9 @@ def univariate_feature_selection(shaped_label_list, analysis_obj_list_by_label, 
         feature = CFeature(cv, cv_index, mean_score[cv_index], std_score[cv_index])
         features.append(feature)
 
-    # # todo: make this selection its own method with multiple ways (best N features, all above cutoff)
     sorted_features = sorted(features, key=lambda x: x.mean_score, reverse=True)
     # num_features = 1
     # selected_features = sorted_features[0: num_features]
-    # todo: plot feature scores here
     plot_feature_scores(sorted_features, output_path)
     return sorted_features
 
@@ -921,196 +927,6 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
     return scheme
 
 
-# todo: deprecated
-# def all_feature_crossval_lda(features_list, analysis_obj_list_by_label, shaped_label_list, output_path):
-#     """
-#     Run LDA and Classification for ALL features in features_list and generate an output plot of
-#     scoring by feature. Intended to be used to determine which features to include in a final classification
-#     scheme.
-#     :param features_list: list of selected features from feature selection
-#     :type features_list: list[CFeature]
-#     :param analysis_obj_list_by_label: list of lists of CIUAnalysisObj's, sorted by class label
-#     :type analysis_obj_list_by_label: list[list[CIUAnalysisObj]]
-#     :param shaped_label_list: list of lists of class labels with matching shape of analysis_obj_by_label
-#     :param output_path: directory in which to save outputs
-#     :return:
-#     """
-#     # flatten input lists (sorted by class label) into a single list
-#     flat_ciuraw_list = [x.ciu_data for label_obj_list in analysis_obj_list_by_label for x in label_obj_list]
-#     flat_label_list = [x for label_list in shaped_label_list for x in label_list]
-#
-#     features_list = sorted(features_list, key=lambda x: x.mean_score, reverse=True)
-#     selected_cv_indices = [x.cv_index for x in features_list]
-#
-#     # create a concatenated array with the selected CV columns from each raw dataset
-#     input_x_ciu_data = []
-#     input_label_data = []
-#     num_arr = []
-#     score = []
-#     margin_dist = []
-#     # num = 1
-#     # pdf_out = PdfPages(os.path.join(output_path, 'USF_lda_lr_cross_val_out.pdf'))
-#     for iter_cv in selected_cv_indices:
-#         # num_arr.append(num)
-#         for i, (ciu_rawdata, label_data) in enumerate(zip(flat_ciuraw_list, flat_label_list)):
-#             input_x_ciu_data.append(ciu_rawdata.T[iter_cv])
-#             input_label_data.append(label_data)
-#         input_x_data = np.asarray(input_x_ciu_data)
-#         input_y_labels, target_label = createtargetarray_featureselect(input_label_data)
-#         lda = LinearDiscriminantAnalysis(solver='svd', n_components=5)
-#         # lr = LogisticRegression()
-#         svc = SVC(kernel='linear', C=1.0)
-#         clf = Pipeline([('lda', lda), ('svc', svc)])
-#         xlda = lda.fit_transform(input_x_data, input_y_labels)
-#         svc.fit(xlda, input_y_labels)
-#         support_vecs = svc.support_vectors_
-#         dist = abs(support_vecs[0]-support_vecs[1])
-#         margin_dist.append(dist)
-#         sc = clf.score(input_x_data, input_y_labels)
-#         # print(sc)
-#         score.append(sc)
-#     #     xlda = lda.fit_transform(input_x_data, input_y_labels)
-#     #     plot_sklearn_lda_1ld(xlda, input_y_labels, target_label)
-#     #     plt.title(str(num))
-#     #     pdf_out.savefig()
-#     #     plt.close()
-#     #     num += 1
-#     # pdf_out.close()
-#
-#     # determine the max distance (currently based on margin distance) to return
-#     best_num_features = np.argmax(margin_dist)
-#     best_features = features_list[0: best_num_features]
-#
-#     # x_ax = np.arange(1, len(selected_cv_indices)+1)
-#     # plt.plot(x_ax, score, color='blue')
-#     # plt.savefig(os.path.join(output_path, 'USF_lda_svc_score.pdf'))
-#     # plt.close()
-#     #
-#     # plt.plot(x_ax, margin_dist, color='blue')
-#     # plt.savefig(os.path.join(output_path, 'Score_vs_Features.png'))
-#     # plt.close()
-#
-#     # outarr = np.array([x_ax, margin_dist], dtype=float)
-#     # np.savetxt(os.path.join(output_path,'USF_lda_SVC_C1_margin_distance.csv'), outarr.T, delimiter=',', fmt='%s', header='num_features, margin_dist')
-#
-#     return best_features
-
-
-# todo: deprecated
-# def all_feature_crossvalscore_lda(features_list, analysis_obj_list_by_label, shaped_label_list, output_path):
-#     """
-#     Run LDA and Classification for ALL features in features_list and generate an output plot of
-#     scoring by feature. Intended to be used to determine which features to include in a final classification
-#     scheme.
-#     :param features_list: list of selected features from feature selection
-#     :type features_list: list[CFeature]
-#     :param analysis_obj_list_by_label: list of lists of CIUAnalysisObj's, sorted by class label
-#     :type analysis_obj_list_by_label: list[list[CIUAnalysisObj]]
-#     :param shaped_label_list: list of lists of class labels with matching shape of analysis_obj_by_label
-#     :param output_path: directory in which to save outputs
-#     :return:
-#     """
-#     # flatten input lists (sorted by class label) into a single list
-#     # shaped_label_list = []
-#     # for index, label in enumerate(labels):
-#     #     shaped_label_list.append([label for _ in range(len(analysis_obj_list_by_label[index]))])
-#
-#     flat_ciuraw_list = [x.ciu_data for label_obj_list in analysis_obj_list_by_label for x in label_obj_list]
-#     flat_label_list = [x for label_list in shaped_label_list for x in label_list]
-#
-#     features_list = sorted(features_list, key=lambda x: x.mean_score, reverse=True)
-#     selected_cv_indices = [x.cv_index for x in features_list]
-#
-#     # create a concatenated array with the selected CV columns from each raw dataset
-#     input_x_ciu_data = []
-#     input_label_data = []
-#     num_arr = []
-#     train_score = []
-#     test_score = []
-#     margin_dist = []
-#     num = 1
-#     for iter_cv in selected_cv_indices:
-#         num_arr.append(num)
-#         for i, (ciu_rawdata, label_data) in enumerate(zip(flat_ciuraw_list, flat_label_list)):
-#             input_x_ciu_data.append(ciu_rawdata.T[iter_cv])
-#             input_label_data.append(label_data)
-#         input_x_data = np.asarray(input_x_ciu_data)
-#         input_y_labels, target_label = createtargetarray_featureselect(input_label_data)
-#         pipe_lda_sv = Pipeline([('lda', LinearDiscriminantAnalysis(solver='svd', n_components=5)),
-#                                 ('svc', SVC(kernel='linear', C=1.0))])
-#         cv_results = cross_validate(pipe_lda_sv, input_x_data, input_y_labels, cv=3, n_jobs=-1, verbose=0,
-#                                     return_train_score=True)
-#         train_score.append(cv_results['train_score'])
-#         test_score.append(cv_results['test_score'])
-#
-#     train_score_mean = np.mean(train_score, axis=1)
-#     train_score_std = np.std(train_score, axis=1)
-#     test_score_mean = np.mean(test_score, axis=1)
-#     test_score_std = np.mean(test_score, axis=1)
-#
-#     xax = np.arange(1, len(features_list)+1)
-#
-#     plt.plot(xax, train_score_mean, color='blue', marker='o', label='training-accuracy')
-#     plt.fill_between(xax, train_score_mean+train_score_std, train_score_mean-train_score_std, alpha=0.15)
-#     plt.savefig(output_path+'cross_val_score_training.pdf')
-#     plt.plot(xax, test_score_mean, color='green', marker='s', label='validation-accuracy')
-#     plt.fill_between(xax, test_score_mean-test_score_std, test_score_mean+test_score_std, alpha=0.15)
-#     plt.savefig(output_path+'cross_val_score_training_test.pdf')
-#     # plt.show()
-#     plt.close()
-
-
-# todo: deprecated
-# def classify_1_eval_features(labels, analysis_obj_list_by_label, output_dir):
-#     """
-#     Run initial setup for classification and generate a plot of feature scores to enable the
-#     user to choose the number of features to include in the final scheme.
-#     :param labels: list of class labels (strings)
-#     :param analysis_obj_list_by_label: list of lists of analysis objects, sorted by class
-#     :type analysis_obj_list_by_label: list[list[CIUAnalysisObj]]
-#     :param output_dir: directory in which to save plots/output
-#     :return: list of ALL features (and print output of scores)
-#     :rtype: list[CFeature]
-#     """
-#     # generate a list of lists of labels in the same shape as the analysis object list
-#     shaped_label_list = []
-#     for index, label in enumerate(labels):
-#         shaped_label_list.append([label for _ in range(len(analysis_obj_list_by_label[index]))])
-#
-#     # run feature selection
-#     best_features, all_features = univariate_feature_selection(shaped_label_list, analysis_obj_list_by_label)
-#
-#     # assess all features to determine which to use in the final scheme
-#     all_feature_crossval_lda(all_features, analysis_obj_list_by_label, shaped_label_list, output_dir)
-#     return all_features
-#
-#
-# def classify_2_build_scheme(selected_features, labels, analysis_obj_list_by_label, output_dir):
-#     """
-#     TODO: DEPRECATED
-#     :param selected_features:
-#     :param labels:
-#     :param analysis_obj_list_by_label:
-#     :param output_dir:
-#     :return:
-#     """
-#     # generate a list of lists of labels in the same shape as the analysis object list
-#     shaped_label_list = []
-#     for index, label in enumerate(labels):
-#         shaped_label_list.append([label for _ in range(len(analysis_obj_list_by_label[index]))])
-#
-#     # perform LDA and classification on the selected/best features
-#     constructed_scheme = lda_ufs_best_features(selected_features, analysis_obj_list_by_label, shaped_label_list)
-#
-#     # plot output here for now, will probably move eventually
-#     # labels_name = 'Univariatefeatureselection' + '_'.join(labels) + '_'
-#     # output_path = os.path.join(output_dir, labels_name)
-#     # plot_stuff_suggie(constructed_scheme, output_dir)
-#     # plot_feature_scores(all_features, analysis_obj_list_by_label[0][0].axes[1], output_path)
-#
-#     return constructed_scheme
-
-
 def select_features(all_features_list, params_obj):
     """
     Select the features to use out of self.all_features based on either top_N scoring features
@@ -1189,7 +1005,6 @@ def plot_classification_decision_regions(class_scheme, output_path, unknown_tups
         z = z.reshape(x_grid.shape)
 
         plt.contourf(x_grid, y_grid, z, alpha=0.2, cmap=cmap)
-        # todo: fix so these take only the scheme as args
         plot_sklearn_lda_1ld(class_scheme, markers, colors)
         if unknown_tups is not None:
             for unknown_tup in unknown_tups:
@@ -1226,67 +1041,6 @@ def plot_classification_decision_regions(class_scheme, output_path, unknown_tups
     plt.savefig(os.path.join(output_path, filename + '_classif_output.png'))
     plt.close()
 
-# todo: deprecated (another decision regions plotting method)
-# def plot_stuff_suggie(class_scheme, output_path):
-#     """
-#
-#     :param class_scheme:
-#     :param output_path:
-#     :return:
-#     """
-#     pdf_out = PdfPages(os.path.join(output_path, 'ldatransform_features_univariate_fclassif_SVM_C10_linear_classif.pdf'))
-#     x_min, x_max = np.floor(class_scheme.transformed_test_data.min()), np.ceil(class_scheme.transformed_test_data.max())
-#     y_min, y_max = -3, 3
-#     # yy = np.linspace(y_min, y_max)
-#     colors = ['blue', 'red', 'lightgreen', 'gray', 'cyan']
-#     # cmap = ListedColormap(colors[:len(np.unique(class_scheme.numeric_labels))])
-#     XX, YY = np.mgrid[x_min:x_max:100j, y_min:y_max:100j]
-#     XXX = np.c_[XX.ravel(), YY.ravel()]
-#     Z = class_scheme.classifier.predict(XX.ravel().reshape(-1, 1))
-#     Z = Z.reshape(XX.shape)
-#     plt.contourf(XX, YY, Z, alpha=0.4, cmap=plt.cm.Paired)
-#     cv_string = ','.join([str(x.cv) for x in class_scheme.selected_features])
-#     plt.title('From CVs: {}'.format(cv_string))
-#     plot_sklearn_lda_1ld(class_scheme.transformed_test_data, class_scheme.numeric_labels, class_scheme.class_labels)
-#     pdf_out.savefig()
-#     plt.close()
-#
-#     plt.close()
-#     pdf_out.close()
-
-
-# class RawTransformer(object):
-#     """
-#     modified from Suggie
-#     """
-#     def __init__(self, initial_dict):
-#         """
-#
-#         :param initial_dict:
-#         """
-#         self.raw_dict = initial_dict
-#         self.raw_x_array = self.transformdata_rawdata()
-#         self.decoded_array = []
-#
-#     def transformdata_rawdata(self):
-#         """
-#
-#         :return:
-#         """
-#         arr = np.hstack((self.raw_dict.values())).T
-#         return arr
-#
-#     def createtargetarray_rawdata(self):
-#         arr = []
-#         for i, (keys, values) in enumerate(zip(self.raw_dict.keys(), self.raw_dict.values())):
-#             arr.append(np.repeat(str(keys).split('_')[0], len(values[0])))
-#         arr = np.concatenate(arr)
-#         enc = LabelEncoder()
-#         label = enc.fit(arr)
-#         arr = label.transform(arr) + 1
-#         arr_decode = label.inverse_transform((arr - 1))
-#         return arr, arr_decode
-
 
 def createtargetarray_featureselect(inputlabel):
     """
@@ -1296,7 +1050,6 @@ def createtargetarray_featureselect(inputlabel):
     """
     arr = []
     for i in inputlabel:
-        # TODO: check this
         arr.append(i)
         # arr.append(i.split('_')[0])
     enc = LabelEncoder()
@@ -1304,18 +1057,6 @@ def createtargetarray_featureselect(inputlabel):
     arr = label.transform(arr) + 1
     arr_decode = label.inverse_transform((arr - 1))
     return arr, arr_decode
-
-
-# def createdict(list, labels):
-#     dict = {e: list[i] for i, e in enumerate(labels)}
-#     return dict
-
-
-# def curatedata_bestfeature_combined(array, feature_idx):
-#     newarr = []
-#     for i in feature_idx:
-#         newarr.append(array[i][:])
-#     return newarr
 
 
 def write_features_scores(score_dict, fname='avg_score_features_sfs.txt'):
@@ -1331,22 +1072,6 @@ def write_features_scores(score_dict, fname='avg_score_features_sfs.txt'):
             avg_score = val['avg_score']
             f.write(str(avg_score) + '    ' + str(feature_idx) + '\n')
     f.close()
-
-
-# todo: deprecated
-# def plot_sklearn_lda_3ld(X, y, target_label, title='LDA: Projection of first 3 LDs'):
-#     fig = plt.figure(1, figsize=(8, 6))
-#     ax = Axes3D(fig, elev=9, azim=142)
-#     for label, marker, color in zip(range(0, len(np.unique(target_label))), ('^', 's', 'o', 'd'),
-#                                     ('blue', 'red', 'green', 'black')):
-#         ax.scatter(xs=X[:, 0][y == label + 1], ys=X[:, 1][y == label + 1], zs=X[:, 2][y == label + 1], color=color,
-#                    edgecolor='k', marker=marker, s=40, label=np.unique(target_label)[label])
-#     ax.set_xlabel('LD1')
-#     ax.set_ylabel('LD2')
-#     ax.set_zlabel('LD3')
-#
-#     leg = plt.legend(loc='upper right', fancybox=True)
-#     leg.get_frame().set_alpha(0.5)
 
 
 def plot_sklearn_lda_2ld(class_scheme, marker, color):
@@ -1384,247 +1109,6 @@ def plot_sklearn_lda_1ld(class_scheme, marker, color):
                     alpha=0.5, label=unique_labels[label])
     plt.xlabel('LD1')
 
-
-# todo: DEPRECATED
-# def plot_decision_regions(X, y, target_label, classifier, resolution=0.02):
-#     markers = ('s', 'x', 'o', '^', 'v')
-#     colors = ['blue', 'red', 'lightgreen', 'gray', 'cyan']
-#     # cmap = ListedColormap(['blue', 'red', 'lightgreen'])
-#     cmap = ListedColormap(colors[:len(np.unique(y))])
-#
-#     x1_min, x1_max = X[:, 0].min() - 0.1, X[:, 0].max() + 0.1
-#     x2_min, x2_max = X[:, 1].min() - 0.1, X[:, 1].max() + 0.1
-#     xx1, xx2 = np.meshgrid(np.arange(x1_min, x1_max, resolution), np.arange(x2_min, x2_max, resolution))
-#     Z = classifier.predict(np.array([xx1.ravel(), xx2.ravel()]).T)
-#     Z = Z.reshape(xx1.shape)
-#     plt.contourf(xx1, xx2, Z, alpha=0.4, cmap=cmap)
-#     plt.xlim(xx1.min(), xx1.max())
-#     plt.ylim(xx2.min(), xx2.max())
-#
-#     for idx, cl in enumerate(np.unique(y)):
-#         plt.scatter(x=X[y == cl, 0], y=X[y == cl, 1], alpha=0.8, c=cmap(idx), marker=markers[idx],
-#                     label=np.unique(target_label)[idx])
-#
-#     plt.legend(loc='best', fontsize='small')
-
-
-# def load_analysis_obj(analysis_filename):
-#     """
-#     Load a pickled analysis object back into program memory
-#     :param analysis_filename: full path to file location to load
-#     :return: CIUAnalysisObj
-#     """
-#     with open(analysis_filename, 'rb') as analysis_file:
-#         analysis_obj = pickle.load(analysis_file)
-#     return analysis_obj
-
-
-# deprecated
-# def class_comparison_lda(labels, analysis_obj_list_by_label, output_dir):
-#     """
-#     Modularized version of class comparision algorithm from Suggie. Takes a list of labels and a
-#     list of AnalysisObjs for each label and performs a 2-stage LDA based classification. Output
-#     is saved with the voltages of greatest difference and their scores for assay development.
-#     :param labels = list of strings corresponding to class labels
-#     :param analysis_obj_list_by_label: list of lists of CIUAnalysisObj's. Same length as labels list, with
-#     arbitrary number of Analysis objects for each label.
-#     :param output_dir: directory in which to save output
-#     :return: void
-#     """
-#     # CVs for plot titles later
-#     cv1 = analysis_obj_list_by_label[0][0].axes[1]
-#
-#     inarray_list = []
-#     inlabel_list = []
-#     label_index = 0
-#     for label in labels:
-#         # Get the list of datasets corresponding to this label
-#         label_obj_list = analysis_obj_list_by_label[label_index]
-#         data_index = 1
-#
-#         for analysis_obj in label_obj_list:
-#             # Add the formatted label and dataset to their input lists for the feature selection
-#             inlabel_list.append('{}_{}'.format(label, data_index))
-#             ciu_data = analysis_obj.ciu_data
-#             inarray_list.append(ciu_data.T)     # append transposed CIU data matrix
-#             data_index += 1
-#         label_index += 1
-#     run_lda_raw(inarray_list, inlabel_list, labels, output_dir, cv1)
-#
-#
-# # deprecated
-# def classification_lda_maxvals(labels, analysis_obj_list_by_label, output_dir):
-#     """
-#     Analogous to classification_lda_raw, except uses only the max value in each CV column (set to 1,
-#     with all other DTs set to 0) as the input data.
-#     :param labels = list of strings corresponding to class labels
-#     :param analysis_obj_list_by_label: list of lists of CIUAnalysisObj's. Same length as labels list, with
-#     arbitrary number of Analysis objects for each label.
-#     :param output_dir: directory in which to save output
-#     :return: void
-#     """
-#     cv1 = analysis_obj_list_by_label[0][0].axes[1]
-#
-#     inarray_list = []
-#     inlabel_list = []
-#     label_index = 0
-#     for label in labels:
-#         # Get the list of datasets corresponding to this label
-#         label_obj_list = analysis_obj_list_by_label[label_index]
-#         data_index = 1
-#
-#         for analysis_obj in label_obj_list:
-#             # Add the formatted label and dataset to their input lists for the feature selection
-#             inlabel_list.append('{}_{}'.format(label, data_index))
-#             ciu_data_col = analysis_obj.ciu_data.T
-#
-#             # reduce ciu_data to max values only (normalized to 1.0)
-#             new_ciu = np.asarray([[np.argmax(col)] for col in ciu_data_col])
-#             # new_ciu = np.zeros(np.shape(ciu_data_col))
-#             # for i in range(len(ciu_data_col)):
-#             #     for j in range(len(ciu_data_col[0])):
-#             #         if ciu_data_col[i][j] == np.max(ciu_data_col[i]):
-#             #             new_ciu[i][j] = 1.0
-#
-#             # inarray_list.append(ciu_data_col)  # append transposed CIU data matrix
-#             inarray_list.append(new_ciu)
-#             data_index += 1
-#         label_index += 1
-#     run_lda_raw(inarray_list, inlabel_list, labels, output_dir, cv1)
-#
-#
-# # deprecated
-# def run_lda_raw(inarray_list, inlabel_list, label_list, output_dir, cv_labels):
-#     # create the dictionary needed to create the data and target array
-#     dict_init = createdict(inarray_list, inlabel_list)  # dictionary
-#     transform_obj = RawTransformer(dict_init)  # data
-#     X_ = transform_obj.raw_x_array
-#     y_, target_label = transform_obj.createtargetarray_rawdata()  # target
-#
-#     print(np.shape(X_))
-#
-#     # initiate LDA from sklearn
-#     # lda = LDA(solver='eigen', n_components=5)
-#     lda = LDA(solver='svd', n_components=2)
-#
-#
-#     # initiate feature selection from mlxtend package
-#     # 4 different algorithms are available. See
-#     # rabst.github.io/mlxtend/user_guide/feature_selection/SequentialFeatureSelector
-#     # to toggle between different selection algorithms, change the bool values for forward and floating attributes
-#     # below is set up for all 4 feature selection module
-#
-#     # SFFS and SBFS is computationally more expensive because it either excludes after inclusion or includes
-#     # after exclusion to maximize the score
-#
-#     # Sequential Forward Selection (sfs)
-#     # sfs = SFS(lda, k_features=(1, np.shape(X_)[1]), forward=True, floating=False, scoring='accuracy', cv=5, n_jobs=-1)
-#     sfs = SFS(lda, k_features=(1, np.shape(X_)[1]), forward=True, floating=False, scoring='accuracy', cv=0, n_jobs=-1)
-#
-#     # Sequential Backward Selection (sbs)
-#     # sfs = SFS(lda, k_features = (1, np.shape(X_)[1]), forward = False, floating = False, scoring = 'accuracy', cv = 5, n_jobs = -1)
-#
-#     # Sequential Forward Floating Selection (SFFS)
-#     # sfs = SFS(lda, k_features = (1, np.shape(X_)[1]), forward = True, floating = True, scoring = 'accuracy', cv = 5, n_jobs = -1)
-#
-#     # Sequential Backward Floating Selection (SBFS)
-#     # sfs = SFS(lda, k_features = (1, np.shape(X_)[1]), forward = False, floating = True, scoring = 'accuracy', cv = 5, n_jobs = -1)
-#
-#     ############
-#
-#     # fit the feature selection for the data
-#     sfs.fit(X_, y_)
-#
-#     print('best combination (ACCURACY: %.3f): %s\n' % (sfs.k_score_, sfs.k_feature_idx_))
-#     # print ('\nAll Subsets:\n', sfs.subsets_)
-#
-#     labels_name = 'LDA_' + '_'.join(label_list) + '_'
-#     output_path = os.path.join(output_dir, labels_name)
-#
-#     # write the avg score and features in a text file for reference
-#     write_features_scores(dict=sfs.subsets_, fname=output_path + 'avg_score_features_sfs_unevenclassnum.txt')
-#
-#     # plot the accuracy vs features using plot_sfs module from mlxtend
-#     plot_sfs(sfs.get_metric_dict(), kind='std_err')
-#     plt.savefig(output_path + 'performance_vs_features_sfs.pdf')
-#     plt.close()
-#
-#     # with the best k features from the feature selection algorithm, we now compare the raw data for each k feature
-#
-#     # create pdf to store figures of lda transformed data for each feature
-#     pdf_fig = pdfpage(output_path + 'ldatransform_features_sfs.pdf')
-#
-#     # create X and y input array
-#     for i in sfs.k_feature_idx_:
-#         arr = []
-#         for k in inarray_list:
-#             arr.append(k[i])
-#         arr = np.array(arr)  # X array
-#         y_, target_label = createtargetarray_featureselect(inlabel_list)  # target array
-#
-#         # initiate LDA. The solver is now changed to SVD from eigen. For some reason, scikitlearn cannot compute eigen values. Not sure exactly what causes it. There are some posts online refering to internal bug. Anyway, svd creates very similar results. I personally like eigen solver because I understand that better.
-#         # n_components is n_classes - 1. Since we have only 2 classes, we'll only obtain 1 component. However, with classes > 2 its necessary to evaluate the explained variance ratio for each component in order to properly assess the transformation.
-#         lda2 = LDA(solver='svd', n_components=5)
-#
-#         # fit LDA
-#         lda2.fit(arr, y_)
-#         print('Explained_variance_ratio: ',
-#               lda2.explained_variance_ratio_)  # important to evaluate, especially when more than one LDs.
-#         # transform the dataset with lda
-#         x_lda = lda2.transform(arr)
-#
-#         # evaluate score. This is a harsh metric especially for multi class classification. The performance of such
-#         # transformation and classification needs to be evaluated in better ways, for example, creating training and
-#         # test datasets, cross-validation, assessing other performance metrics etc. Will be working on that soon.
-#         print('Score: ', lda2.score(arr, y_))
-#
-#         if len(label_list) == 2:
-#             plot_sklearn_lda_1ld(x_lda, y_, target_label)
-#         elif len(label_list) == 3:
-#             lr = LogisticRegression()
-#             lr = lr.fit(x_lda, y_)
-#
-#             plot_decision_regions(x_lda, y_, target_label, classifier=lr)
-#         else:
-#             lr = LogisticRegression()
-#             lr = lr.fit(x_lda, y_)
-#
-#             plot_sklearn_lda_3ld(x_lda, y_, target_label)
-#         plt.title(str(cv_labels[i]))
-#         pdf_fig.savefig()
-#         plt.close()
-#
-#     pdf_fig.close()
-
-# if __name__ == '__main__':
-#     # Read the data
-#     import tkinter
-#     from tkinter import filedialog
-#     from tkinter import simpledialog
-#     root = tkinter.Tk()
-#     root.withdraw()
-#
-#     num_classes = simpledialog.askinteger('Class Number', 'Into how many classes do you want to group?')
-#
-#     data_labels = []
-#     obj_list_by_label = []
-#     main_dir = 'C:\\'
-#     for index in range(0, num_classes):
-#         # Read in the .CIU files and labels for each class
-#         label = simpledialog.askstring('Class Name', 'What is the name of this class?')
-#         files = filedialog.askopenfilenames(filetypes=[('CIU', '.ciu')])
-#         main_dir = os.path.dirname(files[0])
-#
-#         obj_list = []
-#         for file in files:
-#             with open(file, 'rb') as analysis_file:
-#                 obj = pickle.load(analysis_file)
-#             obj_list.append(obj)
-#         data_labels.append(label)
-#         obj_list_by_label.append(obj_list)
-#
-#     class_comparison_lda(data_labels, obj_list_by_label, main_dir)
-#     # classification_lda_maxvals(data_labels, obj_list_by_label, main_dir)
 
 def save_scheme(scheme, outputdir):
     """
