@@ -416,6 +416,59 @@ def print_features_list(feature_list, outputpath, mode):
             index += 1
 
 
+def save_ciu50_outputs(analysis_obj, outputpath, combine=False):
+    """
+    Print feature detection outputs to file. Must have feature detection already performed.
+    **NOTE: currently, feature plot is still in the feature detect module, but could (should?)
+    be moved here eventually.
+    :param analysis_obj: CIU container with transition information to save
+    :type analysis_obj: CIUAnalysisObj
+    :param outputpath: directory in which to save output
+    :param combine: whether to output directly for this file or return a string for combining
+    :return: void
+    """
+    output_name = os.path.join(outputpath, analysis_obj.filename + '_features.csv')
+    output_string = 'Transitions:,y0 (ms),ymax (ms),CIU-50 (V),k (steepness),r_squared\n'
+    trans_index = 1
+    for transition in analysis_obj.transitions:
+        output_string += 'transition {} -> {},'.format(trans_index, trans_index + 1)
+        output_string += '{:.2f},{:.2f},{:.2f},{:.2f}'.format(*transition.fit_params)
+        output_string += ',{:.3f}\n'.format(transition.rsq)
+        trans_index += 1
+
+    if combine:
+        # return the output string to be written together with many files
+        return output_string
+    else:
+        with open(output_name, 'w') as outfile:
+            outfile.write(output_string)
+
+
+def save_ciu50_short(analysis_obj, outputpath, combine=False):
+    """
+    Helper method to also save a shortened version of feature information
+    :param analysis_obj: CIU container with transition information to save
+    :type analysis_obj: CIUAnalysisObj
+    :param outputpath: directory in which to save output
+    :param combine: If True, return a string to be combined with other files instead of saving to file
+    :return:
+    """
+    output_name = os.path.join(outputpath, analysis_obj.filename + '_transitions-short.csv')
+    output_string = ''
+
+    # assemble the output
+    for transition in analysis_obj.transitions:
+        output_string += ',{:.2f}'.format(transition.fit_params[2])
+    output_string += '\n'
+
+    if combine:
+        # return the output string to be written together with many files
+        return output_string
+    else:
+        with open(output_name, 'w') as outfile:
+            outfile.write(output_string)
+
+
 class Transition(object):
     """
     Store information about a CIU transition, including the starting and ending feature,

@@ -61,9 +61,8 @@ class CIUSuite2(object):
         callbacks = {
             'on_button_rawfile_clicked': self.on_button_rawfile_clicked,
             'on_button_analysisfile_clicked': self.on_button_analysisfile_clicked,
-            'on_button_paramload_clicked': self.on_button_paramload_clicked,
             'on_button_printparams_clicked': self.on_button_printparams_clicked,
-            'on_button_reproc_files_clicked': self.on_button_reproc_files_clicked,
+            'on_button_update_param_defaults_clicked': self.on_button_update_param_defaults_clicked,
             'on_button_changedir_clicked': self.on_button_changedir_clicked,
             'on_button_oldplot_clicked': self.on_button_oldplot_clicked,
             'on_button_oldcompare_clicked': self.on_button_oldcompare_clicked,
@@ -78,7 +77,6 @@ class CIUSuite2(object):
             'on_button_feature_changept_clicked': self.on_button_feature_changept_clicked,
             'on_button_classification_supervised_clicked': self.on_button_classification_supervised_clicked,
             'on_button_classify_unknown_clicked': self.on_button_classify_unknown_clicked,
-            # 'on_button_classify_build_scheme_clicked': self.on_button_classify_build_scheme_clicked,
             'on_button_smoothing_clicked': self.on_button_smoothing_clicked
         }
         builder.connect_callbacks(callbacks)
@@ -193,63 +191,65 @@ class CIUSuite2(object):
         # check if parameters in loaded files match the current Parameter object
         self.check_params()
 
-    def on_button_paramload_clicked(self):
-        """
-        Open a user chosen parameter file into self.params
-        :return: void
-        """
-        # self.builder.get_object('Button_AnalysisFile').config(state=tk.DISABLED)
-        #
-        # self.on_button_edit_params_clicked()
-        #
-        # self.builder.get_object('Button_AnalysisFile').config(state=tk.NORMAL)
-        try:
-            new_param_file = open_files([('params file', '.txt')])[0]
-        except IndexError:
-            # no file loaded - user probably clicked cancel. Ignore the button call
-            return
+    # todo: deprecated
+    # def on_button_paramload_clicked(self):
+    #     """
+    #     Open a user chosen parameter file into self.params
+    #     :return: void
+    #     """
+    #     # self.builder.get_object('Button_AnalysisFile').config(state=tk.DISABLED)
+    #     #
+    #     # self.on_button_edit_params_clicked()
+    #     #
+    #     # self.builder.get_object('Button_AnalysisFile').config(state=tk.NORMAL)
+    #     try:
+    #         new_param_file = open_files([('params file', '.txt')])[0]
+    #     except IndexError:
+    #         # no file loaded - user probably clicked cancel. Ignore the button call
+    #         return
+    #
+    #     new_param_obj = CIU_Params.Parameters()
+    #     new_param_obj.set_params(CIU_Params.parse_params_file(new_param_file))
+    #     self.params_obj = new_param_obj
+    #     self.param_file = new_param_file
+    #
+    #     # update parameter location display
+    #     new_text = 'Parameters loaded from {}'.format(os.path.basename(new_param_file))
+    #     params_text = self.builder.get_object('Text_params')
+    #     params_text.delete(1.0, tk.END)
+    #     params_text.insert(tk.INSERT, new_text)
+    #
+    #     # check if files are loaded
+    #     if len(self.analysis_file_list) > 0:
+    #         # TODO: prompt user to overwrite params or not
+    #         print('TO-DO: ask user for overwrite or not')
 
-        new_param_obj = CIU_Params.Parameters()
-        new_param_obj.set_params(CIU_Params.parse_params_file(new_param_file))
-        self.params_obj = new_param_obj
-        self.param_file = new_param_file
-
-        # update parameter location display
-        new_text = 'Parameters loaded from {}'.format(os.path.basename(new_param_file))
-        params_text = self.builder.get_object('Text_params')
-        params_text.delete(1.0, tk.END)
-        params_text.insert(tk.INSERT, new_text)
-
-        # check if files are loaded
-        if len(self.analysis_file_list) > 0:
-            # TODO: prompt user to overwrite params or not
-            print('TO-DO: ask user for overwrite or not')
-
-    def on_button_edit_params_clicked(self):
-        """
-        Open the current parameter file in Notepad to allow the user to edit. Waits for
-        the notepad application to close before returning to the CIU2 GUI.
-        Updates the current Params object once the parameter file has been closed
-        :return: void
-        """
-        param_args = ['notepad.exe', self.param_file]
-        return_proc = subprocess.run(param_args)
-        print(return_proc)
-
-        # once done, update stuff and continue
-        new_param_obj = CIU_Params.Parameters()
-        new_param_obj.set_params(CIU_Params.parse_params_file(self.param_file))
-        self.params_obj = new_param_obj
-
-        new_text = 'Parameters updated in {}'.format(os.path.basename(self.param_file))
-        params_text = self.builder.get_object('Text_params')
-        params_text.delete(1.0, tk.END)
-        params_text.insert(tk.INSERT, new_text)
-
-        # check if files are loaded
-        if len(self.analysis_file_list) > 0:
-            # TODO: prompt user to overwrite params or not
-            print('TO-DO: ask user for overwrite or not')
+    # todo: deprecated
+    # def on_button_edit_params_clicked(self):
+    #     """
+    #     Open the current parameter file in Notepad to allow the user to edit. Waits for
+    #     the notepad application to close before returning to the CIU2 GUI.
+    #     Updates the current Params object once the parameter file has been closed
+    #     :return: void
+    #     """
+    #     param_args = ['notepad.exe', self.param_file]
+    #     return_proc = subprocess.run(param_args)
+    #     print(return_proc)
+    #
+    #     # once done, update stuff and continue
+    #     new_param_obj = CIU_Params.Parameters()
+    #     new_param_obj.set_params(CIU_Params.parse_params_file(self.param_file))
+    #     self.params_obj = new_param_obj
+    #
+    #     new_text = 'Parameters updated in {}'.format(os.path.basename(self.param_file))
+    #     params_text = self.builder.get_object('Text_params')
+    #     params_text.delete(1.0, tk.END)
+    #     params_text.insert(tk.INSERT, new_text)
+    #
+    #     # check if files are loaded
+    #     if len(self.analysis_file_list) > 0:
+    #         # TODO: prompt user to overwrite params or not
+    #         print('TO-DO: ask user for overwrite or not')
 
     def display_analysis_files(self):
         """
@@ -274,28 +274,29 @@ class CIUSuite2(object):
         self.builder.get_object('Entry_num_files').insert(0, str(len(self.analysis_file_list)))
         self.builder.get_object('Entry_num_files').config(state=tk.DISABLED)
 
-    def on_button_reproc_files_clicked(self):
-        """
-        Re-run processing from raw and update parameter file in all loaded Analysis objects/.ciu files
-        Updates ciu_data and parameters in the object, but does NOT delete saved fitting/features/etc
-        information from the object.
-        :return: void
-        """
-        files_to_read = self.check_file_range_entries()
-        output_files = []
-        self.progress_started()
-        for analysis_file in files_to_read:
-            # load analysis obj and print params
-            analysis_obj = load_analysis_obj(analysis_file)
-
-            # update parameters, ciu_data, and axes but retain all other object information
-            analysis_obj = reprocess_raw(analysis_obj, self.params_obj)
-            filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
-            output_files.append(filename)
-            self.update_progress(files_to_read.index(analysis_file), len(files_to_read))
-
-        self.display_analysis_files()
-        self.progress_done()
+    # todo: deprecated
+    # def on_button_reproc_files_clicked(self):
+    #     """
+    #     Re-run processing from raw and update parameter file in all loaded Analysis objects/.ciu files
+    #     Updates ciu_data and parameters in the object, but does NOT delete saved fitting/features/etc
+    #     information from the object.
+    #     :return: void
+    #     """
+    #     files_to_read = self.check_file_range_entries()
+    #     output_files = []
+    #     self.progress_started()
+    #     for analysis_file in files_to_read:
+    #         # load analysis obj and print params
+    #         analysis_obj = load_analysis_obj(analysis_file)
+    #
+    #         # update parameters, ciu_data, and axes but retain all other object information
+    #         analysis_obj = reprocess_raw(analysis_obj, self.params_obj)
+    #         filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
+    #         output_files.append(filename)
+    #         self.update_progress(files_to_read.index(analysis_file), len(files_to_read))
+    #
+    #     self.display_analysis_files()
+    #     self.progress_done()
 
     def on_button_restore_clicked(self):
         """
@@ -304,20 +305,22 @@ class CIUSuite2(object):
         in that a NEW object is created, so any gaussian fitting/etc is reset in this method.
         :return: void
         """
-        files_to_read = self.check_file_range_entries()
-        output_files = []
-        self.progress_started()
-        for analysis_file in files_to_read:
-            # load analysis obj and print params
-            analysis_obj = load_analysis_obj(analysis_file)
+        plot_keys = [x for x in self.params_obj.params_dict.keys() if 'smoothing' in x]
+        if self.run_param_ui('Initial Smoothing on Restored Data', plot_keys):
+            files_to_read = self.check_file_range_entries()
+            output_files = []
+            self.progress_started()
+            for analysis_file in files_to_read:
+                # load analysis obj and print params
+                analysis_obj = load_analysis_obj(analysis_file)
 
-            # update parameters and re-process raw data
-            new_obj = process_raw_obj(analysis_obj.raw_obj, self.params_obj)
-            filename = save_analysis_obj(new_obj, self.params_obj, outputdir=self.output_dir)
-            output_files.append(filename)
-            self.update_progress(files_to_read.index(analysis_file), len(files_to_read))
+                # update parameters and re-process raw data
+                new_obj = process_raw_obj(analysis_obj.raw_obj, self.params_obj)
+                filename = save_analysis_obj(new_obj, self.params_obj, outputdir=self.output_dir)
+                output_files.append(filename)
+                self.update_progress(files_to_read.index(analysis_file), len(files_to_read))
 
-        self.display_analysis_files()
+            self.display_analysis_files()
         self.progress_done()
 
     def on_button_printparams_clicked(self):
@@ -333,6 +336,15 @@ class CIUSuite2(object):
             analysis_obj = load_analysis_obj(file)
             print('\nParameters used in file {}:'.format(os.path.basename(file)))
             analysis_obj.params.print_params_to_console()
+
+    def on_button_update_param_defaults_clicked(self):
+        """
+        Update the default parameters (in the param info csv file) to be the current settings
+        in self.params_obj
+        :return: void
+        """
+        CIU_Params.update_param_csv(self.params_obj, hard_params_file)
+        self.progress_done()
 
     def check_file_range_entries(self):
         """
@@ -642,7 +654,7 @@ class CIUSuite2(object):
         files
         :return: void
         """
-        param_keys = [x for x in self.params_obj.params_dict.keys() if 'ciu50' in x]
+        param_keys = [x for x in self.params_obj.params_dict.keys() if ('ciu50' in x and 'gauss' not in x)]
         if self.run_param_ui('CIU-50 Parameters', param_keys):
             files_to_read = self.check_file_range_entries()
             self.progress_started()
@@ -662,15 +674,15 @@ class CIUSuite2(object):
                 new_file_list.append(filename)
 
                 if not self.params_obj.ciu50_cpt_2_combine_outputs:
-                    analysis_obj.save_ciu50_outputs(self.output_dir, mode='changept')
-                    analysis_obj.save_ciu50_short(self.output_dir)
+                    Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir)
+                    Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir)
                     combine_flag = False
                 else:
                     file_string = os.path.basename(filename).rstrip('.ciu') + '\n'
                     all_outputs += file_string
-                    all_outputs += analysis_obj.save_ciu50_outputs(self.output_dir, mode='changept', combine=True)
+                    all_outputs += Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir, combine=True)
                     short_outputs += os.path.basename(filename).rstrip('.ciu')
-                    short_outputs += analysis_obj.save_ciu50_short(self.output_dir, combine=True)
+                    short_outputs += Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir, combine=True)
                     combine_flag = True
                 self.update_progress(files_to_read.index(file), len(files_to_read))
 
@@ -709,15 +721,15 @@ class CIUSuite2(object):
                 new_file_list.append(filename)
 
                 if not self.params_obj.ciu50_gauss_2_combine_outputs:
-                    analysis_obj.save_ciu50_outputs(self.output_dir, mode='gaussian')
-                    analysis_obj.save_ciu50_short(self.output_dir)
+                    Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir)
+                    Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir)
                     combine_flag = False
                 else:
                     file_string = os.path.basename(filename).rstrip('.ciu') + '\n'
                     all_outputs += file_string
-                    all_outputs += analysis_obj.save_ciu50_outputs(self.output_dir, mode='gaussian', combine=True)
+                    all_outputs += Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir, combine=True)
                     short_outputs += os.path.basename(filename).rstrip('.ciu')
-                    short_outputs += analysis_obj.save_ciu50_short(self.output_dir, True)
+                    short_outputs += Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir, combine=True)
                     combine_flag = True
                 self.update_progress(files_to_read.index(file), len(files_to_read))
 

@@ -266,6 +266,46 @@ def parse_params_file_newcsv(params_file):
         print('params file not found!')
 
 
+def update_param_csv(params_obj, params_filepath):
+    """
+    Update the existing parameters default values file with new defaults in the provided
+    parameters object
+    :param params_obj: Parameters to save
+    :type params_obj: Parameters
+    :param params_filepath: location of the file to edit (format: same as parsed by parse_params_file_newcsv)
+    :return: void
+    """
+    try:
+        edited_lines = []
+        with open(params_filepath, 'r') as pfile:
+            lines = list(pfile)
+            for line in lines:
+                # skip headers and blank lines
+                if line.startswith('#') or line.startswith('\n'):
+                    edited_lines.append(line)
+                    continue
+                splits = line.rstrip('\n').split(',')
+
+                # Update ONLY the value field (splits[1]) and save the new line
+                current_key = splits[0].strip()
+                try:
+                    new_value = str(params_obj.params_dict[current_key])
+                except KeyError:
+                    new_value = splits[1].strip()
+                    print('Error: parameter {} not found, default unchanged').format(current_key)
+                splits[1] = new_value
+                new_line = ','.join(splits) + '\n'
+                edited_lines.append(new_line)
+
+        # write the updated information back to the file (overwrite old file)
+        with open(params_filepath, 'w') as pfile:
+            for line in edited_lines:
+                pfile.write(line)
+
+    except FileNotFoundError:
+        print('Error: parameters file {} not found! Default values not changed'.format(params_filepath))
+
+
 def parse_params_file(params_file):
     """
     Parse a CIU_params.txt file for all parameters. Returns a params_dict that can be used to
@@ -436,8 +476,13 @@ class ParamUI(tkinter.Toplevel):
                     vals_string = ', '.join(PAR_REQS[param][1])
                     param_string += '{}: value must be one of ({})\n'.format(PAR_NAMES[param], vals_string)
                 else:
-                    # print type only for float/int
-                    param_string += '{}: value type must be {}, and within bounds\n'.format(PAR_NAMES[param], PAR_REQS[param][0])
+                    # print type and bounds for float/int
+                    lower_bound = PAR_REQS[param][1][0]
+                    upper_bound = PAR_REQS[param][1][1]
+                    param_string += '{}:\n\t Value Type must be: {}\n\t Value must be within bounds: {} - {}\n'.format(PAR_NAMES[param],
+                                                                                                                          PAR_REQS[param][0],
+                                                                                                                          lower_bound,
+                                                                                                                          upper_bound)
             messagebox.showwarning(title='Parameter Error', message=param_string)
             return
 
