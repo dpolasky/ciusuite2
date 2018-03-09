@@ -3,6 +3,7 @@ Module for classification schemes for CIU data groups
 Authors: Dan Polasky, Sugyan Dixit
 Date: 1/11/2018
 """
+import time
 
 from matplotlib.colors import ListedColormap
 from sklearn.preprocessing import LabelEncoder
@@ -31,6 +32,7 @@ import matplotlib.pyplot as plt
 import pickle
 import os
 import itertools
+import multiprocessing
 from typing import List
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -238,10 +240,10 @@ class CrossValProduct(object):
         # assembled data
         self.all_class_combination_lists = None
         self.all_products = None
-        self.stacked_train_data = []
-        self.stacked_test_data = []
-        self.numeric_label_train = []
-        self.numeric_label_test = []
+        # self.stacked_train_data = []
+        # self.stacked_test_data = []
+        # self.numeric_label_train = []
+        # self.numeric_label_test = []
 
     def assemble_class_combinations(self, params_obj):
         """
@@ -264,8 +266,9 @@ class CrossValProduct(object):
             # create all combinations of specified training/test sizes from this class's data
             class_combo_list = []
             # class_ciu_data_list = [x.ciu_data for x in class_ciu_list]
-            for training_data_tuple, training_label_tuple in zip(itertools.combinations(class_ciu_list, self.training_size),
-                                                                 itertools.combinations(shaped_label_list[class_index], self.training_size)):
+            training_size = len(class_ciu_list) - 1
+            for training_data_tuple, training_label_tuple in zip(itertools.combinations(class_ciu_list, training_size),
+                                                                 itertools.combinations(shaped_label_list[class_index], training_size)):
                 # training_data_list = [x.ciu_data for x in training_data_tuple]
                 training_data_list = [get_classif_data(x, params_obj) for x in training_data_tuple]
 
@@ -282,47 +285,50 @@ class CrossValProduct(object):
             all_class_combo_lists.append(class_combo_list)
         return all_class_combo_lists
 
-    def assemble_products(self, all_class_combination_lists):
-        """
-        :param all_class_combination_lists:
-        Assemble the products of all class combinations
-        :return:
-        """
-        for combo_tuple in itertools.product(*all_class_combination_lists):
-            # stack training and test data and labels
-            stacked_train_data, stacked_train_labels = [], []
-            stacked_test_data, stacked_test_labels = [], []
-            for combo in combo_tuple:
-                stacked_train_data.append(combo.training_data_final)
-                stacked_train_labels.append(combo.training_labels_string)
-                stacked_test_data.append(combo.test_data_final)
-                stacked_test_labels.append(combo.test_labels_string)
 
-            self.stacked_train_data = np.vstack(np.vstack(x for x in stacked_train_data))
-            stacked_train_labels = np.concatenate(np.vstack(stacked_train_labels))
-            try:
-                self.stacked_test_data = np.vstack(np.vstack(np.vstack(x for x in stacked_test_data)))
-            except ValueError:
-                print('wtf')
-            stacked_test_labels = np.concatenate(np.vstack(stacked_test_labels))
+def assemble_products(all_class_combination_lists):
+    """
+    :param all_class_combination_lists:
+    Assemble the products of all class combinations
+    :return:
+    """
+    train_scores, test_scores = [], []
 
-            enc = LabelEncoder()
-            enc.fit(stacked_train_labels)
+    for combo_tuple in itertools.product(*all_class_combination_lists):
+        # stack training and test data and labels
+        stacked_train_data, stacked_train_labels = [], []
+        stacked_test_data, stacked_test_labels = [], []
+        for combo in combo_tuple:
+            stacked_train_data.append(combo.training_data_final)
+            stacked_train_labels.append(combo.training_labels_string)
+            stacked_test_data.append(combo.test_data_final)
+            stacked_test_labels.append(combo.test_labels_string)
 
-            self.numeric_label_train = enc.transform(stacked_train_labels) + 1
-            self.numeric_label_test = enc.transform(stacked_test_labels) + 1
+        stacked_train_data = np.vstack(np.vstack(x for x in stacked_train_data))
+        stacked_train_labels = np.concatenate(np.vstack(stacked_train_labels))
+        stacked_test_data = np.vstack(np.vstack(np.vstack(x for x in stacked_test_data)))
+        stacked_test_labels = np.concatenate(np.vstack(stacked_test_labels))
 
-            # run LDA
-            train_score, test_score, probas = lda_clf_pipeline(self.stacked_train_data, self.numeric_label_train,
-                                                               self.stacked_test_data, self.numeric_label_test)
-            self.probabs.append(probas)
-            self.train_scores.append(train_score)
-            self.test_scores.append(test_score)
+        enc = LabelEncoder()
+        enc.fit(stacked_train_labels)
 
-        self.train_scores_mean = np.mean(self.train_scores)
-        self.train_scores_std = np.std(self.train_scores)
-        self.test_scores_mean = np.mean(self.test_scores)
-        self.test_scores_std = np.std(self.test_scores)
+        numeric_label_train = enc.transform(stacked_train_labels) + 1
+        numeric_label_test = enc.transform(stacked_test_labels) + 1
+
+        train_score, test_score = lda_clf_pipeline(stacked_train_data, numeric_label_train,
+                                                   stacked_test_data, numeric_label_test)
+        train_scores.append(train_score)
+        test_scores.append(test_score)
+
+    # self.train_scores_mean = np.mean(train_scores)
+    # self.train_scores_std = np.std(train_scores)
+    # self.test_scores_mean = np.mean(test_scores)
+    # self.test_scores_std = np.std(test_scores)
+    train_scores_mean = np.mean(train_scores)
+    train_scores_std = np.std(train_scores)
+    test_scores_mean = np.mean(test_scores)
+    test_scores_std = np.std(test_scores)
+    return train_scores_mean, train_scores_std, test_scores_mean, test_scores_std
 
 
 class DataCombination(object):
@@ -728,44 +734,33 @@ def crossval_main(analysis_obj_list_by_label, labels, outputdir, params_obj, fea
     train_score_stds = []
     test_score_means = []
     test_score_stds = []
-    # confmat =[]
 
-    # pdfout = PdfPages(outputdir+'lda_train_test_crossvalproduct.pdf')
-    # TODO: plot fixes
-    pdfout = PdfPages(os.path.join(outputdir, 'ROC_curves.pdf'))
+    # num_cores = multiprocessing.cpu_count() - 1
+    num_cores = 3
+    # print(num_cores)
+    pool = multiprocessing.Pool(num_cores)
+    results = []
 
+    time_start = time.time()
     for ind, feature in enumerate(features_list):
         current_features_list.append(feature)
 
         # Generate all combinations
         crossval_obj = CrossValProduct(analysis_obj_list_by_label, labels, training_size, current_features_list)
         crossval_combos = crossval_obj.assemble_class_combinations(params_obj)
-        crossval_obj.assemble_products(crossval_combos)
+        # result = assemble_products(crossval_combos)
+        result = pool.apply_async(func=assemble_products, args=[crossval_combos])
+        results.append(result)
+
+    for result in results:
+        output = result.get()
 
         # get scores and plot and stuff
-        train_score_means.append(crossval_obj.train_scores_mean)
-        train_score_stds.append(crossval_obj.train_scores_std)
-        test_score_means.append(crossval_obj.test_scores_mean)
-        test_score_stds.append(crossval_obj.train_scores_std)
-
-        # get probabilities
-        probabs = crossval_obj.probabs
-
-        mean_tpr = 0.0
-        for index, probs in enumerate(probabs):
-            mean_fpr, fpr, tpr = roc_clf(probas=probs, ytest=crossval_obj.numeric_label_test, pos_class=2)
-            mean_tpr += interp(mean_fpr, fpr, tpr)
-            mean_tpr[0] = 0.0
-        mean_tpr /= len(probabs)
-        mean_tpr[-1] = 1.0
-
-        mean_auc = auc(mean_fpr, mean_tpr)
-        plt.plot(mean_fpr, mean_tpr, '--', color='blue', label='mean ROC area = %0.2f' % mean_auc)
-        plt.plot([0, 1], [0, 1], linestyle='--', color='black', alpha=0.5, label='random guessing')
-        plt.legend(loc='best')
-        pdfout.savefig()
-        plt.close()
-    pdfout.close()
+        train_score_means.append(output[0])
+        train_score_stds.append(output[1])
+        test_score_means.append(output[2])
+        test_score_stds.append(output[3])
+    print('classification done in {}'.format(time.time() - time_start))
 
     train_score_means = np.array(train_score_means)
     train_score_stds = np.array(train_score_stds)
@@ -861,9 +856,10 @@ def lda_clf_pipeline(stacked_train_data, stacked_train_labels, stacked_test_data
     test_score = svm.score(test_lda, stacked_test_labels)
     # y_pred = svm.predict(test_lda)
     # confmat = confusion_matrix(y_true=stacked_test_labels, y_pred=y_pred)
-    probas = svm.predict_proba(test_lda)
+    # probas = svm.predict_proba(test_lda)
 
-    return train_score, test_score, probas
+    # output_queue.put((train_score, test_score))
+    return train_score, test_score  # , probas
 
 
 def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_label_list, param_obj):
@@ -926,30 +922,30 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
 
     return scheme
 
-
-def select_features(all_features_list, params_obj):
-    """
-    Select the features to use out of self.all_features based on either top_N scoring features
-    or those above a minimum score. Sets self.selected features to the Features selected
-    :param all_features_list: List of all CFeature objects
-    :param params_obj: Parameters object with classification parameters set
-    :type params_obj: Parameters
-    :return: List of selected features
-    """
-    selected_features = []
-    feat_index = 0
-    all_features_list = sorted(all_features_list, key=lambda x: x.mean_score, reverse=True)
-    while feat_index < params_obj.classif_feats_1_num_feats and feat_index < len(all_features_list):
-        this_feature = all_features_list[feat_index]
-
-        # if a minimum score has been provided, use it; otherwise, ignore
-        if params_obj.classif_feats_2_min_score > 0:
-            if this_feature.mean_score > params_obj.classif_feats_2_min_score:
-                selected_features.append(this_feature)
-        else:
-            selected_features.append(this_feature)
-        feat_index += 1
-    return selected_features
+# todo: deprecated
+# def select_features(all_features_list, params_obj):
+#     """
+#     Select the features to use out of self.all_features based on either top_N scoring features
+#     or those above a minimum score. Sets self.selected features to the Features selected
+#     :param all_features_list: List of all CFeature objects
+#     :param params_obj: Parameters object with classification parameters set
+#     :type params_obj: Parameters
+#     :return: List of selected features
+#     """
+#     selected_features = []
+#     feat_index = 0
+#     all_features_list = sorted(all_features_list, key=lambda x: x.mean_score, reverse=True)
+#     while feat_index < params_obj.classif_feats_1_num_feats and feat_index < len(all_features_list):
+#         this_feature = all_features_list[feat_index]
+#
+#         # if a minimum score has been provided, use it; otherwise, ignore
+#         if params_obj.classif_feats_2_min_score > 0:
+#             if this_feature.mean_score > params_obj.classif_feats_2_min_score:
+#                 selected_features.append(this_feature)
+#         else:
+#             selected_features.append(this_feature)
+#         feat_index += 1
+#     return selected_features
 
 
 def plot_feature_scores(feature_list, output_path):
@@ -1023,7 +1019,8 @@ def plot_classification_decision_regions(class_scheme, output_path, unknown_tups
                 x2_min = min([x2_min_unk, x2_min])
                 x2_max = max([x2_max_unk, x2_max])
 
-        x_grid_1, x_grid_2 = np.meshgrid(np.arange(x1_min, x1_max, 0.02), np.arange(x2_min, x2_max, 0.02))
+        num_grid_bins = 1000
+        x_grid_1, x_grid_2 = np.meshgrid(np.arange(x1_min, x1_max, abs(x1_max - x1_min) / num_grid_bins), np.arange(x2_min, x2_max, abs(x2_max - x2_min) / num_grid_bins))
         z = class_scheme.classifier.predict(np.array([x_grid_1.ravel(), x_grid_2.ravel()]).T)
         z = z.reshape(x_grid_1.shape)
 
@@ -1143,53 +1140,67 @@ if __name__ == '__main__':
     # import tkinter
     # from tkinter import filedialog
     # from tkinter import simpledialog
+    import CIU_Params
+    import Raw_Processing
+
     #
     # root = tkinter.Tk()
     # root.withdraw()
 
     # num_classes = simpledialog.askinteger('Class Number', 'Into how many classes do you want to group?')
-    num_classes = 2
+    num_classes = 3
     data_labels = []
     obj_list_by_label = []
-    main_dir = 'C:\\'
+    # main_dir = 'C:\\'
+    main_dir = r"C:\Users\dpolasky\Desktop\CIUSuite2\CIU2 test data\Classify_Sarah\apo_cdl_pi_3way"
 
-    class_labels = ['Igg1', 'Igg2', 'Igg4', 'Igg4']
-    f1 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG1_1.ciu'
-    f2 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG1_2.ciu'
-    f3 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG1_3.ciu'
-    f4 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG2_1.ciu'
-    f5 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG2_2.ciu'
-    f6 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG2_3.ciu'
-    f7 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG3_1.ciu'
-    f8 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG3_2.ciu'
-    f9 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG3_3.ciu'
-    f10 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG4_1.ciu'
-    f11 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG4_2.ciu'
-    f12 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG4_3.ciu'
+    # class_labels = ['Igg1', 'Igg2', 'Igg4', 'Igg4']
+    # f1 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG1_1.ciu'
+    # f2 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG1_2.ciu'
+    # f3 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG1_3.ciu'
+    # f4 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG2_1.ciu'
+    # f5 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG2_2.ciu'
+    # f6 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG2_3.ciu'
+    # f7 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG3_1.ciu'
+    # f8 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG3_2.ciu'
+    # f9 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG3_3.ciu'
+    # f10 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG4_1.ciu'
+    # f11 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG4_2.ciu'
+    # f12 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG4_3.ciu'
 
-    f_class1 = [f1, f2, f3]
-    f_class2 = [f4, f5, f6]
-    f_class3 = [f7, f8, f9]
-    f_class4 = [f10, f11, f12]
-
-    fs = [f_class1, f_class2, f_class4, f_class4]
+    class_labels = ['cdl', 'pi', 'apo']
+    class1_files = [os.path.join(main_dir, x) for x in os.listdir(main_dir) if x.endswith('.ciu') and class_labels[0] in x.lower()]
+    class2_files = [os.path.join(main_dir, x) for x in os.listdir(main_dir) if x.endswith('.ciu') and class_labels[1] in x.lower()]
+    class3_files = [os.path.join(main_dir, x) for x in os.listdir(main_dir) if x.endswith('.ciu') and os.path.join(main_dir, x) not in class1_files and os.path.join(main_dir, x) not in class2_files]
+    fs = [class1_files, class2_files, class3_files]
+    # f_class1 = [f1, f2, f3]
+    # f_class2 = [f4, f5, f6]
+    # f_class3 = [f7, f8, f9]
+    # f_class4 = [f10, f11, f12]
+    # fs = [f_class1, f_class2, f_class4, f_class4]
     # fs= [f_class1, f_class2]
 
-    # for class_index in range(0, num_classes):
-    #     # Read in the .CIU files and labels for each class
-    #     # label = simpledialog.askstring('Class Name', 'What is the name of this class?')
-    #     class_label = class_labels[class_index]
-    #     # files = filedialog.askopenfilenames(filetypes=[('CIU', '.ciu')])
-    #     files = fs[class_index]
-    #     main_dir = os.path.dirname(files[0])
-    #
-    #     obj_list = []
-    #     for file in files:
-    #         with open(file, 'rb') as analysis_file:
-    #             obj = pickle.load(analysis_file)
-    #         obj_list.append(obj)
-    #     data_labels.append(class_label)
-    #     obj_list_by_label.append(obj_list)
+    for class_index in range(0, num_classes):
+        # Read in the .CIU files and labels for each class
+        # label = simpledialog.askstring('Class Name', 'What is the name of this class?')
+        class_label = class_labels[class_index]
+        # files = filedialog.askopenfilenames(filetypes=[('CIU', '.ciu')])
+        files = fs[class_index]
+        main_dir = os.path.dirname(files[0])
+
+        obj_list = []
+        for file in files:
+            with open(file, 'rb') as analysis_file:
+                obj = pickle.load(analysis_file)
+            obj_list.append(obj)
+        data_labels.append(class_label)
+        obj_list_by_label.append(obj_list)
+
+    params = CIU_Params.Parameters()
+    params.set_params(CIU_Params.parse_params_file(CIU_Params.hard_descripts_file))
+    obj_list_by_label, equalized_axes_list = Raw_Processing.equalize_axes_2d_list(obj_list_by_label)
+
+    main_build_classification(data_labels, obj_list_by_label, params, main_dir)
 
     # featurescaling_lda(data_labels, obj_list_by_label, main_dir)
     # class_comparison_lda(data_labels, obj_list_by_label, main_dir)

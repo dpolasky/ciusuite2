@@ -172,7 +172,6 @@ class Parameters(object):
         # self.classif_feats_1_num_feats = None
         # self.classif_feats_2_min_score = None
         self.classif_2_score_dif_tol = None
-        self.classif_1_training_size = None
         self.classif_3_mode = None
         self.silent_clf_4_num_gauss = None
 
