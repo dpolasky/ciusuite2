@@ -876,14 +876,14 @@ class CIUSuite2(object):
                 max_num_gaussians = 0   # no Gaussians in non-Gaussian mode
 
             # check training size
-            min_data_size = np.min([len(x) for x in obj_list_by_label])
-            if self.params_obj.classif_1_training_size > min_data_size - 1:
-                messagebox.showerror('Training Size Too Large', 'Error: The training size specified is too large for the '
-                                                                'number of files provided. At least 1 file must be available '
-                                                                'for testing, so training size cannot be larger than the number'
-                                                                ' of files in the smallest class - 1. Classification canceled: '
-                                                                ' please adjust training size and try again.')
-                self.progress_done()
+            # min_data_size = np.min([len(x) for x in obj_list_by_label])
+            # if self.params_obj.classif_1_training_size > min_data_size - 1:
+            #     messagebox.showerror('Training Size Too Large', 'Error: The training size specified is too large for the '
+            #                                                     'number of files provided. At least 1 file must be available '
+            #                                                     'for testing, so training size cannot be larger than the number'
+            #                                                     ' of files in the smallest class - 1. Classification canceled: '
+            #                                                     ' please adjust training size and try again.')
+            #     self.progress_done()
 
             # Run the classification
             self.progress_print_text('LDA in progress (may take a few minutes)...', 50)

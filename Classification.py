@@ -727,7 +727,10 @@ def crossval_main(analysis_obj_list_by_label, labels, outputdir, params_obj, fea
     :type features_list: list[CFeature]
     :return: list of selected features, test score for that # features, and all cross validation data
     """
-    training_size = params_obj.classif_1_training_size
+    # training_size = params_obj.classif_1_training_size
+    # determine training size as size of the smallest class - 1 (1 test file at a time)
+    min_class_size = np.min([len(x) for x in analysis_obj_list_by_label])
+    training_size = min_class_size - 1
 
     current_features_list = []
     train_score_means = []
@@ -760,7 +763,7 @@ def crossval_main(analysis_obj_list_by_label, labels, outputdir, params_obj, fea
         train_score_stds.append(output[1])
         test_score_means.append(output[2])
         test_score_stds.append(output[3])
-    print('classification done in {}'.format(time.time() - time_start))
+    print('classification done in {:.2f}'.format(time.time() - time_start))
 
     train_score_means = np.array(train_score_means)
     train_score_stds = np.array(train_score_stds)
