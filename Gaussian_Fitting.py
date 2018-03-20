@@ -363,7 +363,7 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
 
             try:
                 popt, pcov = curve_fit(multi_gauss_func, dt_axis, cv_col_intensities, method='trf',
-                                       p0=param_guesses_multiple, maxfev=5000,
+                                       p0=param_guesses_multiple,
                                        bounds=(fit_bounds_lower, fit_bounds_upper))
                 perr = np.sqrt(np.diag(pcov))
             except (RuntimeError, ValueError):
@@ -375,7 +375,7 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
             if reduce_flag:
                 try:
                     popt, pcov = curve_fit(multi_gauss_func, dt_axis, cv_col_intensities, method='trf',
-                                           p0=reduced_guesses, maxfev=5000,
+                                           p0=reduced_guesses,
                                            bounds=(fit_bounds_lower[0: len(fit_bounds_lower) - 4],
                                                    fit_bounds_upper[0: len(fit_bounds_lower) - 4]))
                     perr = np.sqrt(np.diag(pcov))

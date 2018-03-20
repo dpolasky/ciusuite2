@@ -1013,7 +1013,7 @@ def fit_logistic(x_axis, y_data, guess_center, guess_min, guess_max, steepness_g
     fit_bounds_lower = [0, 0, 0, 0]
     fit_bounds_upper = [np.inf, np.inf, np.inf, np.inf]
     try:
-        popt, pcov = scipy.optimize.curve_fit(logistic_func, x_axis, y_data, p0=p0, maxfev=5000,
+        popt, pcov = scipy.optimize.curve_fit(logistic_func, x_axis, y_data, p0=p0,
                                               bounds=(fit_bounds_lower, fit_bounds_upper))
     except ValueError:
         print('Error: fitting failed due to bad input values. Please try smoothing the input data more')

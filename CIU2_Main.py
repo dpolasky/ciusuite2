@@ -492,9 +492,7 @@ class CIUSuite2(object):
                         ciu1 = analysis_obj
                         ciu2 = loaded_files[f2_index]
                         rmsd = Original_CIU.compare_basic_raw(ciu1, ciu2, self.params_obj, self.output_dir)
-                        printstring = '{},{},{:.2f}'.format(os.path.basename(ciu1.filename).rstrip('.ciu'),
-                                                            os.path.basename(ciu2.filename).rstrip('.ciu'),
-                                                            rmsd)
+                        printstring = '{},{},{:.2f}'.format(ciu1.short_filename, ciu2.short_filename, rmsd)
                         rmsd_print_list.append(printstring)
                         f2_index += 1
                     f1_index += 1
@@ -1240,8 +1238,11 @@ def save_analysis_obj(analysis_obj, params_obj, outputdir, filename_append=''):
     analysis_obj.params = params_obj
 
     # if outputdir is not None:
-    picklefile = os.path.join(outputdir, analysis_obj.raw_obj.filename.rstrip('_raw.csv')
-                              + filename_append + file_extension)
+    if analysis_obj.short_filename is None:
+        filename = os.path.basename(analysis_obj.raw_obj.filename.rstrip('_raw.csv'))
+    else:
+        filename = analysis_obj.short_filename
+    picklefile = os.path.join(outputdir, filename + filename_append + file_extension)
     # else:
     #     picklefile = os.path.join(os.path.dirname(analysis_obj.raw_obj.filepath),
     #                               analysis_obj.raw_obj.filename.rstrip('_raw.csv') + filename_append + file_extension)

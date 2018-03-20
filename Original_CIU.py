@@ -191,8 +191,8 @@ def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir):
     dif, rmsd = rmsd_difference(norm_data_1, norm_data_2)
 
     rtext = "RMSD = " + '%2.2f' % rmsd
-    title = '{}-{}'.format(analysis_obj1.raw_obj.filename.rstrip('_raw.csv'),
-                           analysis_obj2.raw_obj.filename.rstrip('_raw.csv'))
+    title = '{} - {}'.format(analysis_obj1.short_filename,
+                             analysis_obj2.short_filename)
 
     contour_scaling = np.linspace(-rmsd_plot_scaling, rmsd_plot_scaling, 50, endpoint=True)
     colorbar_scaling = np.linspace(-rmsd_plot_scaling, rmsd_plot_scaling, 6, endpoint=True)

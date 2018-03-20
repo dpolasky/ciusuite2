@@ -115,6 +115,9 @@ def smooth_main(analysis_obj, params_obj):
                 break
             i += 1
 
+    # renormalize data
+    norm_data = normalize_by_col(norm_data)
+
     analysis_obj.ciu_data = norm_data
     return analysis_obj
 
