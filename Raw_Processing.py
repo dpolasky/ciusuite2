@@ -339,6 +339,7 @@ def equalize_axes(flat_analysisobj_list, crop_vals_plus_flag=None):
 
     for analysis_obj in flat_analysisobj_list:
         if np.array_equal(analysis_obj.axes[0], base_axes[0]) and np.array_equal(analysis_obj.axes[1], base_axes[1]):
+            adjust_flag = False
             continue
         else:
             # Determine minimum shared region in both dimensions

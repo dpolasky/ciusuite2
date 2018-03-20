@@ -489,6 +489,7 @@ class Transition(object):
         dt_axis = analysis_obj.axes[0]
         self.whole_dt_maxes = analysis_obj.col_max_dts
         ciu_data = analysis_obj.ciu_data
+        self.filename = analysis_obj.short_filename
 
         self.center_guess_gaussian = None
 
@@ -573,7 +574,7 @@ class Transition(object):
         steepness_guess = 2 * 1 / (self.feat_distance + 1)
         if steepness_guess < 0:
             steepness_guess = -1 * steepness_guess
-            print('Caution: negative slope transition observed. Data may require additional smoothing if this is unexpected')
+            print('Caution: negative slope transition observed in file {}. Data may require additional smoothing if this is unexpected'.format(self.filename))
 
         # for interpolation of transition modes - determine transition region to interpolate
         pad_cv = params_obj.ciu50_5_pad_transitions_cv
@@ -624,7 +625,7 @@ class Transition(object):
             perr = np.sqrt(np.diag(pcov))
             self.fit_param_errors = perr
         except RuntimeError:
-            print('fitting failed for {}'.format(self))
+            print('fitting failed for transition {} in file {}'.format(self, self.filename))
             popt = [0, 0, 0, 0]
             pcov = []
 
@@ -636,7 +637,7 @@ class Transition(object):
         rsq = rvalue ** 2
 
         if popt[2] < 0:
-            print('WARNING: poor performance from logistic fitting for {}'.format(self))
+            print('WARNING: poor performance from logistic fitting for {} in file {}'.format(self.__str__(), self.filename))
         self.ciu50 = popt[2]
         self.fit_params = popt
         self.fit_covariances = pcov
