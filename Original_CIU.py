@@ -70,11 +70,12 @@ def rmsd_difference(data_1, data_2):
     return dif, rmsd
 
 
-def rmsd_plot(title, difference_matrix, axes, x_label, y_label, contour_scale, tick_scale, rtext, outputdir,
-              extension='.png'):
+def rmsd_plot(label1, label2, difference_matrix, axes, x_label, y_label, contour_scale, tick_scale, rtext, outputdir,
+              extension='.png', blue_label=None, red_label=None, show_colobar=True):
     """
     Make a CIUSuite comparison RMSD plot with provided parameters
-    :param title: plot title
+    :param label1: Filename/title of first (red) file being compared
+    :param label2: Filename/title of second (blue) file being compared
     :param difference_matrix: 2D ndarray with differences to plot
     :param axes: [DT axis, CV axis] - axes labels to use for plot
     :param x_label: Label for x-axis (string)
@@ -84,19 +85,26 @@ def rmsd_plot(title, difference_matrix, axes, x_label, y_label, contour_scale, t
     :param rtext: RMSD label to apply to plot
     :param outputdir: directory in which to save plot
     :param extension: plot extension to save (default: .png)
+    :param blue_label: (optional) custom colorbar label for the second file
+    :param red_label: (optional) custom colorbar label for the first file
+    :param show_colobar: (optional) whether to show colorbar or not. Default True
     :return: void
     """
     # os.chdir(outputdir)
     plt.clf()
-    plt.title(title)
+    plt.title('Red: {} \nBlue: {}'.format(label1, label2))
     plt.contourf(axes[1], axes[0], difference_matrix, contour_scale, cmap="bwr", ticks="none")
     plt.tick_params(axis='x', which='both', bottom='off', top='off', left='off', right='off')
     plt.tick_params(axis='y', which='both', bottom='off', top='off', left='off', right='off')
     plt.annotate(rtext, xy=(200, 10), xycoords='axes points')
     plt.xlabel(x_label)
     plt.ylabel(y_label)
-    plt.colorbar(ticks=tick_scale)
-    plt.savefig(os.path.join(outputdir, title + extension))
+    if show_colobar:
+        colorbar = plt.colorbar(ticks=tick_scale)
+        if blue_label is not None and red_label is not None:
+            colorbar.ax.set_yticklabels([blue_label, 'Equal', red_label])
+
+    plt.savefig(os.path.join(outputdir, '{}-{}{}'.format(label1, label2, extension)))
     plt.close()
 
 
@@ -195,9 +203,10 @@ def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir):
                              analysis_obj2.short_filename)
 
     contour_scaling = np.linspace(-rmsd_plot_scaling, rmsd_plot_scaling, 50, endpoint=True)
-    colorbar_scaling = np.linspace(-rmsd_plot_scaling, rmsd_plot_scaling, 6, endpoint=True)
-    rmsd_plot(title, dif, axes, params_obj.ciuplot_1_x_title, params_obj.ciuplot_2_y_title,
-              contour_scaling, colorbar_scaling, rtext, outputdir, params_obj.ciuplot_4_extension)
+    colorbar_scaling = np.linspace(-rmsd_plot_scaling, rmsd_plot_scaling, 3, endpoint=True)
+    rmsd_plot(analysis_obj1.short_filename, analysis_obj2.short_filename, dif, axes, params_obj.ciuplot_1_x_title, params_obj.ciuplot_2_y_title,
+              contour_scaling, colorbar_scaling, rtext, outputdir, params_obj.ciuplot_4_extension, params_obj.compare_2_custom_blue,
+              params_obj.compare_1_custom_red, params_obj.compare_0_show_colobar)
 
     if params_obj.output_1_save_csv:
         save_path = os.path.join(outputdir, title)

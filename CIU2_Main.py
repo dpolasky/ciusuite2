@@ -444,28 +444,32 @@ class CIUSuite2(object):
             if len(newfiles) == 0:
                 return
 
-            rmsd_print_list = ['File 1, File 2, RMSD (%)']
-            std_file = files_to_read[0]
-            index = 0
-            for file in newfiles:
-                compare_obj = load_analysis_obj(file)
-                rmsd = Original_CIU.compare_basic_raw(std_file, compare_obj, self.params_obj, self.output_dir)
-                printstring = '{},{},{:.2f}'.format(os.path.basename(std_file).rstrip('.ciu'),
-                                                    os.path.basename(newfiles[index]).rstrip('.ciu'),
-                                                    rmsd)
-                rmsd_print_list.append(printstring)
-                index += 1
-                self.update_progress(newfiles.index(file), len(newfiles))
+            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x and 'batch' not in x]
+            if self.run_param_ui('Plot parameters', batch_keys):
+                rmsd_print_list = ['File 1, File 2, RMSD (%)']
+                std_file = files_to_read[0]
+                index = 0
+                for file in newfiles:
+                    compare_obj = load_analysis_obj(file)
+                    rmsd = Original_CIU.compare_basic_raw(std_file, compare_obj, self.params_obj, self.output_dir)
+                    printstring = '{},{},{:.2f}'.format(os.path.basename(std_file).rstrip('.ciu'),
+                                                        os.path.basename(newfiles[index]).rstrip('.ciu'),
+                                                        rmsd)
+                    rmsd_print_list.append(printstring)
+                    index += 1
+                    self.update_progress(newfiles.index(file), len(newfiles))
 
         if len(files_to_read) == 2:
             # Direct compare between two files
-            ciu1 = load_analysis_obj(files_to_read[0])
-            ciu2 = load_analysis_obj(files_to_read[1])
-            updated_obj_list = check_axes_and_warn([ciu1, ciu2])
-            Original_CIU.compare_basic_raw(updated_obj_list[0], updated_obj_list[1], self.params_obj, self.output_dir)
+            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x and 'batch' not in x]
+            if self.run_param_ui('Plot parameters', batch_keys):
+                ciu1 = load_analysis_obj(files_to_read[0])
+                ciu2 = load_analysis_obj(files_to_read[1])
+                updated_obj_list = check_axes_and_warn([ciu1, ciu2])
+                Original_CIU.compare_basic_raw(updated_obj_list[0], updated_obj_list[1], self.params_obj, self.output_dir)
 
         elif len(files_to_read) > 2:
-            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_batch' in x]
+            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x]
             if self.run_param_ui('Plot parameters', batch_keys):
                 rmsd_print_list = ['File 1, File 2, RMSD (%)']
                 # batch compare - compare all against all.

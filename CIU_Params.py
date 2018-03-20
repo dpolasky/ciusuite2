@@ -144,6 +144,9 @@ class Parameters(object):
         # self.compare_plot_4_extension = None
         self.output_1_save_csv = None
         self.compare_batch_1_both_dirs = None
+        self.compare_2_custom_blue = None
+        self.compare_1_custom_red = None
+        self.compare_0_show_colobar = None
 
         # Feature detection/CIU-50 parameters
         self.gaussian_1_convergence = None
@@ -415,9 +418,9 @@ class ParamUI(tkinter.Toplevel):
                 # change booleans to display as strings rather than 1 or 0
                 if isinstance(param_val, bool):
                     if param_val:
-                        entry_var.set('true')
+                        entry_var.set('True')
                     elif not param_val:
-                        entry_var.set('false')
+                        entry_var.set('False')
                 else:
                     entry_var.set(params_obj.params_dict[param_key])
             else:
@@ -434,7 +437,7 @@ class ParamUI(tkinter.Toplevel):
                 # for fields where the user must choose, display a dropdown menu instead
                 option_vals = [x for x in PAR_REQS[param_key][1]]
                 # prevent the first option from not appearing in menu. Not sure why this duplication is necessary...
-                option_vals.insert(0, option_vals[0])
+                option_vals.insert(0, entry_var.get())
                 menu = ttk.OptionMenu(labels_frame, entry_var, *option_vals)
                 menu.grid(row=row, column=1)
                 menu['menu'].config(background='white')
