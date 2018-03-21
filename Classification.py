@@ -11,7 +11,7 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from matplotlib.backends.backend_pdf import PdfPages
 
 # from mlxtend.plotting import plot_sequential_feature_selection as plot_sfs
-# from sklearn.metrics import accuracy_score
+from sklearn.metrics import precision_score
 # from mlxtend.feature_selection import SequentialFeatureSelector as SFS
 # from mlxtend.plotting import plot_sequential_feature_selection as plot_sfs
 # from sklearn.linear_model import LogisticRegression
@@ -53,6 +53,9 @@ class ClassificationScheme(object):
         self.params = None
         self.final_axis_cropvals = None
         self.classif_mode = None
+        self.classif_prec_score = None
+        self.explained_variance_ratio = None
+
 
         self.selected_features = []     # type: List[CFeature]
         self.all_features = None    # type: List[CFeature]
@@ -61,6 +64,8 @@ class ClassificationScheme(object):
         self.class_labels = None
         self.unique_labels = None
         self.transformed_test_data = None
+        self.test_filenames = None
+        self.input_feats = None
 
         # cross validation information
         self.crossval_test_score = None
@@ -69,7 +74,7 @@ class ClassificationScheme(object):
         # outputs
         self.unk_label = None
         self.pred_class_label = None
-        self.pred_prob = None
+        self.pred_prob_feat = None
         self.transformed_unk_data = None
 
         self.num_gaussians = None
@@ -110,7 +115,9 @@ class ClassificationScheme(object):
         unknown_transformed_lda = self.lda.transform(unk_input_x)
         self.transformed_unk_data = unknown_transformed_lda
         self.pred_class_label = self.classifier.predict(unknown_transformed_lda)
-        self.pred_prob = self.classifier.predict_proba(unknown_transformed_lda)
+        self.pred_prob_feat = self.classifier.predict_proba(unknown_transformed_lda)
+        self.pred_prob = np.average(self.pred_prob_feat, axis=0)
+
 
         self.save_predictions(output_path, unk_ciu_obj)
         unknown_plot_info = [(unknown_transformed_lda, unk_ciu_obj.short_filename)]
@@ -150,6 +157,32 @@ class ClassificationScheme(object):
 
         plot_classification_decision_regions(self, output_path, unknown_tups=all_plot_tups, filename='all')
 
+
+    def save_lda_output(self, output_path):
+        """
+
+        :param output_path:
+        :return:
+        """
+        outputname = 'output_lda.csv'
+        output_final = os.path.join(output_path, outputname)
+        with open(output_final, 'w') as outfile:
+            num_lds = np.arange(1, len(self.transformed_test_data[0]) + 1)
+            lineheader = 'filename, feats,'+','.join(str(x) for x in num_lds)
+            outfile.write(lineheader+'\n')
+            for index in range(len(self.transformed_test_data[:, 0])):
+                fnames = str(self.test_filenames[index])
+                feats = str(self.input_feats[index])
+                joined_lds = ','.join([str(x) for x in self.transformed_test_data[index]])
+                line1 = '{}, {}, {}, \n'.format(fnames, feats, joined_lds)
+                outfile.write(line1)
+            # line2 = 'Explained_variance_ratio\n'
+            joined_exp_var = ','.join([str(x) for x in self.explained_variance_ratio])
+            line2 = 'Explained_variance_ratio, {}, {},\n'.format(' ', joined_exp_var)
+            outfile.write(line2)
+        outfile.close()
+
+
     def save_predictions(self, output_path, analysis_obj):
         """
 
@@ -160,18 +193,23 @@ class ClassificationScheme(object):
         """
         cvs = [x.cv for x in self.selected_features]
         predict_class = self.pred_class_label
-        predict_prob = self.pred_prob
+        counts = np.bincount(predict_class)
+        class_mode = np.argmax(counts)
+        predict_prob_feat = self.pred_prob_feat
         outputname = '{}_{}_clf.csv'.format(analysis_obj.short_filename, self.unk_label)
         output_final = os.path.join(output_path, outputname)
         with open(output_final, 'w') as outfile:
-            index_list = np.arange(1, len(predict_prob[0]) + 1)
+            index_list = np.arange(1, len(predict_prob_feat[0]) + 1)
             probheader = ','.join(str(x) for x in index_list)
             lineheader = 'Features,Class_label,' + probheader + '\n'
             outfile.write(lineheader)
             for index, cv in enumerate(cvs):
-                joined_probs = ','.join([str(x) for x in predict_prob[index]])
+                joined_probs = ','.join([str(x) for x in predict_prob_feat[index]])
                 line = '{},{},{},\n'.format(cv, predict_class[index], joined_probs)
                 outfile.write(line)
+            probs = ','.join(str(x) for x in self.pred_prob)
+            line2 = '{}, {}, {}, \n'.format('Combined', class_mode, probs)
+            outfile.write(line2)
         outfile.close()
 
 
@@ -634,7 +672,7 @@ def main_build_classification(labels, analysis_obj_list_by_label, params_obj, ou
     best_features, crossval_score, all_crossval_data = crossval_main(analysis_obj_list_by_label, labels, output_dir, params_obj, all_features)
 
     # perform LDA and classification on the selected/best features
-    constructed_scheme = lda_ufs_best_features(best_features, analysis_obj_list_by_label, shaped_label_list, params_obj)
+    constructed_scheme = lda_ufs_best_features(best_features, analysis_obj_list_by_label, shaped_label_list, params_obj, output_dir)
     constructed_scheme.crossval_test_score = crossval_score
     constructed_scheme.all_crossval_data = all_crossval_data
 
@@ -865,7 +903,7 @@ def lda_clf_pipeline(stacked_train_data, stacked_train_labels, stacked_test_data
     return train_score, test_score  # , probas
 
 
-def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_label_list, param_obj):
+def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_label_list, param_obj, output_dir):
     """
 
     :param features_list: list of selected features from feature selection
@@ -882,17 +920,23 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
     # flat_ciuraw_list = [x.ciu_data for label_obj_list in analysis_obj_list_by_label for x in label_obj_list]
     flat_ciuraw_list = [get_classif_data(x, param_obj) for label_obj_list in analysis_obj_list_by_label for x in label_obj_list]
     flat_label_list = [x for label_list in shaped_label_list for x in label_list]
+    flat_filename_list = [x.short_filename for class_list in analysis_obj_list_by_label for x in class_list]
 
     selected_cv_indices = [x.cv_index for x in features_list]
+    selected_cvs = [x.cv for x in features_list]
 
     # create a concatenated array with the selected CV columns from each raw dataset
     input_x_ciu_data = []
     input_label_data = []
-    for i, (ciuraw_data, label_data) in enumerate(zip(flat_ciuraw_list, flat_label_list)):
+    input_filenames = []
+    input_feats = []
+    for i, (ciuraw_data, label_data, filename) in enumerate(zip(flat_ciuraw_list, flat_label_list, flat_filename_list)):
         # assemble selected feature data for LDA
-        for cv_index in selected_cv_indices:
+        for ind, cv_index in enumerate(selected_cv_indices):
             input_x_ciu_data.append(ciuraw_data.T[cv_index])
             input_label_data.append(label_data)
+            input_filenames.append(filename)
+            input_feats.append(selected_cvs[ind])
 
     # finalize input data for LDA
     input_x_ciu_data = np.asarray(input_x_ciu_data)
@@ -902,6 +946,7 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
     lda = LinearDiscriminantAnalysis(solver='svd', n_components=5)
     lda.fit(input_x_ciu_data, input_y_labels)
     x_lda = lda.transform(input_x_ciu_data)
+    expl_var_r = lda.explained_variance_ratio_
 
     # build classification scheme
     # clf = LogisticRegression(C=10)
@@ -909,18 +954,26 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
     # clf = RandomForestClassifier(n_estimators=10, criterion='entropy', n_jobs=-1)
     # clf = KNC(n_neighbors=2,p=2,metric='minkowski', n_jobs=-1)
     clf.fit(x_lda, input_y_labels)
+    y_pred = clf.predict(x_lda)
+    prec_score = precision_score(input_y_labels, y_pred, pos_label=1, average='weighted')
 
     # initialize classification scheme object and return it
     scheme = ClassificationScheme()
     scheme.selected_features = features_list
     scheme.classifier = clf
     scheme.classifier_type = 'SVC'
+    scheme.classif_prec_score = prec_score
     scheme.lda = lda
+    scheme.explained_variance_ratio = expl_var_r
     scheme.numeric_labels = input_y_labels
     scheme.class_labels = target_label
     scheme.unique_labels = get_unique_labels(target_label)
     scheme.transformed_test_data = x_lda
+    scheme.test_filenames = input_filenames
     scheme.params = clf.get_params()
+    scheme.input_feats = input_feats
+    scheme.save_lda_output(output_dir)
+
     # scheme.input_ciu_data = input_x_ciu_data
 
     return scheme
@@ -1151,7 +1204,7 @@ if __name__ == '__main__':
     # root.withdraw()
 
     # num_classes = simpledialog.askinteger('Class Number', 'Into how many classes do you want to group?')
-    num_classes = 3
+    num_classes = 4
     data_labels = []
     obj_list_by_label = []
     # main_dir = 'C:\\'
@@ -1171,17 +1224,30 @@ if __name__ == '__main__':
     # f11 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG4_2.ciu'
     # f12 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG4_3.ciu'
 
-    class_labels = ['cdl', 'pi', 'apo']
-    class1_files = [os.path.join(main_dir, x) for x in os.listdir(main_dir) if x.endswith('.ciu') and class_labels[0] in x.lower()]
-    class2_files = [os.path.join(main_dir, x) for x in os.listdir(main_dir) if x.endswith('.ciu') and class_labels[1] in x.lower()]
-    class3_files = [os.path.join(main_dir, x) for x in os.listdir(main_dir) if x.endswith('.ciu') and os.path.join(main_dir, x) not in class1_files and os.path.join(main_dir, x) not in class2_files]
-    fs = [class1_files, class2_files, class3_files]
+    # class_labels = ['cdl', 'pi', 'apo']
+    # class1_files = [os.path.join(main_dir, x) for x in os.listdir(main_dir) if x.endswith('.ciu') and class_labels[0] in x.lower()]
+    # class2_files = [os.path.join(main_dir, x) for x in os.listdir(main_dir) if x.endswith('.ciu') and class_labels[1] in x.lower()]
+    # class3_files = [os.path.join(main_dir, x) for x in os.listdir(main_dir) if x.endswith('.ciu') and os.path.join(main_dir, x) not in class1_files and os.path.join(main_dir, x) not in class2_files]
+    # fs = [class1_files, class2_files, class3_files]
     # f_class1 = [f1, f2, f3]
     # f_class2 = [f4, f5, f6]
     # f_class3 = [f7, f8, f9]
     # f_class4 = [f10, f11, f12]
     # fs = [f_class1, f_class2, f_class4, f_class4]
     # fs= [f_class1, f_class2]
+
+    sarahfile = r"C:\Users\sugyan\Documents\CIUSuite\Classification\IgGdata\Iggs_datalist.csv"
+    files = np.genfromtxt(sarahfile, skip_header=1, delimiter=',', dtype='str')
+    class_sarahfiles = np.unique(files[:, 0])
+    # CDL, PA, PC, PE, PG, PI, PPIX, PS [in order]
+    filelist = [[] for i in range(len(class_sarahfiles))]
+    for index, classtype in enumerate(files[:, 0]):
+        for class_ind, class_unique in enumerate(class_sarahfiles):
+            if class_unique == classtype:
+                filelist[class_ind].append((files[:, 1][index]))
+
+    class_labels = [class_sarahfiles[0], class_sarahfiles[1], class_sarahfiles[3], class_sarahfiles[3]]
+    fs = [filelist[0], filelist[1], filelist[3], filelist[3]]
 
     for class_index in range(0, num_classes):
         # Read in the .CIU files and labels for each class
@@ -1199,11 +1265,15 @@ if __name__ == '__main__':
         data_labels.append(class_label)
         obj_list_by_label.append(obj_list)
 
+    unkdata_name = open(r"C:\Users\sugyan\Documents\CIUSuite\Classification\IgGdata\IgG1_3.ciu", 'rb')
+    unkdata_ = pickle.load(unkdata_name)
+
     params = CIU_Params.Parameters()
     params.set_params(CIU_Params.parse_params_file(CIU_Params.hard_descripts_file))
     obj_list_by_label, equalized_axes_list = Raw_Processing.equalize_axes_2d_list(obj_list_by_label)
 
-    main_build_classification(data_labels, obj_list_by_label, params, main_dir)
+    scheme = main_build_classification(data_labels, obj_list_by_label, params, main_dir)
+    scheme.classify_unknown(unkdata_, params, main_dir, unk_label='Unknown')
 
     # featurescaling_lda(data_labels, obj_list_by_label, main_dir)
     # class_comparison_lda(data_labels, obj_list_by_label, main_dir)
