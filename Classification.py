@@ -487,7 +487,7 @@ def prep_gaussfeats_for_classif(features_list, analysis_obj):
     :param analysis_obj: CIUAnalysisObj with gaussian fitting and gaussian feature detect performed
     :type analysis_obj: CIUAnalysisObj
     :return: List of (Gaussian lists) sorted by CV
-    :rtype: list[list[Gaussian]]
+    :rtype: list[list[Gaussian]] asdf
     """
     # make an empty list for Gaussians at each CV
     final_gaussian_lists = [[] for _ in analysis_obj.axes[1]]
