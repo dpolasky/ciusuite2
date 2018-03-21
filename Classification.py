@@ -56,7 +56,6 @@ class ClassificationScheme(object):
         self.classif_prec_score = None
         self.explained_variance_ratio = None
 
-
         self.selected_features = []     # type: List[CFeature]
         self.all_features = None    # type: List[CFeature]
 

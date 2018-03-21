@@ -266,6 +266,9 @@ def crop(analysis_obj, crop_vals):
     # analysis_obj.ciu_data = ciu_data_matrix
     # analysis_obj.axes = new_axes
 
+    # crop the data for the rare case that the highest value in a column is cropped out
+    ciu_data_matrix = normalize_by_col(ciu_data_matrix)
+
     # save output to a new analysis object (clears fitting results/etc that can fail if axes are different)
     new_obj = CIUAnalysisObj(analysis_obj.raw_obj, ciu_data_matrix, new_axes, analysis_obj.params)
 
