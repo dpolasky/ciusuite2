@@ -17,7 +17,7 @@ hard_descripts_file = r"C:\CIUSuite2\CIU2_param_info.csv"
 #                       'ciuplot_1_x_title': 'title to display on x - axis of CIU plot',
 #                       'interpolation_bins': 'If provided, the data will be interpolated along the collision voltage axis to have the specified number of bins',
 #                       'ciuplot_2_y_title': 'title to display on y - axis of CIU plot',
-#                       'ciuplot_4_extension': 'file format in which to save CIU plot(acceptable values are .png, .pdf, .jpg)',
+#                       'allplot_1_extension': 'file format in which to save CIU plot(acceptable values are .png, .pdf, .jpg)',
 #                       'save_output_csv': 'Whether to write an _raw.csv output file with the processed data (True or False)',
 #                       'ciuplot_3_plot_title': 'Optional title for the plot. If provided, will label the plot with the title.',
 #
@@ -41,7 +41,7 @@ hard_descripts_file = r"C:\CIUSuite2\CIU2_param_info.csv"
 #               'smoothing_3_iterations': ('int', [0, np.inf]),
 #               'ciuplot_1_x_title': ('anystring', []),
 #               'ciuplot_2_y_title': ('anystring', []),
-#               'ciuplot_4_extension': ('string', ['.png', '.pdf', '.jpg']),
+#               'allplot_1_extension': ('string', ['.png', '.pdf', '.jpg']),
 #               'save_output_csv': ('bool', ['true', 'false']),
 #               'ciuplot_3_plot_title': ('anystring', [])
 #               }
@@ -134,10 +134,18 @@ class Parameters(object):
         self.interp_2_bins = None
 
         # Plotting and saving output parameters
-        self.ciuplot_4_extension = None
         self.ciuplot_3_plot_title = None
         self.ciuplot_1_x_title = None
         self.ciuplot_2_y_title = None
+        self.ciuplot_4_cmap = None
+        self.ciuplot_5_figwidth = None
+        self.ciuplot_6_figheight = None
+        self.ciuplot_7_dpi = None
+
+        self.allplot_1_extension = None
+        self.allplot_2_cmap = None
+        self.allplot_3_show_colorbar = None
+
         # self.compare_plot_1_x_title = None
         # self.compare_plot_2_y_title = None
         # self.compare_plot_3_plot_title = None
@@ -146,7 +154,7 @@ class Parameters(object):
         self.compare_batch_1_both_dirs = None
         self.compare_2_custom_blue = None
         self.compare_1_custom_red = None
-        self.compare_0_show_colobar = None
+        # self.compare_0_show_colobar = None
 
         # Feature detection/CIU-50 parameters
         self.gaussian_1_convergence = None
@@ -482,9 +490,9 @@ class ParamUI(tkinter.Toplevel):
                     lower_bound = PAR_REQS[param][1][0]
                     upper_bound = PAR_REQS[param][1][1]
                     param_string += '{}:\n\t Value Type must be: {}\n\t Value must be within bounds: {} - {}\n'.format(PAR_NAMES[param],
-                                                                                                                          PAR_REQS[param][0],
-                                                                                                                          lower_bound,
-                                                                                                                          upper_bound)
+                                                                                                                       PAR_REQS[param][0],
+                                                                                                                       lower_bound,
+                                                                                                                       upper_bound)
             messagebox.showwarning(title='Parameter Error', message=param_string)
             return
 

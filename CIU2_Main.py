@@ -417,7 +417,7 @@ class CIUSuite2(object):
         Run old CIU plot method to generate a plot in the output directory
         :return: void (saves to output dir)
         """
-        plot_keys = [x for x in self.params_obj.params_dict.keys() if 'ciuplot' in x]
+        plot_keys = [x for x in self.params_obj.params_dict.keys() if 'ciuplot' in x or 'allplot' in x and 'allplot_2' not in x]
         if self.run_param_ui('Plot parameters', plot_keys):
             # Determine if a file range has been specified
             files_to_read = self.check_file_range_entries()
@@ -444,7 +444,7 @@ class CIUSuite2(object):
             if len(newfiles) == 0:
                 return
 
-            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x and 'batch' not in x]
+            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x or 'allplot' in x and 'batch' not in x]
             if self.run_param_ui('Plot parameters', batch_keys):
                 rmsd_print_list = ['File 1, File 2, RMSD (%)']
                 std_file = files_to_read[0]
@@ -461,7 +461,7 @@ class CIUSuite2(object):
 
         if len(files_to_read) == 2:
             # Direct compare between two files
-            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x and 'batch' not in x]
+            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x or 'allplot' in x and 'batch' not in x]
             if self.run_param_ui('Plot parameters', batch_keys):
                 ciu1 = load_analysis_obj(files_to_read[0])
                 ciu2 = load_analysis_obj(files_to_read[1])
@@ -469,7 +469,7 @@ class CIUSuite2(object):
                 Original_CIU.compare_basic_raw(updated_obj_list[0], updated_obj_list[1], self.params_obj, self.output_dir)
 
         elif len(files_to_read) > 2:
-            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x]
+            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x or 'allplot' in x]
             if self.run_param_ui('Plot parameters', batch_keys):
                 rmsd_print_list = ['File 1, File 2, RMSD (%)']
                 # batch compare - compare all against all.
@@ -656,7 +656,7 @@ class CIUSuite2(object):
         files
         :return: void
         """
-        param_keys = [x for x in self.params_obj.params_dict.keys() if ('ciu50' in x and 'gauss' not in x)]
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'gauss' not in x and 'ciu50' in x or 'allplot' in x]
         if self.run_param_ui('CIU-50 Parameters', param_keys):
             files_to_read = self.check_file_range_entries()
             self.progress_started()
@@ -703,7 +703,7 @@ class CIUSuite2(object):
         so there's only one method once final analysis method is decided on.
         :return: void
         """
-        param_keys = [x for x in self.params_obj.params_dict.keys() if 'ciu50_gauss' in x]
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'ciu50_gauss' in x or 'allplot' in x and 'cpt' not in x]
         if self.run_param_ui('CIU-50 Parameters', param_keys):
             files_to_read = self.check_file_range_entries()
             self.progress_started()
@@ -750,7 +750,7 @@ class CIUSuite2(object):
         Run Gaussian-based feature detection routine. Ensure Gaussians have been fit previously.
         :return: void
         """
-        param_keys = [x for x in self.params_obj.params_dict.keys() if 'feature_gauss' in x]
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'feature_gauss' in x or 'allplot' in x]
         if self.run_param_ui('Feature Detection Parameters from Gaussians', param_keys):
             files_to_read = self.check_file_range_entries()
             self.progress_started()
@@ -785,7 +785,7 @@ class CIUSuite2(object):
         Run simple flat feature detection routine. Does NOT require Gaussian fitting
         :return: void
         """
-        param_keys = [x for x in self.params_obj.params_dict.keys() if 'feature_cpt' in x]
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'feature_cpt' in x or 'allplot' in x]
         if self.run_param_ui('Feature Detection Parameters', param_keys):
             files_to_read = self.check_file_range_entries()
             self.progress_started()

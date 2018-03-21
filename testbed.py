@@ -155,7 +155,7 @@ def ciu_plot_main(input_dir, output_dir, raw_file, smooth_window=None, crop_vals
                                     'interpolation': interpolate_bins,
                                     'output_save_csv': save_csv,
                                     'ciuplot_3_plot_title': title,
-                                    'ciuplot_4_extension': extension,
+                                    'allplot_1_extension': extension,
                                     'ciuplot_1_x_title': titlex,
                                     'ciuplot_2_y_title': titley,
                                     'smoothing_3_iterations': num_smooths,
