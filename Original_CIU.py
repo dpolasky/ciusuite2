@@ -30,13 +30,16 @@ def ciu_plot(analysis_obj, params_obj, output_dir):
     else:
         plot_title = ''
     output_title = os.path.basename(analysis_obj.filename).rstrip('.ciu')
-    output_path = os.path.join(output_dir, output_title + params_obj.ciuplot_4_extension)
+    output_path = os.path.join(output_dir, output_title + params_obj.allplot_1_extension)
+
+    plt.figure(figsize=(params_obj.ciuplot_5_figwidth, params_obj.ciuplot_6_figheight), dpi=params_obj.ciuplot_7_dpi)
 
     plt.title(plot_title)
-    plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap='jet')
+    plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap=params_obj.ciuplot_4_cmap)
     plt.xlabel(params_obj.ciuplot_1_x_title)
     plt.ylabel(params_obj.ciuplot_2_y_title)
-    plt.colorbar(ticks=[0, .25, .5, .75, 1])  # plot a colorbar
+    if params_obj.allplot_3_show_colorbar:
+        plt.colorbar(ticks=[0, .25, .5, .75, 1])  # plot a colorbar
     plt.savefig(output_path)
     plt.close()
 
@@ -205,8 +208,14 @@ def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir):
     contour_scaling = np.linspace(-rmsd_plot_scaling, rmsd_plot_scaling, 50, endpoint=True)
     colorbar_scaling = np.linspace(-rmsd_plot_scaling, rmsd_plot_scaling, 3, endpoint=True)
     rmsd_plot(analysis_obj1.short_filename, analysis_obj2.short_filename, dif, axes, params_obj.ciuplot_1_x_title, params_obj.ciuplot_2_y_title,
-              contour_scaling, colorbar_scaling, rtext, outputdir, params_obj.ciuplot_4_extension, params_obj.compare_2_custom_blue,
-              params_obj.compare_1_custom_red, params_obj.compare_0_show_colobar)
+              contour_scale=contour_scaling,
+              tick_scale=colorbar_scaling,
+              rtext=rtext,
+              outputdir=outputdir,
+              extension=params_obj.allplot_1_extension,
+              blue_label=params_obj.compare_2_custom_blue,
+              red_label=params_obj.compare_1_custom_red,
+              show_colobar=params_obj.allplot_3_show_colorbar)
 
     if params_obj.output_1_save_csv:
         save_path = os.path.join(outputdir, title)
