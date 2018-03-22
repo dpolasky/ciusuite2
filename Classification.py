@@ -8,7 +8,7 @@ import time
 from matplotlib.colors import ListedColormap
 from sklearn.preprocessing import LabelEncoder
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from matplotlib.backends.backend_pdf import PdfPages
+# from matplotlib.backends.backend_pdf import PdfPages
 
 # from mlxtend.plotting import plot_sequential_feature_selection as plot_sfs
 from sklearn.metrics import precision_score
@@ -22,8 +22,8 @@ from sklearn.svm import SVC
 # from sklearn.pipeline import Pipeline
 # from sklearn.ensemble import RandomForestClassifier
 # from sklearn.model_selection import cross_validate
-from sklearn.metrics import roc_curve, auc
-from scipy import interp
+# from sklearn.metrics import roc_curve, auc
+# from scipy import interp
 
 from Gaussian_Fitting import Gaussian
 
@@ -70,12 +70,6 @@ class ClassificationScheme(object):
         self.crossval_test_score = None
         self.all_crossval_data = None
 
-        # outputs
-        self.unk_label = None
-        self.pred_class_label = None
-        self.pred_prob_feat = None
-        self.transformed_unk_data = None
-
         self.num_gaussians = None
 
     def __str__(self):
@@ -93,123 +87,133 @@ class ClassificationScheme(object):
         :param params_obj: parameters information
         :type params_obj: Parameters
         :param output_path: directory in which to save output
-        :return:
+        :return: updated analysis object with prediction data saved
+        :rtype: CIUAnalysisObj
         """
         # unk_ciudata = unk_ciu_obj.ciu_data
         # todo: FIX MAX NUM GAUSSIAN COMMUNICATION
         unk_ciudata = get_classif_data(unk_ciu_obj, params_obj, ufs_mode=False, num_gauss_override=self.num_gaussians)
 
-        self.unk_label = unk_label
-        unk_input_x = []
-
         # Assemble feature data for fitting
-        selected_cv_indices = [x.cv_index for x in self.selected_features]
-        for i in selected_cv_indices:
-            unk_input_x.append(unk_ciudata.T[i])
+        unk_input_x, fake_labels, filenames, input_feats = arrange_data_for_lda([unk_ciudata], unk_label, self.selected_features, [unk_ciu_obj.short_filename], method=params_obj.classif_4_data_structure)
 
         # if params_obj.classif_3_mode == 'Gaussian':
         #     unk_input_x = np.asarray(unk_input_x).T
 
         # Fit/classify data according to scheme LDA and classifier
         unknown_transformed_lda = self.lda.transform(unk_input_x)
-        self.transformed_unk_data = unknown_transformed_lda
-        self.pred_class_label = self.classifier.predict(unknown_transformed_lda)
-        self.pred_prob_feat = self.classifier.predict_proba(unknown_transformed_lda)
-        self.pred_prob = np.average(self.pred_prob_feat, axis=0)
+        pred_class_label = self.classifier.predict(unknown_transformed_lda)
+        pred_probs_by_cv = self.classifier.predict_proba(unknown_transformed_lda)
+        pred_probs_avg = np.average(pred_probs_by_cv, axis=0)
 
+        # create plots and save information to object
+        unk_ciu_obj.classif_predicted_label = pred_class_label
+        unk_ciu_obj.classif_probs_by_cv = pred_probs_by_cv
+        unk_ciu_obj.classif_probs_avg = pred_probs_avg
+        unk_ciu_obj.classif_transformed_data = unknown_transformed_lda
 
-        self.save_predictions(output_path, unk_ciu_obj)
         unknown_plot_info = [(unknown_transformed_lda, unk_ciu_obj.short_filename)]
         plot_classification_decision_regions(self, output_path, unknown_tups=unknown_plot_info, filename=unk_ciu_obj.short_filename)
-        # return unk_predict_class_lab, unk_predict_log_prob, unk_predict_proba, unknown_transformed_lda
+
+        return unk_ciu_obj
 
     def plot_all_unknowns(self, unk_ciuobj_list, params_obj, output_path):
         """
         Same as classify unknown, except that all unknowns are plotted on a single output plot
         and labeled by filename
-        :param unk_ciuobj_list: list of CIUAnalysis containers for each unknown
+        :param unk_ciuobj_list: list of CIUAnalysis containers for each unknown - MUST have transformed data already set
         :type unk_ciuobj_list: list[CIUAnalysisObj]
         :param params_obj: parameters information
         :type params_obj: Parameters
         :param output_path: directory in which to save output
         :return: void
         """
-        all_plot_tups = []
-        for unknown_ciuobj in unk_ciuobj_list:
-            unk_ciudata = get_classif_data(unknown_ciuobj, params_obj, ufs_mode=False, num_gauss_override=self.num_gaussians)
-
-            unk_input_x = []
-
-            # Assemble feature data for fitting
-            selected_cv_indices = [x.cv_index for x in self.selected_features]
-            for i in selected_cv_indices:
-                unk_input_x.append(unk_ciudata.T[i])
-
-            # Fit/classify data according to scheme LDA and classifier
-            unknown_transformed_lda = self.lda.transform(unk_input_x)
-            # self.transformed_unk_data = unknown_transformed_lda
-            all_plot_tups.append((unknown_transformed_lda, unknown_ciuobj.short_filename))
-
-            # self.pred_class_label = self.classifier.predict(unknown_transformed_lda)
-            # self.pred_prob = self.classifier.predict_proba(unknown_transformed_lda)
-            # self.save_predictions(output_path, unknown_ciuobj)
-
+        all_plot_tups = [(x.classif_transformed_data, x.short_filename) for x in unk_ciuobj_list]
         plot_classification_decision_regions(self, output_path, unknown_tups=all_plot_tups, filename='all')
-
 
     def save_lda_output(self, output_path):
         """
-
-        :param output_path:
-        :return:
+        Save csv output from LDA, including transformed test data prediction accuracy scores
+        :param output_path: directory in which to save output
+        :return: void
         """
         outputname = 'output_lda.csv'
         output_final = os.path.join(output_path, outputname)
         with open(output_final, 'w') as outfile:
             num_lds = np.arange(1, len(self.transformed_test_data[0]) + 1)
-            lineheader = 'filename, feats,'+','.join(str(x) for x in num_lds)
-            outfile.write(lineheader+'\n')
-            for index in range(len(self.transformed_test_data[:, 0])):
-                fnames = str(self.test_filenames[index])
-                feats = str(self.input_feats[index])
-                joined_lds = ','.join([str(x) for x in self.transformed_test_data[index]])
-                line1 = '{}, {}, {}, \n'.format(fnames, feats, joined_lds)
-                outfile.write(line1)
-            # line2 = 'Explained_variance_ratio\n'
-            joined_exp_var = ','.join([str(x) for x in self.explained_variance_ratio])
-            line2 = 'Explained_variance_ratio, {}, {},\n'.format(' ', joined_exp_var)
-            outfile.write(line2)
-        outfile.close()
+            lineheader = 'filename, feats,' + ','.join(str(x) for x in num_lds)
+            outfile.write(lineheader + '\n')
+
+            try:
+                # OLD WAY - multiple features/probabilities per class
+                for index in range(len(self.transformed_test_data[:, 0])):
+                    fnames = str(self.test_filenames[index])
+                    feats = str(self.input_feats[index])
+                    joined_lds = ','.join([str(x) for x in self.transformed_test_data[index]])
+                    line1 = '{}, {}, {}, \n'.format(fnames, feats, joined_lds)
+                    outfile.write(line1)
+                # line2 = 'Explained_variance_ratio\n'
+                joined_exp_var = ','.join([str(x) for x in self.explained_variance_ratio])
+                line2 = 'Explained_variance_ratio, {}, {},\n'.format(' ', joined_exp_var)
+                outfile.write(line2)
+            except IndexError:
+                # NEW WAY - only one probability per class (no features)
+                joined_lds = ','.join([':.3f'.format(x) for x in self.transformed_test_data])
+                outfile.write('{}, {}\n'.format('Test Probabilities', joined_lds))
+                joined_exp_var = ','.join([str(x) for x in self.explained_variance_ratio])
+                line2 = 'Explained_variance_ratio, {}, {},\n'.format(' ', joined_exp_var)
+                outfile.write(line2)
 
 
-    def save_predictions(self, output_path, analysis_obj):
-        """
+def save_predictions(list_of_analysis_objs, params_obj, features_list, class_labels, output_path):
+    """
 
-        :param analysis_obj: CIUAnalysis container with unknown data
-        :type analysis_obj: CIUAnalysisObj
-        :param output_path:
-        :return:
-        """
-        cvs = [x.cv for x in self.selected_features]
-        predict_class = self.pred_class_label
-        counts = np.bincount(predict_class)
-        class_mode = np.argmax(counts)
-        predict_prob_feat = self.pred_prob_feat
-        outputname = '{}_{}_clf.csv'.format(analysis_obj.short_filename, self.unk_label)
-        output_final = os.path.join(output_path, outputname)
-        with open(output_final, 'w') as outfile:
-            index_list = np.arange(1, len(predict_prob_feat[0]) + 1)
-            probheader = ','.join(str(x) for x in index_list)
-            lineheader = 'Features,Class_label,' + probheader + '\n'
-            outfile.write(lineheader)
-            for index, cv in enumerate(cvs):
-                joined_probs = ','.join([str(x) for x in predict_prob_feat[index]])
-                line = '{},{},{},\n'.format(cv, predict_class[index], joined_probs)
-                outfile.write(line)
-            probs = ','.join(str(x) for x in self.pred_prob)
-            line2 = '{}, {}, {}, \n'.format('Combined', class_mode, probs)
-            outfile.write(line2)
-        outfile.close()
+    :param list_of_analysis_objs: list of CIUAnalysis containers with unknown data - MUST have transformed data already set
+    :type list_of_analysis_objs: list[CIUAnalysisObj]
+    :param params_obj: Parameters object with param information
+    :type params_obj: Parameters
+    :param features_list: list of selected Features
+    :type features_list: list[CFeature]
+    :param class_labels: list of labels for each class
+    :param output_path: directory in which to save output
+    :return: void
+    """
+    outputname = 'All_Unknowns_classif.csv'
+    output_final = os.path.join(output_path, outputname)
+    with open(output_final, 'w') as outfile:
+        header_labels = ','.join(['Prob for {}'.format(x) for x in class_labels])
+        if params_obj.classif_4_data_structure == 'flat':
+            header = 'File,Predicted Class,{}\n'.format(header_labels)
+        else:
+            header = 'File,Features,Predicted Class,{}\n'.format(header_labels)
+        outfile.write(header)
+
+        for analysis_obj in list_of_analysis_objs:
+            cvs = [x.cv for x in features_list]
+            predict_class = analysis_obj.classif_predicted_label
+            predict_prob_feat = analysis_obj.classif_probs_by_cv
+            # OLD WAY
+            if params_obj.classif_4_data_structure == 'stacked':
+                # For feature-by-feature method, count the most common classification for this unknown (statistical mode)
+                counts = np.bincount(predict_class)
+                class_mode = np.argmax(counts)
+                main_lines = []
+                for index, cv in enumerate(cvs):
+                    joined_probs = ','.join([str(x) for x in predict_prob_feat[index]])
+                    line = '{},{},{},{},\n'.format(analysis_obj.short_filename, cv, predict_class[index], joined_probs)
+                    main_lines.append(line)
+                probs = ','.join(str(x) for x in analysis_obj.classif_probs_avg)
+                line2 = '{},{},{},{}, \n'.format(analysis_obj.short_filename, 'Combined', class_mode, probs)
+
+                # write at the end to allow type checking to finish
+                for line in main_lines:
+                    outfile.write(line)
+                outfile.write(line2)
+            elif params_obj.classif_4_data_structure == 'flat':
+                # NEW WAY
+                probs = ','.join(str(x) for x in analysis_obj.classif_probs_avg)
+                line2 = '{},{},{}, \n'.format(analysis_obj.short_filename, analysis_obj.classif_predicted_label[0], probs)
+                outfile.write(line2)
 
 
 def get_unique_labels(label_list):
@@ -277,10 +281,6 @@ class CrossValProduct(object):
         # assembled data
         self.all_class_combination_lists = None
         self.all_products = None
-        # self.stacked_train_data = []
-        # self.stacked_test_data = []
-        # self.numeric_label_train = []
-        # self.numeric_label_test = []
 
     def assemble_class_combinations(self, params_obj):
         """
@@ -291,8 +291,6 @@ class CrossValProduct(object):
         objects. Intended to go directly into itertools.product
         :rtype: list[list[DataCombination]]
         """
-        feature_indices = [x.cv_index for x in self.features]
-
         shaped_label_list = []
         for index, label in enumerate(self.label_list):
             shaped_label_list.append([label for _ in range(len(self.data_list_by_label[index]))])
@@ -316,7 +314,7 @@ class CrossValProduct(object):
 
                 # create Train/Test DataProduct for this combination
                 current_combo = DataCombination(training_data_list, training_label_tuple, test_data_list, test_label_list)
-                current_combo.prepare_data(feature_indices)
+                current_combo.prepare_data(self.features, params_obj)
                 class_combo_list.append(current_combo)
 
             all_class_combo_lists.append(class_combo_list)
@@ -357,10 +355,6 @@ def assemble_products(all_class_combination_lists):
         train_scores.append(train_score)
         test_scores.append(test_score)
 
-    # self.train_scores_mean = np.mean(train_scores)
-    # self.train_scores_std = np.std(train_scores)
-    # self.test_scores_mean = np.mean(test_scores)
-    # self.test_scores_std = np.std(test_scores)
     train_scores_mean = np.mean(train_scores)
     train_scores_std = np.std(train_scores)
     test_scores_mean = np.mean(test_scores)
@@ -392,33 +386,21 @@ class DataCombination(object):
         self.test_data_final = []
         self.test_labels_string = []
 
-    def prepare_data(self, feauture_index_list):
+    def prepare_data(self, features_list, params_obj):
         """
         Assemble concatenated data and label arrays for the specified slices of the input data (CV columns/features)
+        :param features_list: list of selected Features with cv data
+        :param params_obj: Parameters object with settings information
+        :type params_obj: Parameters
         :return: void
         """
+        train_data_final, train_labels_final, empty_filenames, final_cvs = arrange_data_for_lda(self.training_data_tup, self.training_labels_tup, features_list, method=params_obj.classif_4_data_structure)
+        test_data_final, test_labels_final, empty_filenames2, final_cvs = arrange_data_for_lda(self.test_data_tup, self.test_labels_tup, features_list, method=params_obj.classif_4_data_structure)
 
-        for train_index, full_train_data in enumerate(self.training_data_tup):
-            train_data = []
-            for i, feature_index in enumerate(feauture_index_list):
-                train_data.append(full_train_data.T[feature_index])
-            train_data = np.asarray(train_data)
-
-            self.training_data_final.append(train_data)
-            current_label = np.asarray([self.training_labels_tup[train_index] for _ in range(len(feauture_index_list))])    # range(i+1)
-            # self.training_labels_string.append(self.training_labels_tup[train_index])
-            self.training_labels_string.append(current_label)
-
-        for test_index, full_test_data in enumerate(self.test_data_tup):
-            test_data = []
-            for i, feature_index in enumerate(feauture_index_list):
-                test_data.append(full_test_data.T[feature_index])
-            test_data = np.asarray(test_data)
-
-            self.test_data_final.append(test_data)
-            current_label_test = np.asarray([self.test_labels_tup[test_index] for _ in range(len(feauture_index_list))])    # range(i+1)
-            # self.test_labels_string.append(self.test_labels_tup[test_index])
-            self.test_labels_string.append(current_label_test)
+        self.training_data_final = train_data_final
+        self.training_labels_string = train_labels_final
+        self.test_data_final = test_data_final
+        self.test_labels_string = test_labels_final
 
 
 class DataProduct(object):
@@ -577,10 +559,6 @@ def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_overrid
         classif_data = analysis_obj.ciu_data
 
     elif params_obj.classif_3_mode == 'Gaussian':
-        # determine the maximum number of Gaussians that were fit to shape the matrices
-        # max_num_gaussians = np.max([len(x) for x in analysis_obj.filtered_gaussians])
-        # if num_gaussian_override is not None:
-        #     max_num_gaussians = num_gaussian_override
         classif_data = []
 
         # for unknown data, num gaussians is provided (use it); for building scheme, num gaussians comes from params object (as a convenient save location)
@@ -616,16 +594,6 @@ def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_overrid
                     attribute_list[attribute_index] = gaussian.amplitude
                     attribute_index += 1
 
-                # cent_list = np.zeros(max_num_gaussians)
-                # width_list = np.zeros(max_num_gaussians)
-                # amp_list = np.zeros(max_num_gaussians)
-                # for gauss_index, gaussian in enumerate(gaussian_list):
-                #     cent_list[gauss_index] = gaussian.centroid
-                #     width_list[gauss_index] = gaussian.width
-                #     amp_list[gauss_index] = gaussian.amplitude
-                # classif_data.append(cent_list)
-                # classif_data.append(width_list)
-                # classif_data.append(amp_list)
                 classif_data.append(attribute_list)
             classif_data = np.asarray(classif_data).T
         else:
@@ -677,11 +645,6 @@ def main_build_classification(labels, analysis_obj_list_by_label, params_obj, ou
 
     # plot output here for now, will probably move eventually
     plot_classification_decision_regions(constructed_scheme, output_dir)
-    # labels_name = 'Univariatefeatureselection' + '_'.join(labels) + '_'
-    # output_path = os.path.join(output_dir, labels_name)
-    # plot_stuff_suggie(constructed_scheme, output_dir)
-    # plot_feature_scores(all_features, output_dir)
-
     return constructed_scheme
 
 
@@ -861,20 +824,53 @@ def plot_crossval_scores(crossval_data, outputdir):
     plt.close()
 
 
-def roc_clf(probas, ytest, pos_class=2):
+def arrange_data_for_lda(flat_data_matrix_list, flat_label_list, features_list, flat_filenames=None, method='flat'):
     """
+    Prepare data for LDA by arranging selected CV columns (from the original matrix) into
+    the desired shape. Multiple options supported at this time, will likely choose best eventually.
+    :param flat_data_matrix_list: list of 2D arrays of data (drift bin OR gaussian info, collision voltage)
+    :param flat_label_list: list of class labels corresponding to input data, in same shape as flat_data_matrix
+    :param features_list: list of Features (collision voltage indicies) to use
+    :type features_list: list[CFeature]
+    :param flat_filenames: (optional) list of filenames in same shape as flat label list. If provided, filenames are returned
+    :param method: 'flat' or 'stacked': whether to assemble features in a single list per datafile (flat) or in separate lists (stacked)
+    :return: assembled raw data list, assembled labels list - ready for LDA as x, y
+    """
+    cvfeat_index_list = [x.cv_index for x in features_list]
+    cvfeats_list = [x.cv for x in features_list]
 
-    :param probas:
-    :param ytest:
-    :param pos_class:
-    :return:
-    """
-    mean_fpr = np.linspace(0, 1, 100)
-    fpr, tpr, thresholds = roc_curve(ytest, probas[:, 1], pos_label=pos_class)
-    # roc_auc = auc(fpr, tpr)
-    # plt.plot(fpr, tpr, lw=1, color= 'grey', alpha=0.5, label='ROC area = %0.2f'%(roc_auc))
-    # plt.legend(loc='best')
-    return mean_fpr, fpr, tpr
+    lda_ciu_data, lda_label_data, lda_filenames, lda_feat_cvs = [], [], [], []
+
+    if method == 'stacked':
+        # OLD WAY
+        # loop over each replicate of data provided
+        for data_index in range(len(flat_data_matrix_list)):
+            # loop over each feature (collision voltage) desired, saving the requested data in appropriate form
+            for index, data_cv_index in enumerate(cvfeat_index_list):
+                lda_ciu_data.append(flat_data_matrix_list[data_index].T[data_cv_index])
+                lda_label_data.append(flat_label_list[data_index])
+                if flat_filenames is not None:
+                    lda_filenames.append(flat_filenames[data_index])
+                lda_feat_cvs.append(cvfeats_list[index])
+
+    elif method == 'flat':
+        # NEW WAY
+        for data_index in range(len(flat_data_matrix_list)):
+            # for this method, there is only one label/etc per replicate - so these can be assembled outside the feature loop
+            lda_label_data.append(flat_label_list[data_index])
+            if flat_filenames is not None:
+                lda_filenames.append(flat_filenames[data_index])
+
+            # loop over each feature (collision voltage) desired, saving the requested data in appropriate form
+            rep_data = []
+            for index, data_cv_index in enumerate(cvfeat_index_list):
+                rep_data.extend(flat_data_matrix_list[data_index].T[data_cv_index])
+            lda_ciu_data.append(rep_data)
+
+    else:
+        print('Invalid method! No LDA performed')
+
+    return lda_ciu_data, lda_label_data, lda_filenames, lda_feat_cvs
 
 
 def lda_clf_pipeline(stacked_train_data, stacked_train_labels, stacked_test_data, stacked_test_labels):
@@ -912,30 +908,17 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
     :param shaped_label_list: list of lists of class labels with matching shape of analysis_obj_by_label
     :param param_obj: parameters information
     :type param_obj: Parameters
+    :param output_dir: directory in which to save output plot
     :return: generated classification scheme object with LDA and SVC performed
     :rtype: ClassificationScheme
     """
     # flatten input lists (sorted by class label) into a single list
-    # flat_ciuraw_list = [x.ciu_data for label_obj_list in analysis_obj_list_by_label for x in label_obj_list]
     flat_ciuraw_list = [get_classif_data(x, param_obj) for label_obj_list in analysis_obj_list_by_label for x in label_obj_list]
     flat_label_list = [x for label_list in shaped_label_list for x in label_list]
     flat_filename_list = [x.short_filename for class_list in analysis_obj_list_by_label for x in class_list]
 
-    selected_cv_indices = [x.cv_index for x in features_list]
-    selected_cvs = [x.cv for x in features_list]
-
     # create a concatenated array with the selected CV columns from each raw dataset
-    input_x_ciu_data = []
-    input_label_data = []
-    input_filenames = []
-    input_feats = []
-    for i, (ciuraw_data, label_data, filename) in enumerate(zip(flat_ciuraw_list, flat_label_list, flat_filename_list)):
-        # assemble selected feature data for LDA
-        for ind, cv_index in enumerate(selected_cv_indices):
-            input_x_ciu_data.append(ciuraw_data.T[cv_index])
-            input_label_data.append(label_data)
-            input_filenames.append(filename)
-            input_feats.append(selected_cvs[ind])
+    input_x_ciu_data, input_label_data, input_filenames, input_feats = arrange_data_for_lda(flat_ciuraw_list, flat_label_list, features_list, flat_filename_list, method=param_obj.classif_4_data_structure)
 
     # finalize input data for LDA
     input_x_ciu_data = np.asarray(input_x_ciu_data)
@@ -948,10 +931,7 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
     expl_var_r = lda.explained_variance_ratio_
 
     # build classification scheme
-    # clf = LogisticRegression(C=10)
     clf = SVC(kernel='linear', C=1, probability=True)
-    # clf = RandomForestClassifier(n_estimators=10, criterion='entropy', n_jobs=-1)
-    # clf = KNC(n_neighbors=2,p=2,metric='minkowski', n_jobs=-1)
     clf.fit(x_lda, input_y_labels)
     y_pred = clf.predict(x_lda)
     prec_score = precision_score(input_y_labels, y_pred, pos_label=1, average='weighted')
@@ -973,34 +953,7 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
     scheme.input_feats = input_feats
     scheme.save_lda_output(output_dir)
 
-    # scheme.input_ciu_data = input_x_ciu_data
-
     return scheme
-
-# todo: deprecated
-# def select_features(all_features_list, params_obj):
-#     """
-#     Select the features to use out of self.all_features based on either top_N scoring features
-#     or those above a minimum score. Sets self.selected features to the Features selected
-#     :param all_features_list: List of all CFeature objects
-#     :param params_obj: Parameters object with classification parameters set
-#     :type params_obj: Parameters
-#     :return: List of selected features
-#     """
-#     selected_features = []
-#     feat_index = 0
-#     all_features_list = sorted(all_features_list, key=lambda x: x.mean_score, reverse=True)
-#     while feat_index < params_obj.classif_feats_1_num_feats and feat_index < len(all_features_list):
-#         this_feature = all_features_list[feat_index]
-#
-#         # if a minimum score has been provided, use it; otherwise, ignore
-#         if params_obj.classif_feats_2_min_score > 0:
-#             if this_feature.mean_score > params_obj.classif_feats_2_min_score:
-#                 selected_features.append(this_feature)
-#         else:
-#             selected_features.append(this_feature)
-#         feat_index += 1
-#     return selected_features
 
 
 def plot_feature_scores(feature_list, output_path):
@@ -1190,24 +1143,24 @@ def load_scheme(filepath):
     return scheme
 
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
     # Read the data
     # import tkinter
     # from tkinter import filedialog
     # from tkinter import simpledialog
-    import CIU_Params
-    import Raw_Processing
+    # import CIU_Params
+    # import Raw_Processing
 
     #
     # root = tkinter.Tk()
     # root.withdraw()
 
     # num_classes = simpledialog.askinteger('Class Number', 'Into how many classes do you want to group?')
-    num_classes = 4
-    data_labels = []
-    obj_list_by_label = []
-    # main_dir = 'C:\\'
-    main_dir = r"C:\Users\dpolasky\Desktop\CIUSuite2\CIU2 test data\Classify_Sarah\apo_cdl_pi_3way"
+    # num_classes = 4
+    # data_labels = []
+    # obj_list_by_label = []
+    # # main_dir = 'C:\\'
+    # main_dir = r"C:\Users\dpolasky\Desktop\CIUSuite2\CIU2 test data\Classify_Sarah\apo_cdl_pi_3way"
 
     # class_labels = ['Igg1', 'Igg2', 'Igg4', 'Igg4']
     # f1 = r'C:\Users\dpolasky\Desktop\CIU2 test data\ldaanalysisscripts\IgG1_1.ciu'
@@ -1235,44 +1188,44 @@ if __name__ == '__main__':
     # fs = [f_class1, f_class2, f_class4, f_class4]
     # fs= [f_class1, f_class2]
 
-    sarahfile = r"C:\Users\sugyan\Documents\CIUSuite\Classification\IgGdata\Iggs_datalist.csv"
-    files = np.genfromtxt(sarahfile, skip_header=1, delimiter=',', dtype='str')
-    class_sarahfiles = np.unique(files[:, 0])
-    # CDL, PA, PC, PE, PG, PI, PPIX, PS [in order]
-    filelist = [[] for i in range(len(class_sarahfiles))]
-    for index, classtype in enumerate(files[:, 0]):
-        for class_ind, class_unique in enumerate(class_sarahfiles):
-            if class_unique == classtype:
-                filelist[class_ind].append((files[:, 1][index]))
-
-    class_labels = [class_sarahfiles[0], class_sarahfiles[1], class_sarahfiles[3], class_sarahfiles[3]]
-    fs = [filelist[0], filelist[1], filelist[3], filelist[3]]
-
-    for class_index in range(0, num_classes):
-        # Read in the .CIU files and labels for each class
-        # label = simpledialog.askstring('Class Name', 'What is the name of this class?')
-        class_label = class_labels[class_index]
-        # files = filedialog.askopenfilenames(filetypes=[('CIU', '.ciu')])
-        files = fs[class_index]
-        main_dir = os.path.dirname(files[0])
-
-        obj_list = []
-        for file in files:
-            with open(file, 'rb') as analysis_file:
-                obj = pickle.load(analysis_file)
-            obj_list.append(obj)
-        data_labels.append(class_label)
-        obj_list_by_label.append(obj_list)
-
-    unkdata_name = open(r"C:\Users\sugyan\Documents\CIUSuite\Classification\IgGdata\IgG1_3.ciu", 'rb')
-    unkdata_ = pickle.load(unkdata_name)
-
-    params = CIU_Params.Parameters()
-    params.set_params(CIU_Params.parse_params_file(CIU_Params.hard_descripts_file))
-    obj_list_by_label, equalized_axes_list = Raw_Processing.equalize_axes_2d_list(obj_list_by_label)
-
-    scheme = main_build_classification(data_labels, obj_list_by_label, params, main_dir)
-    scheme.classify_unknown(unkdata_, params, main_dir, unk_label='Unknown')
+    # sarahfile = r"C:\Users\sugyan\Documents\CIUSuite\Classification\IgGdata\Iggs_datalist.csv"
+    # files = np.genfromtxt(sarahfile, skip_header=1, delimiter=',', dtype='str')
+    # class_sarahfiles = np.unique(files[:, 0])
+    # # CDL, PA, PC, PE, PG, PI, PPIX, PS [in order]
+    # filelist = [[] for i in range(len(class_sarahfiles))]
+    # for index, classtype in enumerate(files[:, 0]):
+    #     for class_ind, class_unique in enumerate(class_sarahfiles):
+    #         if class_unique == classtype:
+    #             filelist[class_ind].append((files[:, 1][index]))
+    #
+    # class_labels = [class_sarahfiles[0], class_sarahfiles[1], class_sarahfiles[3], class_sarahfiles[3]]
+    # fs = [filelist[0], filelist[1], filelist[3], filelist[3]]
+    #
+    # for class_index in range(0, num_classes):
+    #     # Read in the .CIU files and labels for each class
+    #     # label = simpledialog.askstring('Class Name', 'What is the name of this class?')
+    #     class_label = class_labels[class_index]
+    #     # files = filedialog.askopenfilenames(filetypes=[('CIU', '.ciu')])
+    #     files = fs[class_index]
+    #     main_dir = os.path.dirname(files[0])
+    #
+    #     obj_list = []
+    #     for file in files:
+    #         with open(file, 'rb') as analysis_file:
+    #             obj = pickle.load(analysis_file)
+    #         obj_list.append(obj)
+    #     data_labels.append(class_label)
+    #     obj_list_by_label.append(obj_list)
+    #
+    # unkdata_name = open(r"C:\Users\sugyan\Documents\CIUSuite\Classification\IgGdata\IgG1_3.ciu", 'rb')
+    # unkdata_ = pickle.load(unkdata_name)
+    #
+    # params = CIU_Params.Parameters()
+    # params.set_params(CIU_Params.parse_params_file(CIU_Params.hard_descripts_file))
+    # obj_list_by_label, equalized_axes_list = Raw_Processing.equalize_axes_2d_list(obj_list_by_label)
+    #
+    # scheme = main_build_classification(data_labels, obj_list_by_label, params, main_dir)
+    # scheme.classify_unknown(unkdata_, params, main_dir, unk_label='Unknown')
 
     # featurescaling_lda(data_labels, obj_list_by_label, main_dir)
     # class_comparison_lda(data_labels, obj_list_by_label, main_dir)

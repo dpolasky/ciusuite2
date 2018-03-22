@@ -962,8 +962,8 @@ class CIUSuite2(object):
                                 continue
 
                     # Finally, perform the classification and save outputs
-                    prediction_outputs = scheme.classify_unknown(analysis_obj, self.params_obj, self.output_dir)
-                    analysis_obj.classif_predicted_outputs = prediction_outputs
+                    analysis_obj = scheme.classify_unknown(analysis_obj, self.params_obj, self.output_dir)
+                    # analysis_obj.classif_predicted_outputs = prediction_outputs
                     successful_objs_for_plot.append(analysis_obj)
 
                     filename = save_analysis_obj(analysis_obj, params_obj=self.params_obj, outputdir=self.output_dir)
@@ -971,6 +971,7 @@ class CIUSuite2(object):
                     self.update_progress(analysis_obj_list.index(analysis_obj), len(analysis_obj_list))
 
                 if len(successful_objs_for_plot) > 0:
+                    Classification.save_predictions(successful_objs_for_plot, self.params_obj, scheme.selected_features, scheme.unique_labels, self.output_dir)
                     scheme.plot_all_unknowns(successful_objs_for_plot, self.params_obj, self.output_dir)
 
                 self.display_analysis_files()

@@ -184,6 +184,7 @@ class Parameters(object):
         # self.classif_feats_2_min_score = None
         self.classif_2_score_dif_tol = None
         self.classif_3_mode = None
+        self.classif_4_data_structure = None
         self.silent_clf_4_num_gauss = None
 
     def set_params(self, params_dict):

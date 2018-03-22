@@ -57,8 +57,12 @@ class CIUAnalysisObj(object):
         self.gauss_r2s = None
         self.gauss_fit_stats = None
 
-        self.classif_predicted_outputs = None
-        self.classif_data = None
+        # classification (unknown) outputs
+        self.classif_predicted_label = None
+        self.classif_transformed_data = None
+        self.classif_probs_by_cv = None
+        self.classif_probs_avg = None
+
         self.classif_gaussfeats = None
 
     def __str__(self):
