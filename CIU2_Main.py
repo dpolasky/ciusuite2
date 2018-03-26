@@ -1410,7 +1410,9 @@ if __name__ == '__main__':
     # Build the GUI and start its mainloop (run) method
     root = tk.Tk()
     root.withdraw()
+    print('building GUI...')
     ciu_app = CIUSuite2(root)
+    print('starting CIUSuite 2...')
     ciu_app.run()
     # test = run_crop_ui()
     # print(test)

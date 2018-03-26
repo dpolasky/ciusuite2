@@ -741,7 +741,7 @@ def crossval_main(analysis_obj_list_by_label, labels, outputdir, params_obj, fea
     # num_cores = multiprocessing.cpu_count() - 1
     num_cores = 3
     # print(num_cores)
-    pool = multiprocessing.Pool(num_cores)
+    # pool = multiprocessing.Pool(num_cores)
     results = []
 
     time_start = time.time()
@@ -751,12 +751,13 @@ def crossval_main(analysis_obj_list_by_label, labels, outputdir, params_obj, fea
         # Generate all combinations
         crossval_obj = CrossValProduct(analysis_obj_list_by_label, labels, training_size, current_features_list)
         crossval_combos = crossval_obj.assemble_class_combinations(params_obj)
-        # result = assemble_products(crossval_combos)
-        result = pool.apply_async(func=assemble_products, args=[crossval_combos])
+        result = assemble_products(crossval_combos)
+        # result = pool.apply_async(func=assemble_products, args=[crossval_combos])
         results.append(result)
 
     for result in results:
-        output = result.get()
+        # output = result.get()
+        output = result
 
         # get scores and plot and stuff
         train_score_means.append(output[0])
