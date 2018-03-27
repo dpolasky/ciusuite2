@@ -6,6 +6,7 @@ date: 10/10/2017
 import numpy as np
 from scipy.optimize import curve_fit
 from scipy.stats import linregress
+import scipy.interpolate
 import os
 import itertools
 import math
@@ -16,6 +17,7 @@ from tkinter import filedialog
 import scipy.signal
 import matplotlib.backends.backend_pdf
 import matplotlib.pyplot as plt
+from Raw_Processing import interpolate_axes
 
 # imports for type checking
 from typing import TYPE_CHECKING
@@ -321,9 +323,10 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
     filtered_gaussians = []
     # for each CV column in the file, perform a multi-gaussian fitting and save information generated
     print('\nFile ' + str(filename))
+
     for cv_index, cv_col_intensities in enumerate(intarray):
         print(cv_index + 1)
-        # use peak detection to estimate initial 'guess' parameters for fitting
+        # Estimate initial guess data from peak fitting
         all_peak_guesses = estimate_multi_params_all(cv_col_intensities, dt_axis, widthfrac)
 
         param_guesses_multiple = []

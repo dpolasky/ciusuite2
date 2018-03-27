@@ -91,7 +91,7 @@ class ClassificationScheme(object):
         :rtype: CIUAnalysisObj
         """
         # unk_ciudata = unk_ciu_obj.ciu_data
-        # todo: FIX MAX NUM GAUSSIAN COMMUNICATION
+        # todo: FIX MAX NUM GAUSSIAN COMMUNICATION (seems okay?)
         unk_ciudata = get_classif_data(unk_ciu_obj, params_obj, ufs_mode=False, num_gauss_override=self.num_gaussians)
 
         # Assemble feature data for fitting

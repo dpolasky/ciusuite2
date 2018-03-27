@@ -96,6 +96,7 @@ class CIUSuite2(object):
 
         self.analysis_file_list = []
         self.output_dir = hard_output_default
+        self.output_dir_override = False
 
     def run(self):
         self.mainwindow.mainloop()
@@ -167,8 +168,9 @@ class CIUSuite2(object):
             self.display_analysis_files()
 
             # update directory to match the loaded files
-            self.output_dir = os.path.dirname(self.analysis_file_list[0])
-            self.update_dir_entry()
+            if not self.output_dir_override:
+                self.output_dir = os.path.dirname(self.analysis_file_list[0])
+                self.update_dir_entry()
             self.progress_done()
 
     def on_button_analysisfile_clicked(self):
@@ -182,74 +184,15 @@ class CIUSuite2(object):
 
         # update directory to match the loaded files
         try:
-            self.output_dir = os.path.dirname(self.analysis_file_list[0])
-            self.update_dir_entry()
+            if not self.output_dir_override:
+                self.output_dir = os.path.dirname(self.analysis_file_list[0])
+                self.update_dir_entry()
         except IndexError:
             # no files selected (user probably hit 'cancel') - ignore
             return
 
         # check if parameters in loaded files match the current Parameter object
         self.check_params()
-
-    # todo: deprecated
-    # def on_button_paramload_clicked(self):
-    #     """
-    #     Open a user chosen parameter file into self.params
-    #     :return: void
-    #     """
-    #     # self.builder.get_object('Button_AnalysisFile').config(state=tk.DISABLED)
-    #     #
-    #     # self.on_button_edit_params_clicked()
-    #     #
-    #     # self.builder.get_object('Button_AnalysisFile').config(state=tk.NORMAL)
-    #     try:
-    #         new_param_file = open_files([('params file', '.txt')])[0]
-    #     except IndexError:
-    #         # no file loaded - user probably clicked cancel. Ignore the button call
-    #         return
-    #
-    #     new_param_obj = CIU_Params.Parameters()
-    #     new_param_obj.set_params(CIU_Params.parse_params_file(new_param_file))
-    #     self.params_obj = new_param_obj
-    #     self.param_file = new_param_file
-    #
-    #     # update parameter location display
-    #     new_text = 'Parameters loaded from {}'.format(os.path.basename(new_param_file))
-    #     params_text = self.builder.get_object('Text_params')
-    #     params_text.delete(1.0, tk.END)
-    #     params_text.insert(tk.INSERT, new_text)
-    #
-    #     # check if files are loaded
-    #     if len(self.analysis_file_list) > 0:
-    #         # TODO: prompt user to overwrite params or not
-    #         print('TO-DO: ask user for overwrite or not')
-
-    # todo: deprecated
-    # def on_button_edit_params_clicked(self):
-    #     """
-    #     Open the current parameter file in Notepad to allow the user to edit. Waits for
-    #     the notepad application to close before returning to the CIU2 GUI.
-    #     Updates the current Params object once the parameter file has been closed
-    #     :return: void
-    #     """
-    #     param_args = ['notepad.exe', self.param_file]
-    #     return_proc = subprocess.run(param_args)
-    #     print(return_proc)
-    #
-    #     # once done, update stuff and continue
-    #     new_param_obj = CIU_Params.Parameters()
-    #     new_param_obj.set_params(CIU_Params.parse_params_file(self.param_file))
-    #     self.params_obj = new_param_obj
-    #
-    #     new_text = 'Parameters updated in {}'.format(os.path.basename(self.param_file))
-    #     params_text = self.builder.get_object('Text_params')
-    #     params_text.delete(1.0, tk.END)
-    #     params_text.insert(tk.INSERT, new_text)
-    #
-    #     # check if files are loaded
-    #     if len(self.analysis_file_list) > 0:
-    #         # TODO: prompt user to overwrite params or not
-    #         print('TO-DO: ask user for overwrite or not')
 
     def display_analysis_files(self):
         """
@@ -273,30 +216,6 @@ class CIUSuite2(object):
         self.builder.get_object('Entry_num_files').delete(0, tk.END)
         self.builder.get_object('Entry_num_files').insert(0, str(len(self.analysis_file_list)))
         self.builder.get_object('Entry_num_files').config(state=tk.DISABLED)
-
-    # todo: deprecated
-    # def on_button_reproc_files_clicked(self):
-    #     """
-    #     Re-run processing from raw and update parameter file in all loaded Analysis objects/.ciu files
-    #     Updates ciu_data and parameters in the object, but does NOT delete saved fitting/features/etc
-    #     information from the object.
-    #     :return: void
-    #     """
-    #     files_to_read = self.check_file_range_entries()
-    #     output_files = []
-    #     self.progress_started()
-    #     for analysis_file in files_to_read:
-    #         # load analysis obj and print params
-    #         analysis_obj = load_analysis_obj(analysis_file)
-    #
-    #         # update parameters, ciu_data, and axes but retain all other object information
-    #         analysis_obj = reprocess_raw(analysis_obj, self.params_obj)
-    #         filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
-    #         output_files.append(filename)
-    #         self.update_progress(files_to_read.index(analysis_file), len(files_to_read))
-    #
-    #     self.display_analysis_files()
-    #     self.progress_done()
 
     def on_button_restore_clicked(self):
         """
@@ -376,6 +295,7 @@ class CIUSuite2(object):
             # user hit cancel - don't set directory
             return
         self.output_dir = newdir
+        self.output_dir_override = True     # stop changing directory on file load if the user has specified a directory
         self.update_dir_entry()
 
     def update_dir_entry(self):
@@ -444,7 +364,7 @@ class CIUSuite2(object):
             if len(newfiles) == 0:
                 return
 
-            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x or 'allplot' in x and 'batch' not in x]
+            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x or 'allplot' in x and ('batch' not in x and 'cmap' not in x)]
             if self.run_param_ui('Plot parameters', batch_keys):
                 rmsd_print_list = ['File 1, File 2, RMSD (%)']
                 std_file = files_to_read[0]
@@ -461,7 +381,7 @@ class CIUSuite2(object):
 
         if len(files_to_read) == 2:
             # Direct compare between two files
-            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x or 'allplot' in x and 'batch' not in x]
+            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x or 'allplot' in x and ('batch' not in x and 'cmap' not in x)]
             if self.run_param_ui('Plot parameters', batch_keys):
                 ciu1 = load_analysis_obj(files_to_read[0])
                 ciu2 = load_analysis_obj(files_to_read[1])
@@ -469,7 +389,7 @@ class CIUSuite2(object):
                 Original_CIU.compare_basic_raw(updated_obj_list[0], updated_obj_list[1], self.params_obj, self.output_dir)
 
         elif len(files_to_read) > 2:
-            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x or 'allplot' in x]
+            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x or 'allplot' in x and 'cmap' not in x]
             if self.run_param_ui('Plot parameters', batch_keys):
                 rmsd_print_list = ['File 1, File 2, RMSD (%)']
                 # batch compare - compare all against all.
@@ -1158,55 +1078,13 @@ def update_params_in_obj(analysis_obj, params_obj):
     return analysis_obj
 
 
-def reprocess_raw(analysis_obj, params_obj):
-    """
-    Wrapper method to differentiate between running raw processing methods (smoothing/etc)
-    and generation of new CIUAnalysis objects. Updates ciu_data, axes, and parameters, but
-    retains all other information in the analysis_obj
-    :param analysis_obj: CIUAnalysisObj to reprocess
-    :type analysis_obj: CIUAnalysisObj
-    :param params_obj: Parameters object containing processing parameters
-    :type params_obj: Parameters
-    :rtype: CIUAnalysisObj
-    :return: the existing analysis object with reprocessed ciu_data and axes
-    """
-    # ALTERNATIVE METHOD - rename to 'update params' and only change params obj...
-    # TODO: move/remove this method?
-
-    raw_obj = analysis_obj.raw_obj
-    norm_data = Raw_Processing.normalize_by_col(raw_obj.rawdata)
-    axes = (raw_obj.dt_axis, raw_obj.cv_axis)
-    analysis_obj.ciu_data = norm_data
-    analysis_obj.axes = axes
-
-    # smooth
-    analysis_obj = Raw_Processing.smooth_main(analysis_obj, params_obj)
-
-    # interpolate data if desired
-    # if params_obj.interp_1_method:
-    #     norm_data, axes = Raw_Processing.interpolate_cv(norm_data, axes, params_obj.interp_2_bins)
-
-    # Smooth data if desired (column-by-column)
-    # if params_obj.smoothing_1_method is not None:
-    #     i = 0
-    #     while i < params_obj.smoothing_3_iterations:
-    #         norm_data = Raw_Processing.sav_gol_smooth(norm_data, params_obj.smoothing_2_window)
-    #         i += 1
-
-    # check for previously saved cropping and use those values if present
-    if analysis_obj.crop_vals is not None:
-        analysis_obj = Raw_Processing.crop(analysis_obj, analysis_obj.crop_vals)
-
-    analysis_obj.params = params_obj
-    return analysis_obj
-
-
 def average_ciu(analysis_obj_list, outputdir):
     """
     Generate and save replicate object (a CIUAnalysisObj with averaged ciu_data and a list
     of raw_objs) that can be used for further analysis
     :param analysis_obj_list: list of CIUAnalysisObj's to average
     :type analysis_obj_list: list[CIUAnalysisObj]
+    :param outputdir: directory in which to save output .ciu file
     :rtype: CIUAnalysisObj
     :return: averaged analysis object
     """

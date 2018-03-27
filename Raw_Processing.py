@@ -28,10 +28,10 @@ def get_data(fname):
 
 
 # Generate lists of trap collision energies and drift times used for the plots ###
-def get_axes(rawdata):
-    row_axis = rawdata[1:, 0]
-    col_axis = rawdata[0, 1:]
-    return row_axis, col_axis
+# def get_axes(rawdata):
+#     row_axis = rawdata[1:, 0]
+#     col_axis = rawdata[0, 1:]
+#     return row_axis, col_axis
 
 
 def normalize_by_col(raw_data_matrix):
