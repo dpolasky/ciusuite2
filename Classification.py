@@ -387,7 +387,6 @@ def assemble_products(all_class_combination_lists):
                                                    stacked_test_data, numeric_label_test)
         train_scores.append(train_score)
         test_scores.append(test_score)
-        probs.append(probas)
 
 
     train_scores_mean = np.mean(train_scores)
