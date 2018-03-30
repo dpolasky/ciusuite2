@@ -32,6 +32,7 @@ import matplotlib.pyplot as plt
 import pickle
 import os
 import itertools
+# import sys
 import multiprocessing
 from typing import List
 from typing import TYPE_CHECKING
@@ -112,6 +113,8 @@ class ClassificationScheme(object):
         unk_ciu_obj.classif_probs_avg = pred_probs_avg
         unk_ciu_obj.classif_transformed_data = unknown_transformed_lda
 
+
+
         unknown_plot_info = [(unknown_transformed_lda, unk_ciu_obj.short_filename)]
         plot_classification_decision_regions(self, output_path, unknown_tups=unknown_plot_info, filename=unk_ciu_obj.short_filename)
 
@@ -131,38 +134,67 @@ class ClassificationScheme(object):
         all_plot_tups = [(x.classif_transformed_data, x.short_filename) for x in unk_ciuobj_list]
         plot_classification_decision_regions(self, output_path, unknown_tups=all_plot_tups, filename='all')
 
-    def save_lda_output(self, output_path):
-        """
-        Save csv output from LDA, including transformed test data prediction accuracy scores
-        :param output_path: directory in which to save output
-        :return: void
-        """
-        outputname = 'output_lda.csv'
-        output_final = os.path.join(output_path, outputname)
-        with open(output_final, 'w') as outfile:
-            num_lds = np.arange(1, len(self.transformed_test_data[0]) + 1)
+
+def save_lda_output_unk(list_transformed_data, list_filenames, list_feats, output_path):
+    outputname = 'output_lda_unk.csv'
+    output_final = os.path.join(output_path, outputname)
+    features = [x.cv for x in list_feats]
+    with open(output_final, 'w') as outfile:
+        num_lds = np.arange(1, len(list_transformed_data[0][0])+1)
+        lineheader = 'filename, feats,' + ','.join(str(x) for x in num_lds)
+        outfile.write(lineheader + '\n')
+        for index, (transformed_data, fname) in enumerate(zip(list_transformed_data, list_filenames)):
+            # num_lds = np.arange(1, len(transformed_data[0])+1)
+            # lineheader = 'filename, feats,' + ','.join(str(x) for x in num_lds)
+            # outfile.write(lineheader+'\n')
+            for ind in range(len(transformed_data[:, 0])):
+                feats = str(features[ind])
+                joined_lds = ','.join([str(x) for x in transformed_data[ind]])
+                line1 = '{}, {}, {}, \n'.format(fname, feats, joined_lds)
+                outfile.write(line1)
+        outfile.close()
+
+
+def save_lda_output(transformed_data, filenames, input_feats, output_path, explained_variance_ratio=None):
+    """
+    Save csv output from LDA, including transformed test data prediction accuracy scores
+    :param output_path: directory in which to save output
+    :return: void
+    """
+    outputname = 'output_lda.csv'
+    feats = input_feats
+    output_final = os.path.join(output_path, outputname)
+    with open(output_final, 'w') as outfile:
+        num_lds = np.arange(1, len(transformed_data[0]) + 1)
+        try:
             lineheader = 'filename, feats,' + ','.join(str(x) for x in num_lds)
             outfile.write(lineheader + '\n')
-
-            try:
-                # OLD WAY - multiple features/probabilities per class
-                for index in range(len(self.transformed_test_data[:, 0])):
-                    fnames = str(self.test_filenames[index])
-                    feats = str(self.input_feats[index])
-                    joined_lds = ','.join([str(x) for x in self.transformed_test_data[index]])
-                    line1 = '{}, {}, {}, \n'.format(fnames, feats, joined_lds)
-                    outfile.write(line1)
-                # line2 = 'Explained_variance_ratio\n'
-                joined_exp_var = ','.join([str(x) for x in self.explained_variance_ratio])
+            # OLD WAY - multiple features/probabilities per class
+            for index in range(len(transformed_data[:, 0])):
+                fnames = str(filenames[index])
+                features = str(feats[index])
+                joined_lds = ','.join([str(x) for x in transformed_data[index]])
+                line1 = '{}, {}, {}, \n'.format(fnames, features, joined_lds)
+                outfile.write(line1)
+            # line2 = 'Explained_variance_ratio\n'
+            if explained_variance_ratio is not None:
+                joined_exp_var = ','.join([str(x) for x in explained_variance_ratio])
                 line2 = 'Explained_variance_ratio, {}, {},\n'.format(' ', joined_exp_var)
                 outfile.write(line2)
-            except IndexError:
+        except IndexError:
+            lineheader = 'filename,'+','.join(str(x) for x in num_lds)
+            outfile.write(lineheader + '\n')
+            for index in range(len(transformed_data[:, 0])):
                 # NEW WAY - only one probability per class (no features)
-                joined_lds = ','.join([':.3f'.format(x) for x in self.transformed_test_data])
-                outfile.write('{}, {}\n'.format('Test Probabilities', joined_lds))
-                joined_exp_var = ','.join([str(x) for x in self.explained_variance_ratio])
-                line2 = 'Explained_variance_ratio, {}, {},\n'.format(' ', joined_exp_var)
+                fnames = str(filenames[index])
+                joined_lds = ','.join([str(x) for x in transformed_data[index]])
+                outfile.write('{}, {}, \n'.format(fnames, joined_lds))
+            if explained_variance_ratio is not None:
+                joined_exp_var = ','.join([str(x) for x in explained_variance_ratio])
+                line2 = 'Explained_variance_ratio, {},\n'.format(joined_exp_var)
                 outfile.write(line2)
+        outfile.close()
+
 
 
 def save_predictions(list_of_analysis_objs, params_obj, features_list, class_labels, output_path):
@@ -327,9 +359,10 @@ def assemble_products(all_class_combination_lists):
     Assemble the products of all class combinations
     :return:
     """
+    probs = []
     train_scores, test_scores = [], []
-
     for combo_tuple in itertools.product(*all_class_combination_lists):
+        print('...', end="")
         # stack training and test data and labels
         stacked_train_data, stacked_train_labels = [], []
         stacked_test_data, stacked_test_labels = [], []
@@ -354,12 +387,16 @@ def assemble_products(all_class_combination_lists):
                                                    stacked_test_data, numeric_label_test)
         train_scores.append(train_score)
         test_scores.append(test_score)
+        probs.append(probas)
+
 
     train_scores_mean = np.mean(train_scores)
     train_scores_std = np.std(train_scores)
     test_scores_mean = np.mean(test_scores)
     test_scores_std = np.std(test_scores)
-    return train_scores_mean, train_scores_std, test_scores_mean, test_scores_std
+    probs_mean = np.mean(probs)
+    probs_std = np.std(probs)
+    return train_scores_mean, train_scores_std, test_scores_mean, test_scores_std, probs_mean, probs_std
 
 
 class DataCombination(object):
@@ -738,6 +775,7 @@ def crossval_main(analysis_obj_list_by_label, labels, outputdir, params_obj, fea
     test_score_means = []
     test_score_stds = []
 
+
     # num_cores = multiprocessing.cpu_count() - 1
     num_cores = 3
     # print(num_cores)
@@ -746,6 +784,7 @@ def crossval_main(analysis_obj_list_by_label, labels, outputdir, params_obj, fea
 
     time_start = time.time()
     for ind, feature in enumerate(features_list):
+        print('\nNum features: {}'.format(ind+1))
         current_features_list.append(feature)
 
         # Generate all combinations
@@ -764,6 +803,8 @@ def crossval_main(analysis_obj_list_by_label, labels, outputdir, params_obj, fea
         train_score_stds.append(output[1])
         test_score_means.append(output[2])
         test_score_stds.append(output[3])
+
+
     print('classification done in {:.2f}'.format(time.time() - time_start))
 
     train_score_means = np.array(train_score_means)
@@ -771,12 +812,29 @@ def crossval_main(analysis_obj_list_by_label, labels, outputdir, params_obj, fea
     test_score_means = np.array(test_score_means)
     test_score_stds = np.array(test_score_stds)
     crossval_data = (train_score_means, train_score_stds, test_score_means, test_score_stds)
+    save_crossval_score(crossval_data, outputdir)
     plot_crossval_scores(crossval_data, outputdir)
 
     # determine best features list from crossval scores
     best_num_feats, best_score = peak_crossval_score_detect(test_score_means, params_obj.classif_2_score_dif_tol)
     output_features = features_list[0: best_num_feats]
     return output_features, best_score, crossval_data
+
+
+def save_crossval_score(crossval_data, outputpath):
+    train_score_means = crossval_data[0]
+    train_score_stds = crossval_data[1]
+    test_score_means = crossval_data[2]
+    test_score_stds = crossval_data[3]
+    outfilename = os.path.join(outputpath, 'output_crossval.csv')
+    with open(outfilename, 'w') as outfile:
+        lineheader = 'num_feats, train_score_mean, train_score_std, test_score_mean, test_score_std, \n'
+        outfile.write(lineheader)
+        for ind in range(len(train_score_means)):
+            line = '{}, {}, {}, {}, {}, \n'.format(ind+1, train_score_means[ind], train_score_stds[ind],
+                                                   test_score_means[ind], test_score_stds[ind])
+            outfile.write(line)
+        outfile.close()
 
 
 def peak_crossval_score_detect(test_score_means, diff_from_max):
@@ -952,7 +1010,8 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
     scheme.test_filenames = input_filenames
     scheme.params = clf.get_params()
     scheme.input_feats = input_feats
-    scheme.save_lda_output(output_dir)
+
+    save_lda_output(x_lda, input_filenames, input_feats, output_dir, explained_variance_ratio=expl_var_r)
 
     return scheme
 
@@ -987,11 +1046,14 @@ def plot_classification_decision_regions(class_scheme, output_path, unknown_tups
     :param filename:
     :return:
     """
-    markers = ('s', 'x', 'o', '^', 'v')
-    colors = ['blue', 'red', 'lightgreen', 'gray', 'cyan']
+    markers = ('s', 'x', 'o', '^', 'v', 'D', '<', '>', '4', '8', 'h', 'H', '1', '2', '3', '+', '*', 'p', 'P')
+    colors = ['deepskyblue', 'mediumspringgreen', 'fuchsia', 'lightgreen', 'gray', 'cyan', 'yellow', 'magenta']
     cmap = ListedColormap(colors[:len(class_scheme.unique_labels)])
     # decide whether the data has 1d or nds
     shape_lda = np.shape(class_scheme.transformed_test_data)
+
+    fig = plt.figure()
+    ax = plt.subplot(111)
 
     # plot 1D or 2D decision regions
     if shape_lda[1] == 1:
@@ -1012,8 +1074,9 @@ def plot_classification_decision_regions(class_scheme, output_path, unknown_tups
         plt.contourf(x_grid, y_grid, z, alpha=0.2, cmap=cmap)
         plot_sklearn_lda_1ld(class_scheme, markers, colors)
         if unknown_tups is not None:
-            for unknown_tup in unknown_tups:
-                plt.scatter(unknown_tup[0], np.zeros(np.shape(unknown_tup[0])), marker='o', color='black', facecolors='none',
+            for ind, unknown_tup in enumerate(unknown_tups):
+                marklist = list(itertools.islice(itertools.cycle(markers), ind+1, ind+1+len(unknown_tups)))
+                plt.scatter(unknown_tup[0], np.zeros(np.shape(unknown_tup[0])), marker=marklist[ind], color='black', facecolors='none',
                             alpha=1, label=unknown_tup[1])
 
     if shape_lda[1] == 2:
@@ -1037,13 +1100,16 @@ def plot_classification_decision_regions(class_scheme, output_path, unknown_tups
         plot_sklearn_lda_2ld(class_scheme, markers, colors)
 
         if unknown_tups is not None:
-            for unknown_tup in unknown_tups:
-                plt.scatter(x=unknown_tup[0][:, 0], y=unknown_tup[0][:, 1], marker='o', color='black', facecolors='none', alpha=1, label=unknown_tup[1])
+            for ind, unknown_tup in enumerate(unknown_tups):
+                plt.scatter(x=unknown_tup[0][:, 0], y=unknown_tup[0][:, 1], marker=markers[ind], color='black', alpha=0.5, label=unknown_tup[1])
 
-    cv_string = ', '.join([str(x.cv) for x in class_scheme.selected_features])
+    cv_string = ', '.join([str(np.round(x.cv, 1)) for x in class_scheme.selected_features])
     plt.title('From CVs: {}'.format(cv_string))
-    leg = plt.legend(loc='best', fancybox=True)
-    leg.get_frame().set_alpha(0.5)
+
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0, box.width*0.8, box.height])
+    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), fancybox=True)
+
     plt.savefig(os.path.join(output_path, filename + '_classif_output.png'))
     plt.close()
 

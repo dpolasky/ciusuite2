@@ -893,6 +893,9 @@ class CIUSuite2(object):
                 if len(successful_objs_for_plot) > 0:
                     Classification.save_predictions(successful_objs_for_plot, self.params_obj, scheme.selected_features, scheme.unique_labels, self.output_dir)
                     scheme.plot_all_unknowns(successful_objs_for_plot, self.params_obj, self.output_dir)
+                    all_transform_data = [x.classif_transformed_data for x in successful_objs_for_plot]
+                    all_filenames = [x.short_filename for x in successful_objs_for_plot]
+                    Classification.save_lda_output_unk(all_transform_data, all_filenames, scheme.selected_features, self.output_dir)
 
                 self.display_analysis_files()
         self.progress_done()
