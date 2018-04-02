@@ -336,8 +336,8 @@ def plot_features(analysis_obj, params_obj, outputdir, mode):
     """
     # plot the initial CIU contour plot for reference
     plt.clf()
-    plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap=params_obj.allplot_2_cmap)
-    if params_obj.allplot_3_show_colorbar:
+    plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap=params_obj.x_allplot_2_cmap)
+    if params_obj.x_allplot_3_show_colorbar:
         plt.colorbar(ticks=[0, 1])
 
     # plot blue circles of the gaussian centroids found
@@ -376,7 +376,7 @@ def plot_features(analysis_obj, params_obj, outputdir, mode):
     else:
         print('invalid mode')
     plt.legend(loc='best')
-    output_path = os.path.join(outputdir, analysis_obj.filename.rstrip('.ciu') + '_features' + params_obj.allplot_1_extension)
+    output_path = os.path.join(outputdir, analysis_obj.filename.rstrip('.ciu') + '_features' + params_obj.x_allplot_1_extension)
     plt.savefig(output_path)
     plt.clf()
 
@@ -727,8 +727,9 @@ class Transition(object):
 
         # plot the initial CIU contour plot for reference
         if transition_num == 0:
-            plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap=params_obj.allplot_2_cmap)
-            if params_obj.allplot_3_show_colorbar:
+            plt.figure(dpi=params_obj.x_allplot_7_dpi)
+            plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap=params_obj.x_allplot_2_cmap)
+            if params_obj.x_allplot_3_show_colorbar:
                 plt.colorbar(ticks=[0, 1])
 
             # plot markers for the features/segments assigned
@@ -748,7 +749,7 @@ class Transition(object):
         plt.setp(trans_plot, linewidth=2)
 
         plt.legend(loc='best')
-        filename = os.path.basename(analysis_obj.filename).rstrip('.ciu') + '_transition' + params_obj.allplot_1_extension
+        filename = os.path.basename(analysis_obj.filename).rstrip('.ciu') + '_transition' + params_obj.x_allplot_1_extension
         output_path = os.path.join(outputdir, filename)
         plt.savefig(output_path)
 

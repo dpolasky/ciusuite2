@@ -17,7 +17,7 @@ hard_descripts_file = r"C:\CIUSuite2\CIU2_param_info.csv"
 #                       'ciuplot_1_x_title': 'title to display on x - axis of CIU plot',
 #                       'interpolation_bins': 'If provided, the data will be interpolated along the collision voltage axis to have the specified number of bins',
 #                       'ciuplot_2_y_title': 'title to display on y - axis of CIU plot',
-#                       'allplot_1_extension': 'file format in which to save CIU plot(acceptable values are .png, .pdf, .jpg)',
+#                       'x_allplot_1_extension': 'file format in which to save CIU plot(acceptable values are .png, .pdf, .jpg)',
 #                       'save_output_csv': 'Whether to write an _raw.csv output file with the processed data (True or False)',
 #                       'ciuplot_3_plot_title': 'Optional title for the plot. If provided, will label the plot with the title.',
 #
@@ -41,7 +41,7 @@ hard_descripts_file = r"C:\CIUSuite2\CIU2_param_info.csv"
 #               'smoothing_3_iterations': ('int', [0, np.inf]),
 #               'ciuplot_1_x_title': ('anystring', []),
 #               'ciuplot_2_y_title': ('anystring', []),
-#               'allplot_1_extension': ('string', ['.png', '.pdf', '.jpg']),
+#               'x_allplot_1_extension': ('string', ['.png', '.pdf', '.jpg']),
 #               'save_output_csv': ('bool', ['true', 'false']),
 #               'ciuplot_3_plot_title': ('anystring', [])
 #               }
@@ -140,11 +140,11 @@ class Parameters(object):
         self.ciuplot_4_cmap = None
         self.ciuplot_5_figwidth = None
         self.ciuplot_6_figheight = None
-        self.ciuplot_7_dpi = None
+        self.x_allplot_7_dpi = None
 
-        self.allplot_1_extension = None
-        self.allplot_2_cmap = None
-        self.allplot_3_show_colorbar = None
+        self.x_allplot_1_extension = None
+        self.x_allplot_2_cmap = None
+        self.x_allplot_3_show_colorbar = None
 
         # self.compare_plot_1_x_title = None
         # self.compare_plot_2_y_title = None
