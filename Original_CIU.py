@@ -27,6 +27,7 @@ def ciu_plot(analysis_obj, params_obj, output_dir):
     # save filename as plot title, unless a specific title is provided
     if params_obj.ciuplot_3_plot_title is not None:
         plot_title = params_obj.ciuplot_3_plot_title
+        plt.title(plot_title)
     else:
         plot_title = ''
     output_title = os.path.basename(analysis_obj.filename).rstrip('.ciu')
@@ -34,10 +35,11 @@ def ciu_plot(analysis_obj, params_obj, output_dir):
 
     plt.figure(figsize=(params_obj.ciuplot_5_figwidth, params_obj.ciuplot_6_figheight), dpi=params_obj.x_allplot_7_dpi)
 
-    plt.title(plot_title)
     plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap=params_obj.ciuplot_4_cmap)
-    plt.xlabel(params_obj.ciuplot_1_x_title)
-    plt.ylabel(params_obj.ciuplot_2_y_title)
+    plt.xlabel(params_obj.ciuplot_1_x_title, fontsize=16)
+    plt.ylabel(params_obj.ciuplot_2_y_title, fontsize=16)
+    plt.xticks(fontsize=16)
+    plt.yticks(fontsize=16)
     if params_obj.x_allplot_3_show_colorbar:
         plt.colorbar(ticks=[0, .25, .5, .75, 1])  # plot a colorbar
     plt.savefig(output_path)

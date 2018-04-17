@@ -333,9 +333,11 @@ class CrossValProduct(object):
             # create all combinations of specified training/test sizes from this class's data
             class_combo_list = []
             # class_ciu_data_list = [x.ciu_data for x in class_ciu_list]
-            training_size = len(class_ciu_list) - 1
-            for training_data_tuple, training_label_tuple in zip(itertools.combinations(class_ciu_list, training_size),
-                                                                 itertools.combinations(shaped_label_list[class_index], training_size)):
+
+            # training_size = len(class_ciu_list) - 1   # should be self.training_size
+
+            for training_data_tuple, training_label_tuple in zip(itertools.combinations(class_ciu_list, self.training_size),
+                                                                 itertools.combinations(shaped_label_list[class_index], self.training_size)):
                 # training_data_list = [x.ciu_data for x in training_data_tuple]
                 training_data_list = [get_classif_data(x, params_obj) for x in training_data_tuple]
 
@@ -372,22 +374,38 @@ def assemble_products(all_class_combination_lists):
             stacked_test_data.append(combo.test_data_final)
             stacked_test_labels.append(combo.test_labels_string)
 
-        stacked_train_data = np.vstack(np.vstack(x for x in stacked_train_data))
-        stacked_train_labels = np.concatenate(np.vstack(stacked_train_labels))
-        stacked_test_data = np.vstack(np.vstack(np.vstack(x for x in stacked_test_data)))
-        stacked_test_labels = np.concatenate(np.vstack(stacked_test_labels))
+        final_train_data, final_train_labels = [], []
+        for rep_index, replicate_data_list in enumerate(stacked_train_data):
+            for feature_data in replicate_data_list:
+                final_train_data.append(feature_data)
+            final_train_labels = np.concatenate((final_train_labels, stacked_train_labels[rep_index]))
+        final_train_data = np.asarray(final_train_data)
+        final_train_labels = np.asarray(final_train_labels)
 
+        final_test_data, final_test_labels = [], []
+        for rep_index, replicate_data_list in enumerate(stacked_test_data):
+            for feature_data in replicate_data_list:
+                final_test_data.append(feature_data)
+            final_test_labels = np.concatenate((final_test_labels, stacked_test_labels[rep_index]))
+        final_test_data = np.asarray(final_test_data)
+        final_test_labels = np.asarray(final_test_labels)
+
+        # stacked_train_data = np.vstack(np.vstack(x for x in stacked_train_data))
+        # stacked_train_labels = np.concatenate(np.vstack(stacked_train_labels))
+        # stacked_test_data = np.vstack(np.vstack(np.vstack(x for x in stacked_test_data)))
+        # stacked_test_labels = np.concatenate(np.vstack(stacked_test_labels))
+
+        # replacing 'stacked' with 'final' in all lines below
         enc = LabelEncoder()
-        enc.fit(stacked_train_labels)
+        enc.fit(final_train_labels)
 
-        numeric_label_train = enc.transform(stacked_train_labels) + 1
-        numeric_label_test = enc.transform(stacked_test_labels) + 1
+        numeric_label_train = enc.transform(final_train_labels) + 1
+        numeric_label_test = enc.transform(final_test_labels) + 1
 
-        train_score, test_score = lda_clf_pipeline(stacked_train_data, numeric_label_train,
-                                                   stacked_test_data, numeric_label_test)
+        train_score, test_score = lda_clf_pipeline(final_train_data, numeric_label_train,
+                                                   final_test_data, numeric_label_test)
         train_scores.append(train_score)
         test_scores.append(test_score)
-
 
     train_scores_mean = np.mean(train_scores)
     train_scores_std = np.std(train_scores)

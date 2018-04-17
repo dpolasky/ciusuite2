@@ -753,6 +753,9 @@ class CIUSuite2(object):
             if len(files) == 0:
                 print('classification canceled')
                 return
+            if len(files) < 3:
+                messagebox.showerror('Not Enough Files', 'At least 3 replicates are required for classification. Please select at least 3 files per class and try again.')
+                return
 
             obj_list = []
             for file in files:
