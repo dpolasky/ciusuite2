@@ -1064,7 +1064,7 @@ def plot_classification_decision_regions(class_scheme, output_path, unknown_tups
     :return:
     """
     markers = ('s', 'x', 'o', '^', 'v', 'D', '<', '>', '4', '8', 'h', 'H', '1', '2', '3', '+', '*', 'p', 'P')
-    colors = ['deepskyblue', 'mediumspringgreen', 'fuchsia', 'lightgreen', 'gray', 'cyan', 'yellow', 'magenta']
+    colors = ['fuchsia', 'deepskyblue', 'mediumspringgreen', 'lightgreen', 'gray', 'cyan', 'yellow', 'magenta']
     cmap = ListedColormap(colors[:len(class_scheme.unique_labels)])
     # decide whether the data has 1d or nds
     shape_lda = np.shape(class_scheme.transformed_test_data)
@@ -1093,8 +1093,8 @@ def plot_classification_decision_regions(class_scheme, output_path, unknown_tups
         if unknown_tups is not None:
             for ind, unknown_tup in enumerate(unknown_tups):
                 marklist = list(itertools.islice(itertools.cycle(markers), ind+1, ind+1+len(unknown_tups)))
-                plt.scatter(unknown_tup[0], np.zeros(np.shape(unknown_tup[0])), marker=marklist[ind], color='black', facecolors='none',
-                            alpha=1, label=unknown_tup[1])
+                plt.scatter(unknown_tup[0], np.zeros(np.shape(unknown_tup[0])), marker=markers[ind], color='black',
+                            alpha=0.5, label=unknown_tup[1])
 
     if shape_lda[1] == 2:
         x1_min, x1_max = np.floor(class_scheme.transformed_test_data[:, 0].min()), np.ceil(class_scheme.transformed_test_data[:, 0].max())
