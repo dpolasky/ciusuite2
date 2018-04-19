@@ -218,7 +218,7 @@ def find_nearest(array, value):
     :param value: value to find nearest index in the array
     :return: index (int) of closest match in the array
     """
-    idx = (np.abs(array - value)).argmin()
+    idx = (np.abs(np.asarray(array) - value)).argmin()
     return idx
 
 

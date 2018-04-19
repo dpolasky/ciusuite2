@@ -811,11 +811,36 @@ class CIUSuite2(object):
             #     self.progress_done()
 
             # Run the classification
-            self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
-            scheme = Classification.main_build_classification(data_labels, obj_list_by_label, self.params_obj, self.output_dir)
-            scheme.final_axis_cropvals = equalized_axes_list
-            scheme.num_gaussians = max_num_gaussians
-            Classification.save_scheme(scheme, self.output_dir)
+
+            if self.params_obj.classif_5_auto_featselect == 'automatic':
+                self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
+                scheme = Classification.main_build_classification(data_labels, obj_list_by_label, self.params_obj, self.output_dir)
+                scheme.final_axis_cropvals = equalized_axes_list
+                scheme.num_gaussians = max_num_gaussians
+                Classification.save_scheme(scheme, self.output_dir)
+            else:
+                # manual feature selection mode: run feature selection, pause, and THEN run LDA with user input
+                self.progress_print_text('Feature Evaluation in progress...', 50)
+                shaped_label_list = []
+                for index, label in enumerate(data_labels):
+                    shaped_label_list.append([label for _ in range(len(obj_list_by_label[index]))])
+
+                # run feature selection
+                Classification.univariate_feature_selection(shaped_label_list, obj_list_by_label, self.params_obj, self.output_dir)
+
+                # prompt for user input to select desired features
+                input_success_flag = False
+                selected_features = []
+                while not input_success_flag:
+                    input_success_flag, selected_features = parse_user_cvfeats_input()
+
+                # Run LDA using selected features
+                self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
+                scheme = Classification.main_build_classification(data_labels, obj_list_by_label, self.params_obj,
+                                                                  self.output_dir, known_feats=selected_features)
+                scheme.final_axis_cropvals = equalized_axes_list
+                scheme.num_gaussians = max_num_gaussians
+                Classification.save_scheme(scheme, self.output_dir)
 
         self.progress_done()
 
@@ -860,7 +885,7 @@ class CIUSuite2(object):
                 scheme_cvs = [x.cv for x in scheme.selected_features]
                 try:
                     analysis_obj_list = Raw_Processing.equalize_unk_axes_classif(analysis_obj_list, scheme.final_axis_cropvals, scheme_cvs)
-                except ValueError as err:
+                except (ValueError, TypeError) as err:
                     # raised when the exact CV from the scheme cannot be found in the unknown object. Warn user with dialog
                     messagebox.showerror('Axis Mismatch', message='{}. File: {}, CV: {}'.format(*err.args))
                     self.progress_done()
@@ -1075,6 +1100,33 @@ def check_axes_and_warn(loaded_obj_list):
                                                          'Data was interpolated and re-framed onto identical axes. '
                                                          'Please click OK to continue.')
     return equalized_file_list
+
+
+def parse_user_cvfeats_input():
+    """
+    Open a dialog to ask the user for manual feature selection input. Parse to values and return them
+    and a success flag if parsing succeeded. Intended to be run inside a flag-checking loop that exits
+    once successful parsing has been achieved.
+    :return: boolean (success flag), list of parsed values
+    """
+    parsed_values = []
+
+    user_input = simpledialog.askstring('Enter Collision Voltages to use for Classification', 'Enter the desired Collision Voltage(s), separated by commas. Use no characters other than numbers (decimals okay) and commas.')
+    splits = user_input.split(',')
+    for cv_split in splits:
+        try:
+            cv = float(cv_split)
+            parsed_values.append(cv)
+        except ValueError:
+            messagebox.showerror('Invalid Number', 'The entry {} is not a valid number. Please try again')
+            return False, parsed_values
+
+    # initialize a list of CFeatures using the parsed values
+    selected_features = []
+    for value in parsed_values:
+        selected_features.append(Classification.CFeature(value, None, None, None))
+
+    return True, selected_features
 
 
 def update_params_in_obj(analysis_obj, params_obj):

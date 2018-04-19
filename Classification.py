@@ -3,28 +3,6 @@ Module for classification schemes for CIU data groups
 Authors: Dan Polasky, Sugyan Dixit
 Date: 1/11/2018
 """
-import time
-
-from matplotlib.colors import ListedColormap
-from sklearn.preprocessing import LabelEncoder
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-# from matplotlib.backends.backend_pdf import PdfPages
-
-# from mlxtend.plotting import plot_sequential_feature_selection as plot_sfs
-from sklearn.metrics import precision_score
-# from mlxtend.feature_selection import SequentialFeatureSelector as SFS
-# from mlxtend.plotting import plot_sequential_feature_selection as plot_sfs
-# from sklearn.linear_model import LogisticRegression
-
-from sklearn.feature_selection import f_classif, GenericUnivariateSelect
-from sklearn.svm import SVC
-# from sklearn.linear_model import LogisticRegression
-# from sklearn.pipeline import Pipeline
-# from sklearn.ensemble import RandomForestClassifier
-# from sklearn.model_selection import cross_validate
-# from sklearn.metrics import roc_curve, auc
-# from scipy import interp
-
 from Gaussian_Fitting import Gaussian
 
 import numpy as np
@@ -32,8 +10,14 @@ import matplotlib.pyplot as plt
 import pickle
 import os
 import itertools
-# import sys
-import multiprocessing
+import time
+from matplotlib.colors import ListedColormap
+from sklearn.preprocessing import LabelEncoder
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.metrics import precision_score
+from sklearn.feature_selection import f_classif, GenericUnivariateSelect
+from sklearn.svm import SVC
+
 from typing import List
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -150,9 +134,6 @@ def save_lda_output_unk(list_transformed_data, list_filenames, list_feats, outpu
         lineheader = 'filename, feats,' + ','.join(str(x) for x in num_lds)
         outfile.write(lineheader + '\n')
         for index, (transformed_data, fname) in enumerate(zip(list_transformed_data, list_filenames)):
-            # num_lds = np.arange(1, len(transformed_data[0])+1)
-            # lineheader = 'filename, feats,' + ','.join(str(x) for x in num_lds)
-            # outfile.write(lineheader+'\n')
             for ind in range(len(transformed_data[:, 0])):
                 feats = str(features[ind])
                 joined_lds = ','.join([str(x) for x in transformed_data[ind]])
@@ -337,10 +318,8 @@ class CrossValProduct(object):
         for class_index, class_ciu_list in enumerate(self.data_list_by_label):
             # create all combinations of specified training/test sizes from this class's data
             class_combo_list = []
-            # class_ciu_data_list = [x.ciu_data for x in class_ciu_list]
 
-            # training_size = len(class_ciu_list) - 1   # should be self.training_size
-
+            # create all combinations of training and test data
             for training_data_tuple, training_label_tuple in zip(itertools.combinations(class_ciu_list, self.training_size),
                                                                  itertools.combinations(shaped_label_list[class_index], self.training_size)):
                 # training_data_list = [x.ciu_data for x in training_data_tuple]
@@ -677,7 +656,7 @@ def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_overrid
     return classif_data
 
 
-def main_build_classification(labels, analysis_obj_list_by_label, params_obj, output_dir):
+def main_build_classification(labels, analysis_obj_list_by_label, params_obj, output_dir, known_feats=None):
     """
     Main method for classification. Performs feature selection followed by LDA and classification
     and generates output and plots. Returns a ClassificationScheme object to be saved for future
@@ -688,6 +667,7 @@ def main_build_classification(labels, analysis_obj_list_by_label, params_obj, ou
     :param output_dir: directory in which to save plots/output
     :param params_obj: Parameters object with classification parameter information
     :type params_obj: Parameters
+    :param known_feats: list of
     :return: ClassificationScheme object with the generated scheme
     :rtype: ClassificationScheme
     """
@@ -696,12 +676,18 @@ def main_build_classification(labels, analysis_obj_list_by_label, params_obj, ou
     for index, label in enumerate(labels):
         shaped_label_list.append([label for _ in range(len(analysis_obj_list_by_label[index]))])
 
-    # run feature selection
-    all_features = univariate_feature_selection(shaped_label_list, analysis_obj_list_by_label, params_obj, output_dir)
+    if known_feats is None:
+        # run feature selection and crossvalidation to select best features automatically
+        all_features = univariate_feature_selection(shaped_label_list, analysis_obj_list_by_label, params_obj, output_dir)
 
-    # assess all features to determine which to use in the final scheme
-    # best_features = all_feature_crossval_lda(all_features, analysis_obj_list_by_label, shaped_label_list, output_dir)
-    best_features, crossval_score, all_crossval_data = crossval_main(analysis_obj_list_by_label, labels, output_dir, params_obj, all_features)
+        # assess all features to determine which to use in the final scheme
+        # best_features = all_feature_crossval_lda(all_features, analysis_obj_list_by_label, shaped_label_list, output_dir)
+        best_features, crossval_score, all_crossval_data = crossval_main(analysis_obj_list_by_label, labels, output_dir, params_obj, all_features)
+    else:
+        # Manual mode: use the provided features and don't run crossvalidation
+        best_features = known_feats
+        crossval_score = None
+        all_crossval_data = None
 
     # perform LDA and classification on the selected/best features
     constructed_scheme = lda_ufs_best_features(best_features, analysis_obj_list_by_label, shaped_label_list, params_obj, output_dir)
@@ -802,12 +788,6 @@ def crossval_main(analysis_obj_list_by_label, labels, outputdir, params_obj, fea
     train_score_stds = []
     test_score_means = []
     test_score_stds = []
-
-
-    # num_cores = multiprocessing.cpu_count() - 1
-    num_cores = 3
-    # print(num_cores)
-    # pool = multiprocessing.Pool(num_cores)
     results = []
 
     time_start = time.time()
@@ -819,11 +799,9 @@ def crossval_main(analysis_obj_list_by_label, labels, outputdir, params_obj, fea
         crossval_obj = CrossValProduct(analysis_obj_list_by_label, labels, training_size, current_features_list)
         crossval_combos = crossval_obj.assemble_class_combinations(params_obj)
         result = assemble_products(crossval_combos)
-        # result = pool.apply_async(func=assemble_products, args=[crossval_combos])
         results.append(result)
 
     for result in results:
-        # output = result.get()
         output = result
 
         # get scores and plot and stuff
@@ -831,8 +809,6 @@ def crossval_main(analysis_obj_list_by_label, labels, outputdir, params_obj, fea
         train_score_stds.append(output[1])
         test_score_means.append(output[2])
         test_score_stds.append(output[3])
-
-
     print('classification done in {:.2f}'.format(time.time() - time_start))
 
     train_score_means = np.array(train_score_means)
@@ -938,7 +914,7 @@ def arrange_data_for_lda(flat_data_matrix_list, flat_label_list, features_list, 
             for index, data_cv in enumerate(cvfeats_list):
                 # get the correct index of the data_cv in the current raw data matrix
                 current_cv_axis = flat_axes_list[data_index]
-                this_cv_correct_index = (np.abs(current_cv_axis - data_cv)).argmin()
+                this_cv_correct_index = (np.abs(np.asarray(current_cv_axis) - data_cv)).argmin()
 
                 # use the correct index to find the raw data at this CV
                 lda_ciu_data.append(flat_data_matrix_list[data_index].T[this_cv_correct_index])

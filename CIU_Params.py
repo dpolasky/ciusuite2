@@ -185,6 +185,7 @@ class Parameters(object):
         self.classif_2_score_dif_tol = None
         self.classif_3_mode = None
         self.classif_4_data_structure = None
+        self.classif_5_auto_featselect = None
         self.silent_clf_4_num_gauss = None
 
     def set_params(self, params_dict):
