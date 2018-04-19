@@ -857,7 +857,13 @@ class CIUSuite2(object):
                 scheme = Classification.load_scheme(scheme_file)
 
                 # check axes against Scheme's saved axes and equalize if needed
-                analysis_obj_list, equalized_axes = Raw_Processing.equalize_axes(analysis_obj_list, scheme.final_axis_cropvals)
+                scheme_cvs = [x.cv for x in scheme.selected_features]
+                try:
+                    analysis_obj_list = Raw_Processing.equalize_unk_axes_classif(analysis_obj_list, scheme.final_axis_cropvals, scheme_cvs)
+                except ValueError as err:
+                    # raised when the exact CV from the scheme cannot be found in the unknown object. Warn user with dialog
+                    messagebox.showerror('Axis Mismatch', message='{}. File: {}, CV: {}'.format(*err.args))
+                    self.progress_done()
 
                 # analyze unknowns using the scheme and save outputs
                 successful_objs_for_plot = []
@@ -889,8 +895,8 @@ class CIUSuite2(object):
                     # analysis_obj.classif_predicted_outputs = prediction_outputs
                     successful_objs_for_plot.append(analysis_obj)
 
-                    filename = save_analysis_obj(analysis_obj, params_obj=self.params_obj, outputdir=self.output_dir)
-                    new_file_list.append(filename)
+                    # filename = save_analysis_obj(analysis_obj, params_obj=self.params_obj, outputdir=self.output_dir)
+                    # new_file_list.append(filename)
                     self.update_progress(analysis_obj_list.index(analysis_obj), len(analysis_obj_list))
 
                 if len(successful_objs_for_plot) > 0:

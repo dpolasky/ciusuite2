@@ -96,7 +96,7 @@ class ClassificationScheme(object):
         unk_ciudata = get_classif_data(unk_ciu_obj, params_obj, ufs_mode=False, num_gauss_override=self.num_gaussians)
 
         # Assemble feature data for fitting
-        unk_input_x, fake_labels, filenames, input_feats = arrange_data_for_lda([unk_ciudata], unk_label, self.selected_features, [unk_ciu_obj.short_filename], method=params_obj.classif_4_data_structure)
+        unk_input_x, fake_labels, filenames, input_feats = arrange_data_for_lda([unk_ciudata], unk_label, self.selected_features, [unk_ciu_obj.axes[1]],[unk_ciu_obj.short_filename], method=params_obj.classif_4_data_structure)
 
         # if params_obj.classif_3_mode == 'Gaussian':
         #     unk_input_x = np.asarray(unk_input_x).T
@@ -112,8 +112,6 @@ class ClassificationScheme(object):
         unk_ciu_obj.classif_probs_by_cv = pred_probs_by_cv
         unk_ciu_obj.classif_probs_avg = pred_probs_avg
         unk_ciu_obj.classif_transformed_data = unknown_transformed_lda
-
-
 
         unknown_plot_info = [(unknown_transformed_lda, unk_ciu_obj.short_filename)]
         plot_classification_decision_regions(self, output_path, unknown_tups=unknown_plot_info, filename=unk_ciu_obj.short_filename)
@@ -136,6 +134,14 @@ class ClassificationScheme(object):
 
 
 def save_lda_output_unk(list_transformed_data, list_filenames, list_feats, output_path):
+    """
+    from Suggie
+    :param list_transformed_data:
+    :param list_filenames:
+    :param list_feats:
+    :param output_path:
+    :return:
+    """
     outputname = 'output_lda_unk.csv'
     output_final = os.path.join(output_path, outputname)
     features = [x.cv for x in list_feats]
@@ -194,7 +200,6 @@ def save_lda_output(transformed_data, filenames, input_feats, output_path, expla
                 line2 = 'Explained_variance_ratio, {},\n'.format(joined_exp_var)
                 outfile.write(line2)
         outfile.close()
-
 
 
 def save_predictions(list_of_analysis_objs, params_obj, features_list, class_labels, output_path):
@@ -340,14 +345,16 @@ class CrossValProduct(object):
                                                                  itertools.combinations(shaped_label_list[class_index], self.training_size)):
                 # training_data_list = [x.ciu_data for x in training_data_tuple]
                 training_data_list = [get_classif_data(x, params_obj) for x in training_data_tuple]
+                training_cv_axes = [x.axes[1] for x in training_data_tuple]
 
                 test_data_list = [x for x in class_ciu_list if x not in training_data_tuple]
+                test_cv_axes = [x.axes[1] for x in test_data_list]
                 test_data_list = [get_classif_data(x, params_obj) for x in test_data_list]
                 # [self.test_labels_tup[test_index] for _ in range(len((test_data[0])))]
                 test_label_list = [shaped_label_list[class_index][0] for _ in range(len(test_data_list))]
 
                 # create Train/Test DataProduct for this combination
-                current_combo = DataCombination(training_data_list, training_label_tuple, test_data_list, test_label_list)
+                current_combo = DataCombination(training_data_list, training_label_tuple, training_cv_axes, test_data_list, test_label_list, test_cv_axes)
                 current_combo.prepare_data(self.features, params_obj)
                 class_combo_list.append(current_combo)
 
@@ -422,18 +429,22 @@ class DataCombination(object):
     Training and test datasets can be of arbitrary size. Holds corresponding label arrays of same shape as
     train/test data.
     """
-    def __init__(self, train_data, train_labels, test_data, test_labels):
+    def __init__(self, train_data, train_labels, train_cv_axes, test_data, test_labels, test_cv_axes):
         """
 
         :param train_data: n-length tuple containing ciu datasets for training
         :param train_labels: same shape tuple with labels
+        :param train_cv_axes: CV axes for all ciu training datasets (same shape as train_data)
         :param test_data: n-length tuple containing ciu datasets for testing
         :param test_labels: same shape tuple with labels
+        :param test_cv_axes: CV axes for all ciu test datasets (same shape as test_data)
         """
         self.training_data_tup = train_data
         self.training_labels_tup = train_labels
+        self.training_cv_axes = train_cv_axes
         self.test_data_tup = test_data
         self.test_labels_tup = test_labels
+        self.test_cv_axes = test_cv_axes
 
         self.training_data_final = []
         self.training_labels_string = []
@@ -448,8 +459,8 @@ class DataCombination(object):
         :type params_obj: Parameters
         :return: void
         """
-        train_data_final, train_labels_final, empty_filenames, final_cvs = arrange_data_for_lda(self.training_data_tup, self.training_labels_tup, features_list, method=params_obj.classif_4_data_structure)
-        test_data_final, test_labels_final, empty_filenames2, final_cvs = arrange_data_for_lda(self.test_data_tup, self.test_labels_tup, features_list, method=params_obj.classif_4_data_structure)
+        train_data_final, train_labels_final, empty_filenames, final_cvs = arrange_data_for_lda(self.training_data_tup, self.training_labels_tup, features_list, self.training_cv_axes, method=params_obj.classif_4_data_structure)
+        test_data_final, test_labels_final, empty_filenames2, final_cvs = arrange_data_for_lda(self.test_data_tup, self.test_labels_tup, features_list, self.test_cv_axes, method=params_obj.classif_4_data_structure)
 
         self.training_data_final = train_data_final
         self.training_labels_string = train_labels_final
@@ -900,7 +911,7 @@ def plot_crossval_scores(crossval_data, outputdir):
     plt.close()
 
 
-def arrange_data_for_lda(flat_data_matrix_list, flat_label_list, features_list, flat_filenames=None, method='flat'):
+def arrange_data_for_lda(flat_data_matrix_list, flat_label_list, features_list, flat_axes_list, flat_filenames=None, method='flat'):
     """
     Prepare data for LDA by arranging selected CV columns (from the original matrix) into
     the desired shape. Multiple options supported at this time, will likely choose best eventually.
@@ -908,29 +919,43 @@ def arrange_data_for_lda(flat_data_matrix_list, flat_label_list, features_list, 
     :param flat_label_list: list of class labels corresponding to input data, in same shape as flat_data_matrix
     :param features_list: list of Features (collision voltage indicies) to use
     :type features_list: list[CFeature]
+    :param flat_axes_list: list of CV axes for each dataset in flat_data_matrix_list to enable correct indexing
     :param flat_filenames: (optional) list of filenames in same shape as flat label list. If provided, filenames are returned
     :param method: 'flat' or 'stacked': whether to assemble features in a single list per datafile (flat) or in separate lists (stacked)
     :return: assembled raw data list, assembled labels list - ready for LDA as x, y
     """
+    # indices of CVs from the ORIGINAL scheme - may NOT be the correct indices in unknown data
     cvfeat_index_list = [x.cv_index for x in features_list]
+    # actual CVs used in original scheme - must be the same in all data
     cvfeats_list = [x.cv for x in features_list]
 
     lda_ciu_data, lda_label_data, lda_filenames, lda_feat_cvs = [], [], [], []
 
     if method == 'stacked':
-        # OLD WAY
         # loop over each replicate of data provided
         for data_index in range(len(flat_data_matrix_list)):
             # loop over each feature (collision voltage) desired, saving the requested data in appropriate form
-            for index, data_cv_index in enumerate(cvfeat_index_list):
-                lda_ciu_data.append(flat_data_matrix_list[data_index].T[data_cv_index])
+            for index, data_cv in enumerate(cvfeats_list):
+                # get the correct index of the data_cv in the current raw data matrix
+                current_cv_axis = flat_axes_list[data_index]
+                this_cv_correct_index = (np.abs(current_cv_axis - data_cv)).argmin()
+
+                # use the correct index to find the raw data at this CV
+                lda_ciu_data.append(flat_data_matrix_list[data_index].T[this_cv_correct_index])
                 lda_label_data.append(flat_label_list[data_index])
                 if flat_filenames is not None:
                     lda_filenames.append(flat_filenames[data_index])
-                lda_feat_cvs.append(cvfeats_list[index])
+                lda_feat_cvs.append(data_cv)
+
+            # for index, data_cv_index in enumerate(cvfeat_index_list):
+            #     lda_ciu_data.append(flat_data_matrix_list[data_index].T[data_cv_index])
+            #     lda_label_data.append(flat_label_list[data_index])
+            #     if flat_filenames is not None:
+            #         lda_filenames.append(flat_filenames[data_index])
+            #     lda_feat_cvs.append(cvfeats_list[index])
 
     elif method == 'flat':
-        # NEW WAY
+        # NEW WAY - actually worse. Will likely be deprecated
         for data_index in range(len(flat_data_matrix_list)):
             # for this method, there is only one label/etc per replicate - so these can be assembled outside the feature loop
             lda_label_data.append(flat_label_list[data_index])
@@ -939,8 +964,14 @@ def arrange_data_for_lda(flat_data_matrix_list, flat_label_list, features_list, 
 
             # loop over each feature (collision voltage) desired, saving the requested data in appropriate form
             rep_data = []
-            for index, data_cv_index in enumerate(cvfeat_index_list):
-                rep_data.extend(flat_data_matrix_list[data_index].T[data_cv_index])
+            for index, data_cv in enumerate(cvfeats_list):
+                # get the correct index of the data_cv in the current raw data matrix
+                current_cv_axis = flat_axes_list[data_index]
+                this_cv_correct_index = (np.abs(current_cv_axis - data_cv)).argmin()
+                rep_data.extend(flat_data_matrix_list[data_index].T[this_cv_correct_index])
+
+            # for index, data_cv_index in enumerate(cvfeat_index_list):
+            #     rep_data.extend(flat_data_matrix_list[data_index].T[data_cv_index])
             lda_ciu_data.append(rep_data)
 
     else:
@@ -992,9 +1023,10 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
     flat_ciuraw_list = [get_classif_data(x, param_obj) for label_obj_list in analysis_obj_list_by_label for x in label_obj_list]
     flat_label_list = [x for label_list in shaped_label_list for x in label_list]
     flat_filename_list = [x.short_filename for class_list in analysis_obj_list_by_label for x in class_list]
+    flat_cv_axes = [x.axes[1] for label_obj_list in analysis_obj_list_by_label for x in label_obj_list]
 
     # create a concatenated array with the selected CV columns from each raw dataset
-    input_x_ciu_data, input_label_data, input_filenames, input_feats = arrange_data_for_lda(flat_ciuraw_list, flat_label_list, features_list, flat_filename_list, method=param_obj.classif_4_data_structure)
+    input_x_ciu_data, input_label_data, input_filenames, input_feats = arrange_data_for_lda(flat_ciuraw_list, flat_label_list, features_list, flat_cv_axes, flat_filename_list, method=param_obj.classif_4_data_structure)
 
     # finalize input data for LDA
     input_x_ciu_data = np.asarray(input_x_ciu_data)

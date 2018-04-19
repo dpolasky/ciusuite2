@@ -271,6 +271,7 @@ def crop(analysis_obj, crop_vals):
 
     # save output to a new analysis object (clears fitting results/etc that can fail if axes are different)
     new_obj = CIUAnalysisObj(analysis_obj.raw_obj, ciu_data_matrix, new_axes, analysis_obj.params)
+    # new_obj.short_filename = analysis_obj.short_filename + '_crop'
 
     return new_obj
 
@@ -308,6 +309,53 @@ def average_ciu(list_of_data_matrices):
     std_matrix = np.std(list_of_data_matrices, axis=0)
 
     return avg_matrix, std_matrix
+
+
+def equalize_unk_axes_classif(flat_unknown_list, crop_vals_plus_flag, scheme_cvs_list):
+    """
+    Specialized equalization method for unknown classification data. Equalizes DT axis by cropping,
+    and reduces CV axis to only the selected voltages in the scheme.
+    :param flat_unknown_list: list of CIUAnalysis objects to be equalized
+    :type flat_unknown_list: list[CIUAnalysisObj]
+    :param crop_vals_plus_flag: crop values from the Scheme to equalize to
+    :param scheme_cvs_list: List of CFeatures from the scheme
+    :type scheme_cvs_list: list[CFeature]
+    :return: updated object list with axes cropped (if needed)
+    :rtype: list[CIUAnalysisObj]
+    """
+    output_obj_list = []
+
+    # adjust ALL files to the same final axes
+    for analysis_obj in flat_unknown_list:
+        # crop DT
+        dt_start = find_nearest(analysis_obj.axes[0], crop_vals_plus_flag[0])
+        dt_end = find_nearest(analysis_obj.axes[0], crop_vals_plus_flag[1])
+
+        ciu_data_matrix = analysis_obj.ciu_data[dt_start:dt_end + 1]
+        dt_axis = analysis_obj.axes[0][dt_start:dt_end + 1]
+
+        # edit CV to only include the CVs from the scheme CV list
+        final_ciu_matrix = []
+        ciu_data_matrix = ciu_data_matrix.T     # transpose to access CV columns
+        cv_axis = []
+        for cv in scheme_cvs_list:
+            # Get the index of this collision voltage in the object and add that column of the ciu_data to the output
+            cv_index = find_nearest(analysis_obj.axes[1], cv)
+
+            # make sure this is an exact match
+            if not analysis_obj.axes[1][cv_index] == cv:
+                raise ValueError('Unknown CV axis does not have a value required for this classification scheme. Classification cannot be performed', analysis_obj.short_filename, cv)
+
+            final_ciu_matrix.append(ciu_data_matrix[cv_index])
+            cv_axis.append(cv)
+
+        new_axes = [dt_axis, cv_axis]
+        final_ciu_matrix = np.asarray(final_ciu_matrix).T
+        output_obj = CIUAnalysisObj(analysis_obj.raw_obj, final_ciu_matrix, new_axes, analysis_obj.params)
+        output_obj.short_filename = analysis_obj.short_filename
+        output_obj_list.append(output_obj)
+
+    return output_obj_list
 
 
 def equalize_axes(flat_analysisobj_list, crop_vals_plus_flag=None):
@@ -367,14 +415,17 @@ def equalize_axes(flat_analysisobj_list, crop_vals_plus_flag=None):
             adjust_flag = True
 
     if adjust_flag:
-        print('Axes differed in some files; interpolating to equalize...')
+        print('Axes differed in some files; cropping to equalize...')
         output_obj_list = []
         # adjust ALL files to the same final axes
         crop_vals = [dt_start_min, dt_start_max, cv_start_min, cv_start_max, max_len_dt, max_len_cv]
         for analysis_obj in flat_analysisobj_list:
-            new_dt_axis = np.linspace(dt_start_min, dt_start_max, max_len_dt)
-            new_cv_axis = np.linspace(cv_start_min, cv_start_max, max_len_cv)
-            analysis_obj = interpolate_axes(analysis_obj, new_axes=[new_dt_axis, new_cv_axis])
+            print('Cropping to equalize in file {}'.format(analysis_obj.short_filename))
+            analysis_obj = crop(analysis_obj, crop_vals[0:4])
+
+            # new_dt_axis = np.linspace(dt_start_min, dt_start_max, max_len_dt)
+            # new_cv_axis = np.linspace(cv_start_min, cv_start_max, max_len_cv)
+            # analysis_obj = interpolate_axes(analysis_obj, new_axes=[new_dt_axis, new_cv_axis])
             output_obj_list.append(analysis_obj)
         crop_vals_plus_flag = crop_vals
         crop_vals_plus_flag.append(True)
