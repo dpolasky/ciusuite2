@@ -434,6 +434,83 @@ def equalize_axes(flat_analysisobj_list, crop_vals_plus_flag=None):
         return flat_analysisobj_list, crop_vals_plus_flag
 
 
+def check_axes_crop(analysis_obj_list):
+    """
+    Interrogate all CIUAnalysisObjs in the provided list to determine the shared dimensions in all files to use for
+    cropping to a shared axis. Interpolation done separately to avoid interpolating in cases where objects have
+    different size axes but the same voltage step.
+    :param analysis_obj_list: list of CIUAnalysis objects
+    :type analysis_obj_list: list[CIUAnalysisObj]
+    :return: [dt_start, dt_end, cv_start, cv_end] Maximum dimension DT/CV axes that are shared amongst all files
+    """
+    # Dimensions to crop to (maximum shared area amongst all fingerprints)
+    dt_start_max = 0
+    dt_end_min = 0
+    cv_start_max = 0
+    cv_end_min = 0
+    # take the smaller dimension as the shared area (e.g. if a file only goes to 100V and others go to 110V, sharing stops at 100V)
+    for analysis_obj in analysis_obj_list:
+        if analysis_obj.axes[0][0] > dt_start_max:
+            dt_start_max = analysis_obj.axes[0][0]
+        if analysis_obj.axes[0][len(analysis_obj.axes[0]) - 1] < dt_end_min:
+            dt_end_min = analysis_obj.axes[0][len(analysis_obj.axes[0]) - 1]
+        if analysis_obj.axes[1][0] > cv_start_max:
+            cv_start_max = analysis_obj.axes[1][0]
+        if analysis_obj.axes[1][len(analysis_obj.axes[1]) - 1] < cv_end_min:
+            cv_end_min = analysis_obj.axes[1][len(analysis_obj.axes[1]) - 1]
+
+    return [dt_start_max, dt_end_min, cv_start_max, cv_end_min]
+
+
+def check_axes_interp(list_of_analysis_objs):
+    """
+    Check all objects in the provided list for whether their axes have the same spacing. Increases the number of bins
+    to the maximum in all files if there are any differences.
+    NOTE: should be called AFTER check_axes_crop to ensure that axes are beginning and ending in the same place.
+    :param list_of_analysis_objs: list of CIUAnalysis objects
+    :type list_of_analysis_objs: list[CIUAnalysisObj]
+    :return: [dt_axis, cv_axis] optimized axes starting and ending in the same place and with identical bin spacing
+    """
+    max_dt_bins = 0
+    max_cv_bins = 0
+    # determine the maximum number of bins on the axes in all files
+    for analysis_obj in list_of_analysis_objs:
+        if len(analysis_obj.axes[0]) > max_dt_bins:
+            max_dt_bins = len(analysis_obj.axes[0])
+        if len(analysis_obj.axes[1]) > max_cv_bins:
+            max_cv_bins = len(analysis_obj.axes[1])
+
+    # assemble finalized axes
+    start_dt = list_of_analysis_objs[0].axes[0][0]
+    end_dt = list_of_analysis_objs[0].axes[0][len(list_of_analysis_objs[0].axes[0])]
+    start_cv = list_of_analysis_objs[0].axes[1][0]
+    end_cv = list_of_analysis_objs[0].axes[1][len(list_of_analysis_objs[0].axes[1])]
+    shared_dt_axis = np.linspace(start_dt, end_dt, max_dt_bins)
+    shared_cv_axis = np.linspace(start_cv, end_cv, max_cv_bins)
+    return [shared_dt_axis, shared_cv_axis]
+
+
+def equalize_obj(analysis_obj, final_axes):
+    """
+    Adjust the axes of a CIUAnalysis object to a set of finalized axes (provided). Crops first, then interpolates
+    :param analysis_obj: object to adjust
+    :type analysis_obj: CIUAnalysisObj
+    :param final_axes: [dt_axis, cv_axis] final axes to adjust to.
+    :return: updated analysis_obj
+    :rtype: CIUAnalysisObj
+    """
+    if np.array_equal(analysis_obj.axes[0], final_axes[0]) and np.array_equal(analysis_obj.axes[1], final_axes[1]):
+        return analysis_obj
+    else:
+        # axes are not equal, adjust to match. Crop first:
+        crop_vals = [analysis_obj.axes[0][0], analysis_obj.axes[0][len(analysis_obj.axes[0])], analysis_obj.axes[1][0], analysis_obj.axes[1][len(analysis_obj.axes[1])]]
+        analysis_obj = crop(analysis_obj, crop_vals)
+
+        # once axes have been cropped, interpolate to match the final values
+        analysis_obj = interpolate_axes(analysis_obj, final_axes)
+        return analysis_obj
+
+
 def equalize_axes_2d_list(analysis_obj_list_by_label):
     """
     Axis checking method for 2D lists (e.g. in classification) where list order/shape must be
@@ -443,13 +520,31 @@ def equalize_axes_2d_list(analysis_obj_list_by_label):
     :return: updated list of lists with axes equalized
     :rtype: list[list[CIUAnalysisObj]], output_axes_list
     """
-    output_list_by_label = []
-    crop_vals_to_equalize = None
-    for analysis_obj_list in analysis_obj_list_by_label:
-        output_list, crop_vals_to_equalize = equalize_axes(analysis_obj_list, crop_vals_to_equalize)
+    flat_obj_list = [x for analysis_obj_list in analysis_obj_list_by_label for x in analysis_obj_list]
 
-    # loop through a second time in case any changes occurred in later lists (e.g. if list 2 is cropped, this will also get list 1)
-    for analysis_obj_list in analysis_obj_list_by_label:
-        output_list, crop_vals_to_equalize = equalize_axes(analysis_obj_list, crop_vals_to_equalize)
-        output_list_by_label.append(output_list)
-    return output_list_by_label, crop_vals_to_equalize
+    # check axes for cropping (ensure that region of interest is equal)
+    crop_vals = check_axes_crop(flat_obj_list)
+    interp_list = []
+    for analysis_obj in flat_obj_list:
+        crop_obj = crop(analysis_obj, crop_vals)
+        interp_list.append(crop_obj)
+
+    # Check region-equalized axes for differences in bin spacing and interpolate if any are found
+    final_axes = check_axes_interp(flat_obj_list)
+
+    for obj_list in analysis_obj_list_by_label:
+        for analysis_obj in obj_list:
+            analysis_obj = equalize_obj(analysis_obj, final_axes)
+
+    return analysis_obj_list_by_label
+
+    # output_list_by_label = []
+    # crop_vals_to_equalize = None
+    # for analysis_obj_list in analysis_obj_list_by_label:
+    #     output_list, crop_vals_to_equalize = equalize_axes(analysis_obj_list, crop_vals_to_equalize)
+    #
+    # # loop through a second time in case any changes occurred in later lists (e.g. if list 2 is cropped, this will also get list 1)
+    # for analysis_obj_list in analysis_obj_list_by_label:
+    #     output_list, crop_vals_to_equalize = equalize_axes(analysis_obj_list, crop_vals_to_equalize)
+    #     output_list_by_label.append(output_list)
+    # return output_list_by_label, crop_vals_to_equalize
