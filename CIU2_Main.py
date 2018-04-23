@@ -158,7 +158,12 @@ class CIUSuite2(object):
 
             # run raw processing
             for raw_file in raw_files:
-                raw_obj = generate_raw_obj(raw_file)
+                # todo: add exception handling here in case of bad raw files (?)
+                try:
+                    raw_obj = generate_raw_obj(raw_file)
+                except ValueError as err:
+                    messagebox.showerror('Data Import Error', message='{}{}. Problem: {}. Press OK to continue'.format(*err.args))
+                    continue
                 analysis_obj = process_raw_obj(raw_obj, self.params_obj)
                 analysis_filename = save_analysis_obj(analysis_obj, self.params_obj, os.path.dirname(raw_obj.filepath))
                 self.analysis_file_list.append(analysis_filename)

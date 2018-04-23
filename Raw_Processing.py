@@ -5,6 +5,7 @@ Date: 10/6/2017
 """
 
 import numpy as np
+import os
 import scipy.signal
 import scipy.interpolate
 from CIU_raw import CIURaw
@@ -19,11 +20,24 @@ def get_data(fname):
     :rtype: CIURaw
     :return: CIURaw object with rawdata, axes, and filename initialized
     """
-    # TODO: ADD ROBUST ERROR CHECKING HERE
-    rawdata = np.genfromtxt(fname, missing_values=[""], filling_values=[0], delimiter=",")
+    try:
+        rawdata = np.genfromtxt(fname, missing_values=[""], filling_values=[0], delimiter=",")
+    except ValueError:
+        # bad characters in file, or other numpy import errors
+        raise ValueError('Data import error in File: ', os.path.basename(fname), 'Illegal characters or other error in importing data. This file will NOT be processed')
     row_axis = rawdata[1:, 0]
     col_axis = rawdata[0, 1:]
+
+    # check for duplicate values in axes
+    unique_row, row_counts = np.unique(row_axis, return_counts=True)
+    if np.max(row_counts) > 1:
+        raise ValueError('Data import error in File: ', os.path.basename(fname), 'Duplicate row (DT) values. This file will NOT be processed')
+    unique_col, col_counts = np.unique(col_axis, return_counts=True)
+    if np.max(col_counts) > 1:
+        raise ValueError('Data import error in File: ', os.path.basename(fname), 'Duplicate column (CV) values. This file will NOT be processed.')
+
     raw_obj = CIURaw(rawdata[1:, 1:], row_axis, col_axis, fname)
+
     return raw_obj
 
 
@@ -311,15 +325,14 @@ def average_ciu(list_of_data_matrices):
     return avg_matrix, std_matrix
 
 
-def equalize_unk_axes_classif(flat_unknown_list, crop_vals_plus_flag, scheme_cvs_list):
+def equalize_unk_axes_classif(flat_unknown_list, final_axes, scheme_cvs_list):
     """
     Specialized equalization method for unknown classification data. Equalizes DT axis by cropping,
     and reduces CV axis to only the selected voltages in the scheme.
     :param flat_unknown_list: list of CIUAnalysis objects to be equalized
     :type flat_unknown_list: list[CIUAnalysisObj]
-    :param crop_vals_plus_flag: crop values from the Scheme to equalize to
-    :param scheme_cvs_list: List of CFeatures from the scheme
-    :type scheme_cvs_list: list[CFeature]
+    :param final_axes: crop values from the Scheme to equalize to
+    :param scheme_cvs_list: List of collision voltage values (floats) from the classification scheme being used
     :return: updated object list with axes cropped (if needed)
     :rtype: list[CIUAnalysisObj]
     """
@@ -327,16 +340,25 @@ def equalize_unk_axes_classif(flat_unknown_list, crop_vals_plus_flag, scheme_cvs
 
     # adjust ALL files to the same final axes
     for analysis_obj in flat_unknown_list:
-        # crop DT
-        dt_start = find_nearest(analysis_obj.axes[0], crop_vals_plus_flag[0])
-        dt_end = find_nearest(analysis_obj.axes[0], crop_vals_plus_flag[1])
+        # todo: add this line (below) and then crop CV? OR leave alone and just adjust since crop_vals_plus_flag is now just final_axes
+        # analysis_obj = equalize_obj(analysis_obj, crop_vals_plus_flag)
 
-        ciu_data_matrix = analysis_obj.ciu_data[dt_start:dt_end + 1]
-        dt_axis = analysis_obj.axes[0][dt_start:dt_end + 1]
+        # interpolate DT axis ONLY - leave CV axis alone by passing the existing CV axis as the "new" axis
+        adjusted_axes = [final_axes[0], analysis_obj.axes[1]]
+        analysis_obj = interpolate_axes(analysis_obj, adjusted_axes)
+
+        # Remove all CVs except those required by the scheme (raises errors if those are not found)
+
+        # crop DT
+        # dt_start = find_nearest(analysis_obj.axes[0], crop_vals_plus_flag[0])
+        # dt_end = find_nearest(analysis_obj.axes[0], crop_vals_plus_flag[1])
+        #
+        # ciu_data_matrix = analysis_obj.ciu_data[dt_start:dt_end + 1]
+        # dt_axis = analysis_obj.axes[0][dt_start:dt_end + 1]
 
         # edit CV to only include the CVs from the scheme CV list
         final_ciu_matrix = []
-        ciu_data_matrix = ciu_data_matrix.T     # transpose to access CV columns
+        ciu_data_matrix = analysis_obj.ciu_data.T     # transpose to access CV columns
         cv_axis = []
         for cv in scheme_cvs_list:
             # Get the index of this collision voltage in the object and add that column of the ciu_data to the output
@@ -349,89 +371,89 @@ def equalize_unk_axes_classif(flat_unknown_list, crop_vals_plus_flag, scheme_cvs
             final_ciu_matrix.append(ciu_data_matrix[cv_index])
             cv_axis.append(cv)
 
-        new_axes = [dt_axis, cv_axis]
-        final_ciu_matrix = np.asarray(final_ciu_matrix).T
+        new_axes = [adjusted_axes[0], cv_axis]  # preserve the adjusted DT axis as well as the new CV axis
+        final_ciu_matrix = np.asarray(final_ciu_matrix).T   # tranpose back to original dimensions
         output_obj = CIUAnalysisObj(analysis_obj.raw_obj, final_ciu_matrix, new_axes, analysis_obj.params)
         output_obj.short_filename = analysis_obj.short_filename
         output_obj_list.append(output_obj)
 
     return output_obj_list
 
-
-def equalize_axes(flat_analysisobj_list, crop_vals_plus_flag=None):
-    """
-    Ensure that all objects have identical axes. If not, crop to the smallest shared
-    region and interpolate so that all axes are identical. Return updated obj list
-    :param flat_analysisobj_list: flat list of CIUAnalysisObj's
-    :type flat_analysisobj_list: list[CIUAnalysisObj]
-    :param crop_vals_plus_flag: list of previously saved axis values to enable comparison across lists
-    :return: updated object list with equalized axes, list of final cropping values used
-    :rtype: list[CIUAnalysisObj], list
-    """
-    if crop_vals_plus_flag is None:
-        base_axes = flat_analysisobj_list[0].axes
-        dt_start_min = base_axes[0][0]
-        dt_start_max = base_axes[0][len(base_axes[0]) - 1]
-        cv_start_min = base_axes[1][0]
-        cv_start_max = base_axes[1][len(base_axes[1]) - 1]
-        max_len_dt = len(base_axes[0])
-        max_len_cv = len(base_axes[1])
-        adjust_flag = False     # if at least one file has different axes, ALL will be adjusted
-        crop_vals_plus_flag = [dt_start_min, dt_start_max, cv_start_min, cv_start_max, max_len_dt, max_len_cv, adjust_flag]
-    else:
-        dt_start_min = crop_vals_plus_flag[0]
-        dt_start_max = crop_vals_plus_flag[1]
-        cv_start_min = crop_vals_plus_flag[2]
-        cv_start_max = crop_vals_plus_flag[3]
-        max_len_dt = crop_vals_plus_flag[4]
-        max_len_cv = crop_vals_plus_flag[5]
-        adjust_flag = crop_vals_plus_flag[6]
-
-        base_dt_axis = np.linspace(dt_start_min, dt_start_max, max_len_dt)
-        base_cv_axis = np.linspace(cv_start_min, cv_start_max, max_len_cv)
-        base_axes = [base_dt_axis, base_cv_axis]
-
-    for analysis_obj in flat_analysisobj_list:
-        if np.array_equal(analysis_obj.axes[0], base_axes[0]) and np.array_equal(analysis_obj.axes[1], base_axes[1]):
-            # adjust_flag = False
-            continue
-        else:
-            # Determine minimum shared region in both dimensions
-            if analysis_obj.axes[0][0] > dt_start_min:
-                dt_start_min = analysis_obj.axes[0][0]
-            if analysis_obj.axes[0][len(analysis_obj.axes[0]) - 1] < dt_start_max:
-                dt_start_max = analysis_obj.axes[0][len(analysis_obj.axes[0]) - 1]
-            if analysis_obj.axes[1][0] > cv_start_min:
-                cv_start_min = analysis_obj.axes[1][0]
-            if analysis_obj.axes[1][len(analysis_obj.axes[1]) - 1] < cv_start_max:
-                cv_start_max = analysis_obj.axes[1][len(analysis_obj.axes[1]) - 1]
-
-            # Determine max axis length for interpolation (to ensure no files are undersampled)
-            if len(analysis_obj.axes[0]) > max_len_dt:
-                max_len_dt = len(analysis_obj.axes[0])
-            if len(analysis_obj.axes[1]) > max_len_cv:
-                max_len_cv = len(analysis_obj.axes[1])
-
-            adjust_flag = True
-
-    if adjust_flag:
-        print('Axes differed in some files; cropping to equalize...')
-        output_obj_list = []
-        # adjust ALL files to the same final axes
-        crop_vals = [dt_start_min, dt_start_max, cv_start_min, cv_start_max, max_len_dt, max_len_cv]
-        for analysis_obj in flat_analysisobj_list:
-            print('Cropping to equalize in file {}'.format(analysis_obj.short_filename))
-            analysis_obj = crop(analysis_obj, crop_vals[0:4])
-
-            # new_dt_axis = np.linspace(dt_start_min, dt_start_max, max_len_dt)
-            # new_cv_axis = np.linspace(cv_start_min, cv_start_max, max_len_cv)
-            # analysis_obj = interpolate_axes(analysis_obj, new_axes=[new_dt_axis, new_cv_axis])
-            output_obj_list.append(analysis_obj)
-        crop_vals_plus_flag = crop_vals
-        crop_vals_plus_flag.append(True)
-        return output_obj_list, crop_vals_plus_flag
-    else:
-        return flat_analysisobj_list, crop_vals_plus_flag
+# todo: deprecated
+# def equalize_axes(flat_analysisobj_list, crop_vals_plus_flag=None):
+#     """
+#     Ensure that all objects have identical axes. If not, crop to the smallest shared
+#     region and interpolate so that all axes are identical. Return updated obj list
+#     :param flat_analysisobj_list: flat list of CIUAnalysisObj's
+#     :type flat_analysisobj_list: list[CIUAnalysisObj]
+#     :param crop_vals_plus_flag: list of previously saved axis values to enable comparison across lists
+#     :return: updated object list with equalized axes, list of final cropping values used
+#     :rtype: list[CIUAnalysisObj], list
+#     """
+#     if crop_vals_plus_flag is None:
+#         base_axes = flat_analysisobj_list[0].axes
+#         dt_start_min = base_axes[0][0]
+#         dt_start_max = base_axes[0][len(base_axes[0]) - 1]
+#         cv_start_min = base_axes[1][0]
+#         cv_start_max = base_axes[1][len(base_axes[1]) - 1]
+#         max_len_dt = len(base_axes[0])
+#         max_len_cv = len(base_axes[1])
+#         adjust_flag = False     # if at least one file has different axes, ALL will be adjusted
+#         crop_vals_plus_flag = [dt_start_min, dt_start_max, cv_start_min, cv_start_max, max_len_dt, max_len_cv, adjust_flag]
+#     else:
+#         dt_start_min = crop_vals_plus_flag[0]
+#         dt_start_max = crop_vals_plus_flag[1]
+#         cv_start_min = crop_vals_plus_flag[2]
+#         cv_start_max = crop_vals_plus_flag[3]
+#         max_len_dt = crop_vals_plus_flag[4]
+#         max_len_cv = crop_vals_plus_flag[5]
+#         adjust_flag = crop_vals_plus_flag[6]
+#
+#         base_dt_axis = np.linspace(dt_start_min, dt_start_max, max_len_dt)
+#         base_cv_axis = np.linspace(cv_start_min, cv_start_max, max_len_cv)
+#         base_axes = [base_dt_axis, base_cv_axis]
+#
+#     for analysis_obj in flat_analysisobj_list:
+#         if np.array_equal(analysis_obj.axes[0], base_axes[0]) and np.array_equal(analysis_obj.axes[1], base_axes[1]):
+#             # adjust_flag = False
+#             continue
+#         else:
+#             # Determine minimum shared region in both dimensions
+#             if analysis_obj.axes[0][0] > dt_start_min:
+#                 dt_start_min = analysis_obj.axes[0][0]
+#             if analysis_obj.axes[0][len(analysis_obj.axes[0]) - 1] < dt_start_max:
+#                 dt_start_max = analysis_obj.axes[0][len(analysis_obj.axes[0]) - 1]
+#             if analysis_obj.axes[1][0] > cv_start_min:
+#                 cv_start_min = analysis_obj.axes[1][0]
+#             if analysis_obj.axes[1][len(analysis_obj.axes[1]) - 1] < cv_start_max:
+#                 cv_start_max = analysis_obj.axes[1][len(analysis_obj.axes[1]) - 1]
+#
+#             # Determine max axis length for interpolation (to ensure no files are undersampled)
+#             if len(analysis_obj.axes[0]) > max_len_dt:
+#                 max_len_dt = len(analysis_obj.axes[0])
+#             if len(analysis_obj.axes[1]) > max_len_cv:
+#                 max_len_cv = len(analysis_obj.axes[1])
+#
+#             adjust_flag = True
+#
+#     if adjust_flag:
+#         print('Axes differed in some files; cropping to equalize...')
+#         output_obj_list = []
+#         # adjust ALL files to the same final axes
+#         crop_vals = [dt_start_min, dt_start_max, cv_start_min, cv_start_max, max_len_dt, max_len_cv]
+#         for analysis_obj in flat_analysisobj_list:
+#             print('Cropping to equalize in file {}'.format(analysis_obj.short_filename))
+#             analysis_obj = crop(analysis_obj, crop_vals[0:4])
+#
+#             # new_dt_axis = np.linspace(dt_start_min, dt_start_max, max_len_dt)
+#             # new_cv_axis = np.linspace(cv_start_min, cv_start_max, max_len_cv)
+#             # analysis_obj = interpolate_axes(analysis_obj, new_axes=[new_dt_axis, new_cv_axis])
+#             output_obj_list.append(analysis_obj)
+#         crop_vals_plus_flag = crop_vals
+#         crop_vals_plus_flag.append(True)
+#         return output_obj_list, crop_vals_plus_flag
+#     else:
+#         return flat_analysisobj_list, crop_vals_plus_flag
 
 
 def check_axes_crop(analysis_obj_list):
@@ -441,53 +463,83 @@ def check_axes_crop(analysis_obj_list):
     different size axes but the same voltage step.
     :param analysis_obj_list: list of CIUAnalysis objects
     :type analysis_obj_list: list[CIUAnalysisObj]
-    :return: [dt_start, dt_end, cv_start, cv_end] Maximum dimension DT/CV axes that are shared amongst all files
+    :return: [dt_start, dt_end, cv_start, cv_end], [min_dt_spacing, min_cv_spacing] Maximum dimension DT/CV axes that are shared amongst all files, and the minimum axes sizes
     """
     # Dimensions to crop to (maximum shared area amongst all fingerprints)
     dt_start_max = 0
-    dt_end_min = 0
+    dt_end_min = np.inf
     cv_start_max = 0
-    cv_end_min = 0
+    cv_end_min = np.inf
+
+    # min_dt_bins = np.inf
+    # min_cv_bins = np.inf
+    min_dt_spacing = np.inf
+    min_cv_spacing = np.inf
+
     # take the smaller dimension as the shared area (e.g. if a file only goes to 100V and others go to 110V, sharing stops at 100V)
     for analysis_obj in analysis_obj_list:
         if analysis_obj.axes[0][0] > dt_start_max:
             dt_start_max = analysis_obj.axes[0][0]
-        if analysis_obj.axes[0][len(analysis_obj.axes[0]) - 1] < dt_end_min:
-            dt_end_min = analysis_obj.axes[0][len(analysis_obj.axes[0]) - 1]
+        if analysis_obj.axes[0][-1] < dt_end_min:
+            dt_end_min = analysis_obj.axes[0][-1]
         if analysis_obj.axes[1][0] > cv_start_max:
             cv_start_max = analysis_obj.axes[1][0]
-        if analysis_obj.axes[1][len(analysis_obj.axes[1]) - 1] < cv_end_min:
-            cv_end_min = analysis_obj.axes[1][len(analysis_obj.axes[1]) - 1]
+        if analysis_obj.axes[1][-1] < cv_end_min:
+            cv_end_min = analysis_obj.axes[1][-1]
 
-    return [dt_start_max, dt_end_min, cv_start_max, cv_end_min]
+        # check bin SPACING for later interpolation (if needed).
+        bin_spacings_dt = [analysis_obj.axes[0][x + 1] - analysis_obj.axes[0][x] for x in range(len(analysis_obj.axes[0]) - 1)]
+        bin_spacings_cv = [analysis_obj.axes[1][x + 1] - analysis_obj.axes[1][x] for x in range(len(analysis_obj.axes[1]) - 1)]
+
+        # using MEDIAN spacing in case of unevenly spaced data.
+        if np.median(bin_spacings_dt) < min_dt_spacing:
+            min_dt_spacing = np.median(bin_spacings_dt)
+        if np.median(bin_spacings_cv) < min_cv_spacing:
+            min_cv_spacing = np.median(bin_spacings_cv)
+
+        # check bin numbers for later interpolation
+        # if len(analysis_obj.axes[0]) < min_dt_bins:
+        #     min_dt_bins = len(analysis_obj.axes[0])
+        # if len(analysis_obj.axes[1]) < min_cv_bins:
+        #     min_cv_bins = len(analysis_obj.axes[1])
+
+    return [dt_start_max, dt_end_min, cv_start_max, cv_end_min], [min_dt_spacing, min_cv_spacing]
 
 
-def check_axes_interp(list_of_analysis_objs):
+def check_axes_interp(list_of_analysis_objs, crop_vals, axes_spacings):
     """
     Check all objects in the provided list for whether their axes have the same spacing. Increases the number of bins
     to the maximum in all files if there are any differences.
     NOTE: should be called AFTER check_axes_crop to ensure that axes are beginning and ending in the same place.
     :param list_of_analysis_objs: list of CIUAnalysis objects
     :type list_of_analysis_objs: list[CIUAnalysisObj]
+    :param axes_spacing: [dt_spacing, cv_spacing] - list of determined spacings (distances) between axes values
     :return: [dt_axis, cv_axis] optimized axes starting and ending in the same place and with identical bin spacing
     """
-    max_dt_bins = 0
-    max_cv_bins = 0
-    # determine the maximum number of bins on the axes in all files
-    for analysis_obj in list_of_analysis_objs:
-        if len(analysis_obj.axes[0]) > max_dt_bins:
-            max_dt_bins = len(analysis_obj.axes[0])
-        if len(analysis_obj.axes[1]) > max_cv_bins:
-            max_cv_bins = len(analysis_obj.axes[1])
+    # todo: fix comments and deprecate old code
+    # max_dt_bins = 0
+    # max_cv_bins = 0
+    # # determine the maximum number of bins on the axes in all files
+    # for analysis_obj in list_of_analysis_objs:
+    #     if len(analysis_obj.axes[0]) > max_dt_bins:
+    #         max_dt_bins = len(analysis_obj.axes[0])
+    #     if len(analysis_obj.axes[1]) > max_cv_bins:
+    #         max_cv_bins = len(analysis_obj.axes[1])
 
     # assemble finalized axes
-    start_dt = list_of_analysis_objs[0].axes[0][0]
-    end_dt = list_of_analysis_objs[0].axes[0][len(list_of_analysis_objs[0].axes[0])]
-    start_cv = list_of_analysis_objs[0].axes[1][0]
-    end_cv = list_of_analysis_objs[0].axes[1][len(list_of_analysis_objs[0].axes[1])]
-    shared_dt_axis = np.linspace(start_dt, end_dt, max_dt_bins)
-    shared_cv_axis = np.linspace(start_cv, end_cv, max_cv_bins)
-    return [shared_dt_axis, shared_cv_axis]
+    # start_dt = list_of_analysis_objs[0].axes[0][0]
+    # end_dt = list_of_analysis_objs[0].axes[0][-1]
+    # start_cv = list_of_analysis_objs[0].axes[1][0]
+    # end_cv = list_of_analysis_objs[0].axes[1][-1]
+
+    # todo: fix floating point issues here - need exact bin spacing (e.g. DT bins should be 200, not 199.234235...)
+    num_dt_bins = (crop_vals[1] - crop_vals[0]) / axes_spacings[0] + 1
+    num_cv_bins = (crop_vals[3] - crop_vals[2]) / axes_spacings[1] + 1
+
+    final_dt_axis = np.linspace(crop_vals[0], crop_vals[1], num_dt_bins)
+    final_cv_axis = np.linspace(crop_vals[2], crop_vals[3], num_cv_bins)
+
+    return [final_dt_axis, final_cv_axis]
 
 
 def equalize_obj(analysis_obj, final_axes):
@@ -502,13 +554,17 @@ def equalize_obj(analysis_obj, final_axes):
     if np.array_equal(analysis_obj.axes[0], final_axes[0]) and np.array_equal(analysis_obj.axes[1], final_axes[1]):
         return analysis_obj
     else:
-        # axes are not equal, adjust to match. Crop first:
-        crop_vals = [analysis_obj.axes[0][0], analysis_obj.axes[0][len(analysis_obj.axes[0])], analysis_obj.axes[1][0], analysis_obj.axes[1][len(analysis_obj.axes[1])]]
-        analysis_obj = crop(analysis_obj, crop_vals)
-
-        # once axes have been cropped, interpolate to match the final values
+        # precise adjustment - use exact final axes provided rather than nearest approx (typical) cropping method
         analysis_obj = interpolate_axes(analysis_obj, final_axes)
         return analysis_obj
+
+        # axes are not equal, adjust to match. Crop first:
+        # crop_vals = [analysis_obj.axes[0][0], analysis_obj.axes[0][-1], analysis_obj.axes[1][0], analysis_obj.axes[1][-1]]
+        # analysis_obj = crop(analysis_obj, crop_vals)
+        #
+        # # once axes have been cropped, interpolate to match the final values
+        # analysis_obj = interpolate_axes(analysis_obj, final_axes)
+        # return analysis_obj
 
 
 def equalize_axes_2d_list(analysis_obj_list_by_label):
@@ -517,26 +573,29 @@ def equalize_axes_2d_list(analysis_obj_list_by_label):
     preserved. Axes are equalized across ALL sublists (every object anywhere in the 2D list)
     :param analysis_obj_list_by_label: list of lists of CIUAnalysisObjs
     :type analysis_obj_list_by_label: list[list[CIUAnalysisObj]]
-    :return: updated list of lists with axes equalized
+    :return: updated list of lists with axes equalized, final axes list
     :rtype: list[list[CIUAnalysisObj]], output_axes_list
     """
     flat_obj_list = [x for analysis_obj_list in analysis_obj_list_by_label for x in analysis_obj_list]
 
     # check axes for cropping (ensure that region of interest is equal)
-    crop_vals = check_axes_crop(flat_obj_list)
-    interp_list = []
-    for analysis_obj in flat_obj_list:
-        crop_obj = crop(analysis_obj, crop_vals)
-        interp_list.append(crop_obj)
+    crop_vals, axes_spacings = check_axes_crop(flat_obj_list)
+    final_axes = check_axes_interp(flat_obj_list, crop_vals, axes_spacings)
+
+
+    # interp_list = []
+    # for analysis_obj in flat_obj_list:
+    #     crop_obj = crop(analysis_obj, crop_vals)
+    #     interp_list.append(crop_obj)
 
     # Check region-equalized axes for differences in bin spacing and interpolate if any are found
-    final_axes = check_axes_interp(flat_obj_list)
+    # final_axes = check_axes_interp(interp_list)
 
     for obj_list in analysis_obj_list_by_label:
         for analysis_obj in obj_list:
             analysis_obj = equalize_obj(analysis_obj, final_axes)
 
-    return analysis_obj_list_by_label
+    return analysis_obj_list_by_label, final_axes
 
     # output_list_by_label = []
     # crop_vals_to_equalize = None

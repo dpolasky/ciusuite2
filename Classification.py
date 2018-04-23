@@ -970,7 +970,10 @@ def lda_clf_pipeline(stacked_train_data, stacked_train_labels, stacked_test_data
     train_lda = lda.transform(stacked_train_data)
     test_lda = lda.transform(stacked_test_data)
     svm = SVC(kernel='linear', C=1, probability=True)
-    svm.fit(train_lda, stacked_train_labels)
+    try:
+        svm.fit(train_lda, stacked_train_labels)
+    except ValueError:
+        print('lets figure out whats going on')
     train_score = svm.score(train_lda, stacked_train_labels)
     test_score = svm.score(test_lda, stacked_test_labels)
     # y_pred = svm.predict(test_lda)
