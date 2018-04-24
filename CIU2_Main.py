@@ -519,7 +519,8 @@ class CIUSuite2(object):
             # check axes for equality and interpolate if different
             files_to_read = self.check_file_range_entries()
             loaded_files = [load_analysis_obj(x) for x in files_to_read]
-            loaded_files = check_axes_and_warn(loaded_files)
+            # todo: I dont think cropping needs axis checking beforehand, but if so, this should be put back in
+            # loaded_files = check_axes_and_warn(loaded_files)
 
             crop_vals = run_crop_ui(loaded_files[0].axes)
             if crop_vals is None:
@@ -1099,12 +1100,23 @@ def check_axes_and_warn(loaded_obj_list):
     :return: updated list of objects with axes equalized
     :rtype list[CIUAnalysisObj]
     """
-    equalized_file_list, axis_crop_vals = Raw_Processing.equalize_axes(loaded_obj_list)
-    if axis_crop_vals[6]:
+    axis_crop_vals, axis_spacing = Raw_Processing.check_axes_crop(loaded_obj_list)
+    final_axes = Raw_Processing.check_axes_interp(axis_crop_vals, axis_spacing)
+
+    # Check if any analyses have axes that differ from the provided final axes. If so, interpolates all onto same axes
+    adjust_flag = False
+    for analysis_obj in loaded_obj_list:
+        # using allclose to allow for floating point arithmetic errors when computing new axes
+        if not np.allclose(analysis_obj.axes[0], final_axes[0]) and np.allclose(analysis_obj.axes[1], final_axes[1]):
+            # precise adjustment - use exact final axes provided rather than nearest approx (typical) cropping method
+            analysis_obj = Raw_Processing.interpolate_axes(analysis_obj, final_axes)
+            adjust_flag = True
+
+    if adjust_flag:
         messagebox.showinfo('Different axes in file(s)', 'FYI: At least some of the loaded files had different axes. '
                                                          'Data was interpolated and re-framed onto identical axes. '
                                                          'Please click OK to continue.')
-    return equalized_file_list
+    return loaded_obj_list
 
 
 def parse_user_cvfeats_input():
