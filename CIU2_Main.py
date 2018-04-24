@@ -1107,8 +1107,13 @@ def check_axes_and_warn(loaded_obj_list):
     adjust_flag = False
     for analysis_obj in loaded_obj_list:
         # using allclose to allow for floating point arithmetic errors when computing new axes
-        if not np.allclose(analysis_obj.axes[0], final_axes[0]) and np.allclose(analysis_obj.axes[1], final_axes[1]):
-            # precise adjustment - use exact final axes provided rather than nearest approx (typical) cropping method
+        try:
+            if not np.allclose(analysis_obj.axes[0], final_axes[0]) and np.allclose(analysis_obj.axes[1], final_axes[1]):
+                # precise adjustment - use exact final axes provided rather than nearest approx (typical) cropping method
+                analysis_obj = Raw_Processing.interpolate_axes(analysis_obj, final_axes)
+                adjust_flag = True
+        except ValueError:
+            # if the axes have different lengths, allclose will throw a value error. Catch it and adjust
             analysis_obj = Raw_Processing.interpolate_axes(analysis_obj, final_axes)
             adjust_flag = True
 
