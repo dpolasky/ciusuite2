@@ -350,7 +350,7 @@ def assemble_products(all_class_combination_lists):
     probs = []
     train_scores, test_scores = [], []
     for combo_tuple in itertools.product(*all_class_combination_lists):
-        print('...', end="")
+        print('.', end="")
         # stack training and test data and labels
         stacked_train_data, stacked_train_labels = [], []
         stacked_test_data, stacked_test_labels = [], []
@@ -973,7 +973,7 @@ def lda_clf_pipeline(stacked_train_data, stacked_train_labels, stacked_test_data
     try:
         svm.fit(train_lda, stacked_train_labels)
     except ValueError:
-        print('lets figure out whats going on')
+        print('Error in SVM fitting. This should not be reached - check your input data for duplicates')
     train_score = svm.score(train_lda, stacked_train_labels)
     test_score = svm.score(test_lda, stacked_test_labels)
     # y_pred = svm.predict(test_lda)
@@ -1080,7 +1080,8 @@ def plot_classification_decision_regions(class_scheme, output_path, unknown_tups
     # decide whether the data has 1d or nds
     shape_lda = np.shape(class_scheme.transformed_test_data)
 
-    fig = plt.figure()
+    # todo: all plot parameters here (and elsewhere)
+    fig = plt.figure(figsize=(8, 2))
     ax = plt.subplot(111)
 
     # plot 1D or 2D decision regions
@@ -1094,7 +1095,7 @@ def plot_classification_decision_regions(class_scheme, output_path, unknown_tups
                 x1_max = max([max_unk, x1_max])
 
         # create a grid to evaluate model
-        x2_min, x2_max = -3, 3
+        x2_min, x2_max = -1, 1
         x_grid, y_grid = np.mgrid[x1_min:x1_max:100j, x2_min:x2_max:100j]
         z = class_scheme.classifier.predict(x_grid.ravel().reshape(-1, 1))
         z = z.reshape(x_grid.shape)
@@ -1148,15 +1149,24 @@ def createtargetarray_featureselect(inputlabel):
     :param inputlabel:
     :return:
     """
-    arr = []
-    for i in inputlabel:
-        arr.append(i)
+    # arr = []
+    string_labels = []
+    numeric_labels = []
+    class_index = 0
+    # encode each class as an integer in the order they are presented from the initial lists
+    for input_string in inputlabel:
+        if input_string not in string_labels:
+            class_index += 1
+        string_labels.append(input_string)
+        numeric_labels.append(class_index)
+        # arr.append(input_string)
         # arr.append(i.split('_')[0])
-    enc = LabelEncoder()
-    label = enc.fit(arr)
-    arr = label.transform(arr) + 1
-    arr_decode = label.inverse_transform((arr - 1))
-    return arr, arr_decode
+    # enc = LabelEncoder()
+    # label = enc.fit(arr)
+    # arr = label.transform(arr) + 1
+    # arr_decode = label.inverse_transform((arr - 1))
+    # return arr, arr_decode
+    return np.asarray(numeric_labels), np.asarray(string_labels)
 
 
 def write_features_scores(score_dict, fname='avg_score_features_sfs.txt'):

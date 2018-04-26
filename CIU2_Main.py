@@ -1137,7 +1137,7 @@ def parse_user_cvfeats_input():
     splits = user_input.split(',')
     for cv_split in splits:
         try:
-            cv = float(cv_split)
+            cv = float(cv_split.strip())
             parsed_values.append(cv)
         except ValueError:
             messagebox.showerror('Invalid Number', 'The entry {} is not a valid number. Please try again')

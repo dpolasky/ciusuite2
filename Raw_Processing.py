@@ -410,6 +410,7 @@ def check_axes_crop(analysis_obj_list):
             cv_end_min = analysis_obj.axes[1][-1]
 
         # check bin SPACING for later interpolation (if needed).
+        # todo: fix rounding errors here causing axes to not be equal after adding 200x
         bin_spacings_dt = [analysis_obj.axes[0][x + 1] - analysis_obj.axes[0][x] for x in range(len(analysis_obj.axes[0]) - 1)]
         bin_spacings_cv = [analysis_obj.axes[1][x + 1] - analysis_obj.axes[1][x] for x in range(len(analysis_obj.axes[1]) - 1)]
 
