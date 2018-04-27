@@ -475,7 +475,7 @@ class CIUSuite2(object):
 
         analysis_obj_list = [load_analysis_obj(x) for x in files_to_read]
         analysis_obj_list = check_axes_and_warn(analysis_obj_list)
-        averaged_obj = average_ciu(analysis_obj_list, self.output_dir)
+        averaged_obj = average_ciu(analysis_obj_list, self.params_obj, self.output_dir)
         self.analysis_file_list = [averaged_obj.filename]
         self.display_analysis_files()
         self.progress_done()
@@ -1182,12 +1182,14 @@ def update_params_in_obj(analysis_obj, params_obj):
     return analysis_obj
 
 
-def average_ciu(analysis_obj_list, outputdir):
+def average_ciu(analysis_obj_list, params_obj, outputdir):
     """
     Generate and save replicate object (a CIUAnalysisObj with averaged ciu_data and a list
     of raw_objs) that can be used for further analysis
     :param analysis_obj_list: list of CIUAnalysisObj's to average
     :type analysis_obj_list: list[CIUAnalysisObj]
+    :param params_obj: Parameters object with param info
+    :type params_obj: Parameters
     :param outputdir: directory in which to save output .ciu file
     :rtype: CIUAnalysisObj
     :return: averaged analysis object
@@ -1200,11 +1202,17 @@ def average_ciu(analysis_obj_list, outputdir):
 
     # generate the average object
     avg_data = np.mean(ciu_data_list, axis=0)
+    std_data = np.std(ciu_data_list, axis=0)
     averaged_obj = CIUAnalysisObj(raw_obj_list[0], avg_data, analysis_obj_list[0].axes, analysis_obj_list[0].params)
     averaged_obj.raw_obj_list = raw_obj_list
-    averaged_obj.filename = save_analysis_obj(averaged_obj, analysis_obj_list[0].params, outputdir, filename_append='_Avg')
 
-    # save averaged object to file and return it
+    # plot averaged object and standard deviation
+    averaged_obj.filename = save_analysis_obj(averaged_obj, analysis_obj_list[0].params, outputdir, filename_append='_Avg')
+    averaged_obj.short_filename = os.path.basename(averaged_obj.filename).rstrip('.ciu')
+
+    Original_CIU.ciu_plot(averaged_obj, params_obj, outputdir)
+    Original_CIU.std_dev_plot(averaged_obj, std_data, params_obj, outputdir)
+
     return averaged_obj
 
 

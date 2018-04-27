@@ -30,7 +30,7 @@ def ciu_plot(analysis_obj, params_obj, output_dir):
         plt.title(plot_title)
     else:
         plot_title = ''
-    output_title = os.path.basename(analysis_obj.filename).rstrip('.ciu')
+    output_title = analysis_obj.short_filename
     output_path = os.path.join(output_dir, output_title + params_obj.x_allplot_1_extension)
 
     plt.figure(figsize=(params_obj.ciuplot_5_figwidth, params_obj.ciuplot_6_figheight), dpi=params_obj.x_allplot_7_dpi)
@@ -110,6 +110,33 @@ def rmsd_plot(label1, label2, difference_matrix, axes, x_label, y_label, contour
             colorbar.ax.set_yticklabels([blue_label, 'Equal', red_label])
 
     plt.savefig(os.path.join(outputdir, '{}-{}{}'.format(label1, label2, extension)))
+    plt.close()
+
+
+def std_dev_plot(analysis_obj, std_dev_matrix, params_obj, output_dir):
+    """
+    Plot the original CIUSuite-style standard deviation plot from averaged fingerprints
+    :param analysis_obj: Averaged analysis object (for axes and filename)
+    :type analysis_obj: CIUAnalysisObj
+    :param std_dev_matrix: standard deviation data in same shape as analysis_obj.ciu_data
+    :param params_obj: Parameters information
+    :type params_obj: Parameters
+    :param output_dir: directory in which to save output
+    :return: void
+    """
+    max_std_dev = np.max(std_dev_matrix)
+    contour_scale = np.linspace(0, max_std_dev, 100, endpoint=True)
+    plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], std_dev_matrix, contour_scale, cmap="jet")
+
+    plt.xlabel(params_obj.ciuplot_1_x_title)
+    plt.ylabel(params_obj.ciuplot_2_y_title)
+    colorbar_scale = np.linspace(0, max_std_dev, 6, endpoint=True)   # plot colorbar
+
+    plt.colorbar(ticks=colorbar_scale, format='%.2f')
+    std_text = 'Max std deviation: {:.2f}'.format(max_std_dev)
+    plt.annotate(std_text, xy=(150, 10), xycoords='axes points', color='white')
+
+    plt.savefig(os.path.join(output_dir, analysis_obj.short_filename + '_stdev.png'))
     plt.close()
 
 
