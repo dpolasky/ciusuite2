@@ -17,12 +17,13 @@ from tkinter import filedialog
 import scipy.signal
 import matplotlib.backends.backend_pdf
 import matplotlib.pyplot as plt
-from Raw_Processing import interpolate_axes
+
+from CIU_raw import CIURaw
+from CIU_analysis_obj import CIUAnalysisObj
 
 # imports for type checking
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from CIU_analysis_obj import CIUAnalysisObj
     from CIU_Params import Parameters
 
 
@@ -213,6 +214,37 @@ def filter_fits(params_list, peak_width_cutoff, intensity_cutoff, centroid_bound
             filtered_list.extend(params_list[index:index + 4])
         index += 4
     return filtered_list
+
+
+def reconstruct_from_fits(analysis_obj):
+    """
+    Construct a new analysis object using the filtered Gaussian fits of the provided analysis object
+    as the raw data. Must have previously performed Gaussian feature detection on the provided analysis_obj
+    :param analysis_obj: CIU container with original data and **gaussian feature detection previously performed**
+    :type analysis_obj: CIUAnalysisObj
+    :return: new CIUAnalysisObj with reconstructed raw data
+    :rtype: CIUAnalysisObj
+    """
+    ciu_data_by_cols = []
+    dt_axis = analysis_obj.axes[0]
+    # construct the raw data at each collision voltage to stitch together into a CIU matrix
+    for cv_gauss_list in analysis_obj.filtered_gaussians:
+        # assemble all the parameters for Gaussians at this CV
+        all_params = []
+        for gaussian in cv_gauss_list:
+            all_params.extend(gaussian.return_popt())
+
+        # Use the Gaussian function to construct intensity data at each DT
+        intensities = multi_gauss_func(dt_axis, *all_params)
+
+        ciu_data_by_cols.append(intensities)
+
+    # finally, transpose the CIU data to match the typical format and return the object
+    final_data = np.asarray(ciu_data_by_cols).T
+    raw_obj = CIURaw(final_data, dt_axis, analysis_obj.axes[1], analysis_obj.filename)
+    new_analysis_obj = CIUAnalysisObj(raw_obj, final_data, analysis_obj.axes, analysis_obj.params)
+    new_analysis_obj.short_filename = analysis_obj.short_filename + '_denoised'
+    return new_analysis_obj
 
 
 def check_peak_dist(popt_list, current_guess_list, min_distance_dt, max_peak_width):

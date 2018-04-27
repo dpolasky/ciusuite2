@@ -684,10 +684,9 @@ def main_build_classification(labels, analysis_obj_list_by_label, params_obj, ou
         # best_features = all_feature_crossval_lda(all_features, analysis_obj_list_by_label, shaped_label_list, output_dir)
         best_features, crossval_score, all_crossval_data = crossval_main(analysis_obj_list_by_label, labels, output_dir, params_obj, all_features)
     else:
-        # Manual mode: use the provided features and don't run crossvalidation
+        # Manual mode: use the provided features and run limited crossvalidation
+        best_features, crossval_score, all_crossval_data = crossval_main(analysis_obj_list_by_label, labels, output_dir, params_obj, known_feats)
         best_features = known_feats
-        crossval_score = None
-        all_crossval_data = None
 
     # perform LDA and classification on the selected/best features
     constructed_scheme = lda_ufs_best_features(best_features, analysis_obj_list_by_label, shaped_label_list, params_obj, output_dir)
@@ -802,13 +801,11 @@ def crossval_main(analysis_obj_list_by_label, labels, outputdir, params_obj, fea
         results.append(result)
 
     for result in results:
-        output = result
-
         # get scores and plot and stuff
-        train_score_means.append(output[0])
-        train_score_stds.append(output[1])
-        test_score_means.append(output[2])
-        test_score_stds.append(output[3])
+        train_score_means.append(result[0])
+        train_score_stds.append(result[1])
+        test_score_means.append(result[2])
+        test_score_stds.append(result[3])
     print('classification done in {:.2f}'.format(time.time() - time_start))
 
     train_score_means = np.array(train_score_means)

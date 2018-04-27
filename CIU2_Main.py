@@ -73,6 +73,7 @@ class CIUSuite2(object):
             'on_button_gaussfit_clicked': self.on_button_gaussfit_clicked,
             'on_button_ciu50_clicked': self.on_button_ciu50_clicked,
             'on_button_ciu50_gaussian_clicked': self.on_button_ciu50_gaussian_clicked,
+            'on_button_gaussian_reconstruction_clicked': self.on_button_gaussian_reconstruct_clicked,
             'on_button_feature_gaussian_clicked': self.on_button_feature_gaussian_clicked,
             'on_button_feature_changept_clicked': self.on_button_feature_changept_clicked,
             'on_button_classification_supervised_clicked': self.on_button_classification_supervised_clicked,
@@ -668,6 +669,39 @@ class CIUSuite2(object):
                 save_existing_output_string(outputpath_short, short_outputs)
 
             self.display_analysis_files()
+        self.progress_done()
+
+    def on_button_gaussian_reconstruct_clicked(self):
+        """
+        Create a new CIUAnalysisObj from the fitted Gaussians of selected objects. Must
+        have Gaussian feature detection already performed.
+        :return: void
+        """
+        # no parameters at the moment - put this back in if any are required
+        # param_keys = [x for x in self.params_obj.params_dict.keys() if 'gauss_recon' in x]
+        # if self.run_param_ui('Gaussian Data Reconstruction and De-Noising', param_keys):
+
+        files_to_read = self.check_file_range_entries()
+        self.progress_started()
+        new_file_list = []
+
+        for file in files_to_read:
+            # load file
+            analysis_obj = load_analysis_obj(file)
+
+            # check to make sure the analysis_obj has Gaussian data fitted
+            if analysis_obj.filtered_gaussians is None:
+                messagebox.showerror('Gaussian feature detection required', 'Data in file {} does not have Gaussian feature detection performed. Please run Gaussian feature detection, then try again.')
+                break
+
+            # If gaussian data exists, perform the analysis
+            new_obj = Gaussian_Fitting.reconstruct_from_fits(analysis_obj)
+            filename = save_analysis_obj(new_obj, self.params_obj, outputdir=self.output_dir)
+            new_file_list.append(filename)
+            self.update_progress(files_to_read.index(file), len(files_to_read))
+
+        self.analysis_file_list = new_file_list
+        self.display_analysis_files()
         self.progress_done()
 
     def on_button_feature_gaussian_clicked(self):
