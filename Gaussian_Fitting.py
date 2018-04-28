@@ -6,6 +6,7 @@ date: 10/10/2017
 import numpy as np
 from scipy.optimize import curve_fit
 from scipy.stats import linregress
+import scipy.integrate
 import scipy.interpolate
 import os
 import itertools
@@ -31,8 +32,7 @@ class Gaussian(object):
     """
     Container for fitted gaussian information. Holds fit parameters and any associated metadata
     """
-    def __init__(self, baseline, amplitude, centroid, width, collision_voltage, pcov):
-        self.baseline = baseline
+    def __init__(self, amplitude, centroid, width, collision_voltage, pcov):
         self.amplitude = amplitude
         self.centroid = centroid
         self.width = width
@@ -56,13 +56,12 @@ class Gaussian(object):
         Method for generating strings to save to output files with all info
         :return: string
         """
-        return '{},{:.2f},{:.2f},{:.1f},{:.1f},{:.1f},{:.1f}'.format(self.cv,
-                                                                     self.centroid,
-                                                                     self.amplitude,
-                                                                     self.width,
-                                                                     self.baseline,
-                                                                     self.fwhm,
-                                                                     self.resolution)
+        return '{},{:.2f},{:.2f},{:.1f},{:.1f},{:.1f}'.format(self.cv,
+                                                              self.centroid,
+                                                              self.amplitude,
+                                                              self.width,
+                                                              self.fwhm,
+                                                              self.resolution)
 
     def return_popt(self):
         """
@@ -70,7 +69,7 @@ class Gaussian(object):
         gaussian object
         :return: [baseline, amplitude, centroid, width]
         """
-        return [self.baseline, self.amplitude, self.centroid, self.width]
+        return [self.amplitude, self.centroid, self.width]
 
 
 def multi_gauss_func(x, *params):
@@ -83,8 +82,8 @@ def multi_gauss_func(x, *params):
     """
     y = np.zeros_like(x)
     # make a gaussian function for each set of parameters in the input list
-    for i in range(0, len(params), 4):
-        y = y + gaussfunc(x, params[i], params[i+1], params[i+2], params[i+3])
+    for i in range(0, len(params), 3):
+        y = y + gaussfunc(x, params[i], params[i+1], params[i+2])
     return y
 
 
@@ -107,7 +106,7 @@ def estimate_multi_params(ciu_col, dt_axis, width_frac, peak_int_threshold=0.1, 
         centroid_guess = dt_axis[peak_index]    # centroid is the DT at the index of the peak
         amp_guess = ciu_col[peak_index]         # amplitude is the value at the index of the peak
         width_guess = peak_index * width_frac
-        params_lists.extend([0, amp_guess, centroid_guess, width_guess])
+        params_lists.extend([amp_guess, centroid_guess, width_guess])
         # params_lists.append([0, centroid_guess, amp_guess, width_guess])
     return params_lists
 
@@ -132,14 +131,14 @@ def estimate_multi_params_all(ciu_col, dt_axis, width_frac):
         centroid_guess = dt_axis[peak_index]    # centroid is the DT at the index of the peak
         amp_guess = ciu_col[peak_index]         # amplitude is the value at the index of the peak
         width_guess = peak_index * width_frac
-        params_lists.append([0.001, amp_guess, centroid_guess, width_guess])
+        params_lists.append([amp_guess, centroid_guess, width_guess])
 
     # sort guesses by amplitude (index 1 in each sublist) in order from largest to smallest
-    params_lists = sorted(params_lists, key=lambda x: x[1], reverse=True)
+    params_lists = sorted(params_lists, key=lambda x: x[0], reverse=True)
     return params_lists
 
 
-def gaussfunc(x, y0, a, xc, w):
+def gaussfunc(x, a, xc, w):
     """
     Gaussian function with constraints applied for CIU data
     :param x: x
@@ -198,21 +197,21 @@ def filter_fits(params_list, peak_width_cutoff, intensity_cutoff, centroid_bound
         include_peak = False
 
         # ensure peak width (FWHM) is below the cutoff and above 0
-        fwhm = 2 * math.sqrt(2 * math.log(2)) * params_list[index + 3]
+        fwhm = 2 * math.sqrt(2 * math.log(2)) * params_list[index + 2]
         if 0 < fwhm < peak_width_cutoff:
             # also remove amplitdues below the intensity cutoff
-            if params_list[index + 1] > intensity_cutoff:
+            if params_list[index] > intensity_cutoff:
                 if centroid_bounds is not None:
                     # centroid bounds provided - if matched, include the peak
-                    if centroid_bounds[0] < params_list[index + 2] < centroid_bounds[1]:
+                    if centroid_bounds[0] < params_list[index + 1] < centroid_bounds[1]:
                         include_peak = True
-                elif params_list[index + 2] > 0:
+                elif params_list[index + 1] > 0:
                     # If no bounds provided lso remove centroids < 0
                     include_peak = True
 
         if include_peak:
-            filtered_list.extend(params_list[index:index + 4])
-        index += 4
+            filtered_list.extend(params_list[index:index + 3])
+        index += 3
     return filtered_list
 
 
@@ -262,11 +261,11 @@ def check_peak_dist(popt_list, current_guess_list, min_distance_dt, max_peak_wid
     :return: boolean; True if distance is greater than minimum
     """
     # automatically allow any peaks that are too wide, as these will not impact feature detection/etc
-    if current_guess_list[3] > max_peak_width:
+    if current_guess_list[2] > max_peak_width:
         return True
 
-    guess_centroid = current_guess_list[2]
-    existing_centroids = popt_list[2::4]
+    guess_centroid = current_guess_list[1]
+    existing_centroids = popt_list[1::3]
     # return false if any existing centroid is too close to the current guess, excluding noise peaks
     for existing_centroid in existing_centroids:
         if abs(existing_centroid - guess_centroid) < min_distance_dt:
@@ -289,11 +288,11 @@ def check_peak_dists(popt_list, params_obj):
     index = 0
     gaussians = []
     while index < len(popt_list):
-        gaussian = Gaussian(popt_list[index], popt_list[index + 1], popt_list[index + 2], popt_list[index + 3], None, None)
+        gaussian = Gaussian(popt_list[index], popt_list[index + 1], popt_list[index + 2], None, None)
         # ignore peaks that are above width max - they are allowed to be close to others (noise can be anywhere)
         if not gaussian.width > params_obj.gaussian_3_width_max:
             gaussians.append(gaussian)
-        index += 4
+        index += 3
 
     # examine all Gaussians and determine if any are too close together
     for gaussian_combo in itertools.combinations(gaussians, 2):
@@ -367,15 +366,14 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
         adjrsq = 0
         i = 0
         previous_rsq = 0
-
         # set bounds for fitting: keep baseline and centroid on DT axis, amplitude 0 to 1.5, width 0 to len(dt_axis)
         max_dt = dt_axis[len(dt_axis) - 1]
         min_dt = dt_axis[0]
         fit_bounds_lower, fit_bounds_upper = [], []
-        fit_bounds_lower_append = [0, 0, min_dt, 0]
-        fit_bounds_upper_append = [1, 1.1, max_dt, len(dt_axis)]
-        popt = None
+        fit_bounds_lower_append = [0, min_dt, 0]
+        fit_bounds_upper_append = [1, max_dt, len(dt_axis)]
 
+        popt = None
         # Iterate through peak detection until convergence criterion is met, adding one additional peak each iteration
         iterate_gaussian_flag = True
         while iterate_gaussian_flag:
@@ -405,20 +403,21 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
                 popt = []
                 pcov = []
 
+            # todo: probably remove this in favor of penalty function
             # check to see if peaks are too close, and reduce number of guesses by 1 if so
-            reduce_flag, reduced_guesses = check_peak_dists(popt, params_obj)
-            if reduce_flag:
-                try:
-                    popt, pcov = curve_fit(multi_gauss_func, dt_axis, cv_col_intensities, method='trf',
-                                           p0=reduced_guesses,
-                                           bounds=(fit_bounds_lower[0: len(fit_bounds_lower) - 4],
-                                                   fit_bounds_upper[0: len(fit_bounds_lower) - 4]))
-                    perr = np.sqrt(np.diag(pcov))
-                    i -= 1
-                    iterate_gaussian_flag = False
-                except RuntimeError:
-                    popt = []
-                    pcov = []
+            # reduce_flag, reduced_guesses = check_peak_dists(popt, params_obj)
+            # if reduce_flag:
+            #     try:
+            #         popt, pcov = curve_fit(multi_gauss_func, dt_axis, cv_col_intensities, method='trf',
+            #                                p0=reduced_guesses,
+            #                                bounds=(fit_bounds_lower[0: len(fit_bounds_lower) - 3],
+            #                                        fit_bounds_upper[0: len(fit_bounds_lower) - 3]))
+            #         perr = np.sqrt(np.diag(pcov))
+            #         i -= 1
+            #         iterate_gaussian_flag = False
+            #     except RuntimeError:
+            #         popt = []
+            #         pcov = []
 
             yfit = multi_gauss_func(dt_axis, *popt)
             slope, intercept, rvalue, pvalue, stderr = linregress(cv_col_intensities, yfit)
@@ -451,19 +450,9 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
             filt_popt = filter_fits(popt, filter_width_max, intensity_thr)
         filtered_params.append(filt_popt)
 
-        # save Gaussian information to container objects
-        index = 0
-        gaussians_at_this_cv = []
-        while index < len(popt):
-            gaussians_at_this_cv.append(Gaussian(popt[index], popt[index+1], popt[index+2], popt[index+3], cv_axis[cv_index], pcov))
-            index += 4
-        gaussians.append(gaussians_at_this_cv)
-        index = 0
-        filt_gaussians_at_cv = []
-        while index < len(filt_popt):
-            filt_gaussians_at_cv.append(Gaussian(filt_popt[index], filt_popt[index + 1], filt_popt[index + 2], filt_popt[index + 3], cv_axis[cv_index], pcov))
-            index += 4
-        filtered_gaussians.append(filt_gaussians_at_cv)
+        # save Gaussian information to container object lists
+        gaussians.append(generate_gaussians_from_popt(popt, cv_axis[cv_index], pcov))
+        filtered_gaussians.append(generate_gaussians_from_popt(filt_popt, cv_axis[cv_index], pcov))
 
         rsq_arr.append(rvalue ** 2)
         adjrsq_arr.append(adjrsq)
@@ -473,9 +462,95 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
         popt_arr.append(popt)
         pcov_arr.append(pcov)
 
+    # second pass through data with penalties
+    popt_arr_with_pen, pcov_with_pen = [], []
+    gaussians_with, filt_gaussians_with = [], []
+    for cv_index, cv_col_intensities in enumerate(intarray):
+        # generate initial guesses using previous fits, extended by peak detection method
+        prev_gaussians = gaussians[cv_index]
+        peak_guesses = []
+        for gaussian in prev_gaussians:
+            peak_guesses.append(gaussian.return_popt())
+        peak_guesses.extend(estimate_multi_params_all(cv_col_intensities, dt_axis, widthfrac))
+
+        # set bounds for fitting: keep baseline and centroid on DT axis, amplitude 0 to 1.5, width 0 to len(dt_axis)
+        max_dt = dt_axis[len(dt_axis) - 1]
+        min_dt = dt_axis[0]
+        fit_bounds_lower, fit_bounds_upper = [], []
+        fit_bounds_lower_append = [0, min_dt, 0]
+        fit_bounds_upper_append = [1, max_dt, len(dt_axis)]
+
+        iteration_peaks = len(peak_guesses)
+        if iteration_peaks > 6:
+            iteration_peaks = 6  # cap the max num peaks
+
+        num_peaks = 0
+        current_param_guesses = []
+        scores = []
+        popt_iterations, pcov_iterations = [], []
+        while num_peaks < iteration_peaks:
+            print('second round, iteration {}'.format(num_peaks + 1))
+            # update initial guesses and bounds for curve_fit
+            try:
+                current_param_guesses.extend(peak_guesses[num_peaks])
+                fit_bounds_lower.extend(fit_bounds_lower_append)
+                fit_bounds_upper.extend(fit_bounds_upper_append)
+            except IndexError:
+                # No converge with all estimated peaks. Continue with final estimate
+                print('Included all {} peaks found, but r^2 still less than convergence criterion. '
+                      'Poor fitting possible'.format(num_peaks+1))
+                break
+
+            # perform curve fitting
+            try:
+                popt, pcov = curve_fit(multi_gauss_func, dt_axis, cv_col_intensities, method='trf',
+                                       p0=current_param_guesses,
+                                       bounds=(fit_bounds_lower, fit_bounds_upper))
+            except (RuntimeError, ValueError):
+                popt, pcov = [], []
+
+            # compute score
+            yfit = multi_gauss_func(dt_axis, *popt)
+            slope, intercept, rvalue, pvalue, stderr = linregress(cv_col_intensities, yfit)
+            adjrsq = adjrsquared(rvalue ** 2, len(cv_col_intensities))
+
+            score = compute_fit_score(popt, adjrsq, dt_axis)
+            scores.append(score)
+
+            popt_iterations.append(popt)
+            pcov_iterations.append(pcov)
+
+            # cut off scores that are dropping
+            if len(scores) > 2:
+                if score < scores[num_peaks - 1] and score < scores[num_peaks - 2]:
+                    break
+
+            num_peaks += 1
+
+        # plt.scatter(range(len(peak_guesses)), scores)
+        # plt.show()
+
+        # get best score and use that data
+        best_score_index = int(np.argmax(scores))
+        print('best score {:.4f} with {} peaks'.format(scores[best_score_index], best_score_index + 1))
+
+        final_popt = popt_iterations[best_score_index]
+        final_pcov = pcov_iterations[best_score_index]
+        filt_popt = final_popt
+        if filter_width_max is not None:
+            filt_popt = filter_fits(final_popt, filter_width_max, intensity_thr)
+        filtered_params.append(filt_popt)
+
+        # save Gaussian information to container object lists
+        gaussians_with.append(generate_gaussians_from_popt(final_popt, cv_axis[cv_index], pcov))
+
     # save fit information to the analysis object and return it
     analysis_obj.gaussians = gaussians
-    analysis_obj.filtered_gaussians = filtered_gaussians
+    # analysis_obj.filtered_gaussians = filtered_gaussians
+
+    analysis_obj.filtered_gaussians = gaussians_with
+    analysis_obj.gaussians = gaussians_with
+
     analysis_obj.gauss_adj_r2s = adjrsq_arr
     analysis_obj.gauss_fits = arrivtime_gausfit
     analysis_obj.gauss_r2s = rsq_arr
@@ -489,6 +564,125 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
         save_gauss_params(analysis_obj, outputpath)
 
     return analysis_obj
+
+
+def compute_fit_score(popt, rsq, dt_axis):
+    """
+    Uses a penalty function to attempt to regularize the fitting and score peak fits optimally.
+    Penalty function is designed to penalize:
+        - peaks whose widths deviate from expected protein peak width
+        - large numbers of peaks
+        - peaks that are too close together
+        - large movement compared to previous CV
+    :param popt: optimized parameters from curve_fit
+    :param rsq: r-squared value comparing fitted data against observed
+    :return: score (float between 0, 1)
+    """
+    gaussian_list = generate_gaussians_from_popt(popt, cv=None, pcov=None)
+    amplitudes = [gaussian.amplitude for gaussian in gaussian_list]
+    centroids = [gaussian.centroid for gaussian in gaussian_list]
+    widths = [gaussian.width for gaussian in gaussian_list]
+
+    # width penalty function (some tolerance for allowed width)
+    total_penalty = 0
+    for width in widths:
+        total_penalty += compute_width_penalty(width, expected_width=0.45, tolerance=0.2, steepness=1)
+
+    # shared area penalty function
+    total_penalty += compute_area_penalty(gaussian_list, dt_axis)
+
+    return rsq - total_penalty
+
+
+def compute_width_penalty(input_width, expected_width, tolerance, steepness):
+    """
+
+    :param input_width:
+    :param expected_width:
+    :param tolerance:
+    :param steepness:
+    :return:
+    """
+    diff = abs(input_width - expected_width)
+    if diff < tolerance:
+        return 0
+    else:
+        penalized_width = abs(diff - tolerance)
+        return steepness * penalized_width
+
+
+def compute_area_penalty(list_of_gaussians, dt_axis):
+    """
+    Shared area penalty intended to penalize peaks that are almost completely overlapped
+    by others.
+    :param list_of_gaussians: all gaussians currently fit at this CV
+    :return: penalty (float)
+    """
+    # for each gaussian, compute how much area it shares with the rest of the list
+    total_penalty = 0
+    for gaussian in list_of_gaussians:
+        my_area = scipy.integrate.trapz(gaussfunc(dt_axis, *gaussian.return_popt()), dt_axis)
+
+        other_gaussians = [x for x in list_of_gaussians if x is not gaussian]
+        total_shared_area = 0
+        for other in other_gaussians:
+            total_shared_area += shared_area_gauss(dt_axis, gaussian.return_popt(), other.return_popt())
+
+        # compute shared area (ratio from 0 to 1) and any penalties if > 0.25 (not much until 0.5)
+        shared_area_ratio = total_shared_area / my_area
+        if shared_area_ratio > 0.25:
+            my_penalty = (shared_area_ratio - 0.25) ** 4
+            total_penalty += my_penalty
+    return total_penalty
+
+
+def shared_area_gauss(x_axis, gauss1_params, gauss2_params):
+    """
+    Compute a "shared area score" (shared area normalized against the area of the smaller peak being compared)
+    and return it.
+    :param x_axis: x-axis on which to plot the gaussian functions (doesn't matter as long as it's sufficiently sampled)
+    :param gauss1_params: the parameters describing gaussian 1 [amplitude, centroid, width]
+    :param gauss2_params: the parameters describing gaussian 2 [amplitude, centroid, width]
+    :return: shared area
+    """
+    # shared area is the area under the lower curve
+    gauss1 = gaussfunc(x_axis, *gauss1_params)
+    gauss2 = gaussfunc(x_axis, *gauss2_params)
+    shared_area_arr = []
+
+    # for each point along the x (DT) axis, determine the amount of shared area
+    for index in np.arange(0, len(x_axis)):
+        if gauss1[index] > gauss2[index]:
+            shared_area_arr.append(gauss2[index])
+        elif gauss1[index] < gauss2[index]:
+            shared_area_arr.append(gauss1[index])
+        elif gauss1[index] == gauss2[index]:
+            shared_area_arr.append(0)
+
+    # return the integrated area over the provided axis
+    return scipy.integrate.trapz(shared_area_arr, x_axis)
+
+
+def generate_gaussians_from_popt(opt_params_list, cv=None, pcov=None):
+    """
+    Convert a list of parameters to a list of Gaussian objects. Initializes Gaussians with a collision voltage
+    and covariance matrix if provided.
+    :param opt_params_list: list of parameters [amp, centroid, width, amp2, cent2, width2, ... ]
+    :param cv: (optional) collision voltage to associate with all Gaussians
+    :param pcov: (optional) covariance matrix from fitting to associate with all Gaussians
+    :return: list of Gaussian objects from params list
+    :rtype: list[Gaussian]
+    """
+    index = 0
+    gaussian_list = []
+    while index < len(opt_params_list):
+        gaussian_list.append(Gaussian(opt_params_list[index],
+                                      opt_params_list[index + 1],
+                                      opt_params_list[index + 2],
+                                      cv,
+                                      pcov))
+        index += 3
+    return gaussian_list
 
 
 def save_gaussfits_pdf(analysis_obj, outputpath):
@@ -520,7 +714,7 @@ def save_gaussfits_pdf(analysis_obj, outputpath):
 
         # plot each fitted gaussian and centroid
         for gaussian in analysis_obj.filtered_gaussians[cv_index]:
-            fit = gaussfunc(analysis_obj.axes[0], 0, gaussian.amplitude, gaussian.centroid, gaussian.width)
+            fit = gaussfunc(analysis_obj.axes[0], gaussian.amplitude, gaussian.centroid, gaussian.width)
             plt.plot(analysis_obj.axes[0], fit)
             plt.plot(gaussian.centroid, abs(gaussian.amplitude), '+', color='red')
         plt.title('CV: {}, R2: {:.3f}, stderr: {:.4f}'.format(analysis_obj.axes[1][cv_index], analysis_obj.gauss_r2s[cv_index],
