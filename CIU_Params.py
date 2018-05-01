@@ -156,13 +156,16 @@ class Parameters(object):
         self.compare_1_custom_red = None
         # self.compare_0_show_colobar = None
 
-        # Feature detection/CIU-50 parameters
+        # Gaussian fitting
         self.gaussian_1_convergence = None
         self.gaussian_2_int_threshold = None
         self.gaussian_3_width_max = None
         self.gaussian_4_save_diagnostics = None
         self.gaussian_5_width_fraction = None
         self.gaussian_6_min_peak_dist = None
+        self.gaussian_7_mode = None
+
+        self.reconstruct_1_mode = None
 
         self.feature_cpt_min_length = None
         self.feature_cpt_width_tol = None

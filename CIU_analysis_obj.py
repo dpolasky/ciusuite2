@@ -35,7 +35,7 @@ class CIUAnalysisObj(object):
         self.crop_vals = None
         self.params = params_obj  # type: Parameters
         self.filename = None        # filename of .ciu file saved
-        self.short_filename = None
+        self.short_filename = os.path.basename(self.raw_obj.filename).rstrip('_raw.csv')
 
         # CIU data manipulations for common use
         self.bin_spacing = self.axes[0][1] - self.axes[0][0]    # distance between two adjacent DT bins

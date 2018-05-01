@@ -677,31 +677,45 @@ class CIUSuite2(object):
         have Gaussian feature detection already performed.
         :return: void
         """
-        # no parameters at the moment - put this back in if any are required
-        # param_keys = [x for x in self.params_obj.params_dict.keys() if 'gauss_recon' in x]
-        # if self.run_param_ui('Gaussian Data Reconstruction and De-Noising', param_keys):
 
-        files_to_read = self.check_file_range_entries()
-        self.progress_started()
-        new_file_list = []
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'reconstruct' in x]
+        if self.run_param_ui('Gaussian Reconstruction Parameters', param_keys):
+            files_to_read = self.check_file_range_entries()
+            self.progress_started()
+            new_file_list = []
 
-        for file in files_to_read:
-            # load file
-            analysis_obj = load_analysis_obj(file)
+            # If reading in Gaussians from template, load template files and construct Gaussians from provided information
+            if self.params_obj.reconstruct_1_mode == 'Load File':
+                template_files = filedialog.askopenfilenames(filetypes=[('Gaussian Fit CSV', '.csv')])
+                if len(template_files) > 0:
+                    self.output_dir = os.path.dirname(template_files[0])
 
-            # check to make sure the analysis_obj has Gaussian data fitted
-            if analysis_obj.filtered_gaussians is None:
-                messagebox.showerror('Gaussian feature detection required', 'Data in file {} does not have Gaussian feature detection performed. Please run Gaussian feature detection, then try again.')
-                break
+                    for template_file in template_files:
+                        gaussians_by_cv, axes = Gaussian_Fitting.parse_gaussian_list_from_file(template_file)
+                        new_analysis_obj = Gaussian_Fitting.reconstruct_from_fits(gaussians_by_cv, axes, os.path.basename(template_file).rstrip('.csv'), self.params_obj)
+                        filename = save_analysis_obj(new_analysis_obj, self.params_obj, outputdir=self.output_dir)
+                        new_file_list.append(filename)
+                        self.update_progress(template_files.index(template_file), len(template_files))
 
-            # If gaussian data exists, perform the analysis
-            new_obj = Gaussian_Fitting.reconstruct_from_fits(analysis_obj)
-            filename = save_analysis_obj(new_obj, self.params_obj, outputdir=self.output_dir)
-            new_file_list.append(filename)
-            self.update_progress(files_to_read.index(file), len(files_to_read))
+            else:
+                # use loaded .ciu files and read from the Gaussian fitting/feature detection results
+                for file in files_to_read:
+                    # load file
+                    analysis_obj = load_analysis_obj(file)
 
-        self.analysis_file_list = new_file_list
-        self.display_analysis_files()
+                    # check to make sure the analysis_obj has Gaussian data fitted
+                    if analysis_obj.filtered_gaussians is None:
+                        messagebox.showerror('Gaussian feature detection required', 'Data in file {} does not have Gaussian feature detection performed. Please run Gaussian feature detection, then try again.')
+                        break
+
+                    # If gaussian data exists, perform the analysis
+                    new_obj = Gaussian_Fitting.reconstruct_from_fits(analysis_obj.filtered_gaussians, analysis_obj.axes, analysis_obj.short_filename, self.params_obj)
+                    filename = save_analysis_obj(new_obj, self.params_obj, outputdir=self.output_dir)
+                    new_file_list.append(filename)
+                    self.update_progress(files_to_read.index(file), len(files_to_read))
+
+            self.analysis_file_list = new_file_list
+            self.display_analysis_files()
         self.progress_done()
 
     def on_button_feature_gaussian_clicked(self):
