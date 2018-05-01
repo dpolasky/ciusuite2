@@ -72,6 +72,105 @@ class Gaussian(object):
         return [self.amplitude, self.centroid, self.width]
 
 
+class FitDiagnostics(object):
+    """
+    Container for diagnostics and information from Gaussian fitting. Intended to enable rapid diagnostics
+    and hold information from multi-round fitting and ease plotting/saving various outputs.
+    Organization: A single FitDiagnostics object for a CIUAnalysis object containing all diagnostic
+    information in lists organized by collision voltage.
+    """
+
+    def __init__(self, cv_axis):
+        """
+        Initialize an empty diagnostics object over the collision voltages of a CIU fingerprint
+        :param cv_axis: collision voltage axis of the associated CIU analysis
+        """
+        self.cvs = cv_axis
+
+        # First round fitting diagnostics
+        self.num_peaks_list = []
+        self.popt_lists = []
+        self.gauss_lists = []
+        self.filt_gauss_lists = []
+        self.fit_stats_list = []
+        self.adjrsq_list = []
+
+        self.all_fits_lists = []    # list of (lists-by-CV) containing ALL fits performed at that CV (SingleFitStats)
+
+        # todo: MAKE TWO diagnostics objects (or however many), one for each round
+        # self.r2_num_peaks_list = []
+        # self.r2_popt_lists = []
+        # self.r2_gauss_lists = []
+        # self.r2_fit_stats_list = []
+        # self.r2_adjrsq_list = []
+
+    def append_best_fit_info(self, fit_stats_obj):
+        """
+        Add the best result from a particular collision voltage to the primary lists stored
+        in this object
+        :param fit_stats_obj: container with *best* fit information (out of all fits at this voltage)
+        :type fit_stats_obj: SingleFitStats
+        :return: void
+        """
+        self.fit_stats_list.append(fit_stats_obj)
+        self.popt_lists.append(fit_stats_obj.get_popt())
+        self.gauss_lists.append(fit_stats_obj.gaussians)
+        self.adjrsq_list.append(fit_stats_obj.adjrsq)
+
+
+class SingleFitStats(object):
+    """
+    Container for holding fit information for a single multi-Gaussian fitting (one collision voltage).
+    Includes r2, fit data, error estimates, etc (all output of linregress)
+    Intended to use called when initializing a fit.
+    """
+    def __init__(self, x_data, y_data, popt, cv):
+        """
+        Initialize a new fit between the provided x/y data and optimized Gaussian parameters
+        :param x_data: x (DT) raw data being fit by popt
+        :param y_data: y (intensity) raw data being fit by popt
+        :param popt: optimized parameters returned from curve_fit
+        :param cv: collision voltage at which this fit occurred
+        """
+        self.x_data = x_data
+        self.y_data = y_data
+        self.y_fit = multi_gauss_func(x_data, *popt)
+        self.slope, self.intercept, self.rvalue, self.pvalue, self.stderr = linregress(y_data, self.y_fit)
+        self.adjrsq = adjrsquared(self.rvalue ** 2, len(y_data))
+        self.gaussians = generate_gaussians_from_popt(popt, cv)
+
+        # additional information that may be present
+        self.p0 = None      # initial guess array used to generate this popt
+        self.pcov = None    # output covariance matrix
+
+        self.score = None   # score from second round fitting (r2 - penalties)
+        self.peak_penalties = None      # list of penalties for each peak in the Gaussian list
+
+    def get_popt(self):
+        """
+        Return a single parameters list for all Gaussians from this fit in curve_fit compatible
+        format
+        :return: list of optimized params (popt)
+        """
+        popt = []
+        for gaussian in self.gaussians:
+            popt.extend(gaussian.return_popt())
+        return popt
+
+    def plot_fit(self):
+        """
+        plotting method for diagnostics
+        :return: void
+        """
+        plt.clf()
+        plt.scatter(self.x_data, self.y_data)
+        plt.plot(self.x_data, self.y_fit, ls='--', color='black')
+        for gaussian in self.gaussians:
+            plt.plot(self.x_data, gaussfunc(self.x_data, *gaussian.return_popt()))
+        plt.show()
+        plt.close()
+
+
 def multi_gauss_func(x, *params):
     """
     Attempt at basic multi-gaussian fitting by passing multiple parameter sets and generating a sum
@@ -329,29 +428,25 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
     :type params_obj: Parameters
     :return: saves all gaussian outputs into the ciu_obj and returns it
     """
+    # initial setup
     ciu_data = analysis_obj.ciu_data
     dt_axis = analysis_obj.axes[0]    # drift time (DT) - x axis for fitting, y axis for final CIU plot
     cv_axis = analysis_obj.axes[1]
-    filename = analysis_obj.filename
-
-    widthfrac = params_obj.gaussian_5_width_fraction
-    # min_spacing = params_obj.gaussian_min_spacing
-    filter_width_max = params_obj.gaussian_3_width_max
-    intensity_thr = params_obj.gaussian_2_int_threshold
-    # centroid_bounds = params_obj.gaussian_centroid_bound_filter
-    # centroid_plot_bounds = params_obj.gaussian_centroid_bounds
-
-    outputpathdir = filename.rstrip('.ciu')
-    outputpath = os.path.join(os.path.dirname(analysis_obj.filename), outputpathdir)
+    filename = analysis_obj.short_filename
+    outputpath = os.path.join(os.path.dirname(analysis_obj.filename), filename)
     if not os.path.isdir(outputpath):
         os.makedirs(outputpath)
 
-    intarray = np.swapaxes(ciu_data, 0, 1)
-    popt_arr, pcov_arr, fwhm_arr, res_arr, arrivtime_centroid, stats,  = [], [], [], [], [], []
-    filtered_params, arrivtime_gausfit, width_gausfit, rsq_arr, adjrsq_arr = [], [], [], [], []
+    widthfrac = params_obj.gaussian_5_width_fraction
+    # todo: remove these from the params object (and replace with scaling values/etc for penalties)
+    filter_width_max = params_obj.gaussian_3_width_max
+    intensity_thr = params_obj.gaussian_2_int_threshold
 
-    gaussians = []
-    filtered_gaussians = []
+    intarray = np.swapaxes(ciu_data, 0, 1)
+
+    round1_diagnostics_container = FitDiagnostics(cv_axis)
+    round2_diagnostics_container = FitDiagnostics(cv_axis)
+
     # for each CV column in the file, perform a multi-gaussian fitting and save information generated
     print('\nFile ' + str(filename))
 
@@ -361,11 +456,8 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
         all_peak_guesses = estimate_multi_params_all(cv_col_intensities, dt_axis, widthfrac)
 
         param_guesses_multiple = []
-        yfit = 0
-        slope, intercept, rvalue, pvalue, stderr = 0, 0, 0, 0, 0
-        adjrsq = 0
-        i = 0
-        previous_rsq = 0
+        all_fit_rounds = []
+
         # set bounds for fitting: keep baseline and centroid on DT axis, amplitude 0 to 1.5, width 0 to len(dt_axis)
         max_dt = dt_axis[len(dt_axis) - 1]
         min_dt = dt_axis[0]
@@ -373,17 +465,12 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
         fit_bounds_lower_append = [0, min_dt, 0]
         fit_bounds_upper_append = [1, max_dt, len(dt_axis)]
 
-        popt = None
-        # Iterate through peak detection until convergence criterion is met, adding one additional peak each iteration
+        i = 0
         iterate_gaussian_flag = True
+        # Iterate through peak detection until convergence criterion is met, adding one additional peak each iteration
         while iterate_gaussian_flag:
+            # Set up initial guesses
             try:
-                # NOTE: checking if peaks too close was not helpful - removed
-                # if popt is not None:
-                #     if not check_peak_dist(popt, all_peak_guesses[i], params_obj.gaussian_6_min_peak_dist, params_obj.gaussian_3_width_max):
-                #         # peak is too close to an existing peak; skip this guess and continue
-                #         i += 1
-                #         continue
                 param_guesses_multiple.extend(all_peak_guesses[i])
                 # ensure bounds arrays maintain same shape as parameter guesses
                 fit_bounds_lower.extend(fit_bounds_lower_append)
@@ -394,80 +481,33 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
                       'Poor fitting possible'.format(i+1))
                 break
 
+            # Run fitting (round 1)
             try:
                 popt, pcov = curve_fit(multi_gauss_func, dt_axis, cv_col_intensities, method='trf',
                                        p0=param_guesses_multiple,
                                        bounds=(fit_bounds_lower, fit_bounds_upper))
-                perr = np.sqrt(np.diag(pcov))
+                # perr = np.sqrt(np.diag(pcov))
             except (RuntimeError, ValueError):
-                popt = []
-                pcov = []
+                popt, pcov = [], []
 
-            # todo: probably remove this in favor of penalty function
-            # check to see if peaks are too close, and reduce number of guesses by 1 if so
-            # reduce_flag, reduced_guesses = check_peak_dists(popt, params_obj)
-            # if reduce_flag:
-            #     try:
-            #         popt, pcov = curve_fit(multi_gauss_func, dt_axis, cv_col_intensities, method='trf',
-            #                                p0=reduced_guesses,
-            #                                bounds=(fit_bounds_lower[0: len(fit_bounds_lower) - 3],
-            #                                        fit_bounds_upper[0: len(fit_bounds_lower) - 3]))
-            #         perr = np.sqrt(np.diag(pcov))
-            #         i -= 1
-            #         iterate_gaussian_flag = False
-            #     except RuntimeError:
-            #         popt = []
-            #         pcov = []
-
-            yfit = multi_gauss_func(dt_axis, *popt)
-            slope, intercept, rvalue, pvalue, stderr = linregress(cv_col_intensities, yfit)
-            adjrsq = adjrsquared(rvalue ** 2, len(cv_col_intensities))
+            current_fit = SingleFitStats(dt_axis, cv_col_intensities, popt, cv_axis[cv_index])
+            all_fit_rounds.append(current_fit)
 
             # stop iterating once convergence criteria have been reached
-            if not adjrsq < params_obj.gaussian_1_convergence:
+            if not current_fit.adjrsq < params_obj.gaussian_1_convergence:
                 iterate_gaussian_flag = False
 
-            # also stop iterating if the fit stops improving
-            # if adjrsq - previous_rsq < 0.001 and not reduce_flag:
-            #     print('peak removed, rsq improvement was {:.3f}'.format(adjrsq - previous_rsq))
-            #     iterate_gaussian_flag = False
-            #     # remove gaussian from analysis and refit data
-            #     popt = popt[0: len(popt) - 4]
-            #     popt, pcov = curve_fit(multi_gauss_func, dt_axis, cv_col_intensities, method='trf',
-            #                            p0=popt, maxfev=5000,
-            #                            bounds=(fit_bounds_lower[0: len(fit_bounds_lower) - 4],
-            #                                    fit_bounds_upper[0: len(fit_bounds_lower) - 4]))
-            #     yfit = multi_gauss_func(dt_axis, *popt)
-            #     slope, intercept, rvalue, pvalue, stderr = linregress(cv_col_intensities, yfit)
-            #     adjrsq = adjrsquared(rvalue ** 2, len(cv_col_intensities))
-            # previous_rsq = adjrsq
             i += 1
 
-        # filter peaks by width if desired
         print('performed {} iterations'.format(i))
-        filt_popt = popt
-        if filter_width_max is not None:
-            filt_popt = filter_fits(popt, filter_width_max, intensity_thr)
-        filtered_params.append(filt_popt)
 
-        # save Gaussian information to container object lists
-        gaussians.append(generate_gaussians_from_popt(popt, cv_axis[cv_index], pcov))
-        filtered_gaussians.append(generate_gaussians_from_popt(filt_popt, cv_axis[cv_index], pcov))
+        # for round 1, best fit is the final one - use that for final fit data
+        round1_diagnostics_container.append_best_fit_info(all_fit_rounds[-1])
+        round1_diagnostics_container.all_fits_lists.append(all_fit_rounds)
 
-        rsq_arr.append(rvalue ** 2)
-        adjrsq_arr.append(adjrsq)
-        arrivtime_gausfit.append(yfit)
-
-        stats.append([slope, intercept, rvalue ** 2, adjrsq, pvalue, stderr])
-        popt_arr.append(popt)
-        pcov_arr.append(pcov)
-
-    # second pass through data with penalties
-    popt_arr_with_pen, pcov_with_pen = [], []
-    gaussians_with, filt_gaussians_with = [], []
     for cv_index, cv_col_intensities in enumerate(intarray):
         # generate initial guesses using previous fits, extended by peak detection method
-        prev_gaussians = gaussians[cv_index]
+        prev_gaussians = round1_diagnostics_container.gauss_lists[cv_index]
         peak_guesses = []
         for gaussian in prev_gaussians:
             peak_guesses.append(gaussian.return_popt())
@@ -481,13 +521,16 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
         fit_bounds_upper_append = [1, max_dt, len(dt_axis)]
 
         iteration_peaks = len(peak_guesses)
-        if iteration_peaks > 6:
-            iteration_peaks = 6  # cap the max num peaks
+        max_peaks = 7
+        if iteration_peaks > max_peaks:
+            iteration_peaks = max_peaks  # cap the max num peaks
 
         num_peaks = 0
+        r2_all_fits = []
+        r2_final_fits = []
         current_param_guesses = []
         scores = []
-        popt_iterations, pcov_iterations = [], []
+        # popt_iterations, pcov_iterations = [], []
         while num_peaks < iteration_peaks:
             print('second round, iteration {}'.format(num_peaks + 1))
             # update initial guesses and bounds for curve_fit
@@ -509,53 +552,73 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
             except (RuntimeError, ValueError):
                 popt, pcov = [], []
 
-            # compute score
-            yfit = multi_gauss_func(dt_axis, *popt)
-            slope, intercept, rvalue, pvalue, stderr = linregress(cv_col_intensities, yfit)
-            adjrsq = adjrsquared(rvalue ** 2, len(cv_col_intensities))
+            # compute fits and score
+            current_fit = SingleFitStats(dt_axis, cv_col_intensities, popt, cv_axis[cv_index])
+            penalty_scaling = 0.5
+            current_fit.score, current_fit.peak_penalties = compute_fit_score(current_fit.gaussians, current_fit.adjrsq, dt_axis, penalty_scaling)
 
-            score = compute_fit_score(popt, adjrsq, dt_axis)
-            scores.append(score)
+            current_fit.plot_fit()
 
-            popt_iterations.append(popt)
-            pcov_iterations.append(pcov)
+            # remove any poorly fitted peaks and re-fit/score (if any were removed)
+            penalty_cutoff = 0.5
+            updated_gaussians, removed_bool = remove_penalized_peaks(current_fit.gaussians, current_fit.peak_penalties, penalty_cutoff)
+            # if any peaks were removed, update fits and scoring
+            if removed_bool:
+                # create a new fit without the removed peaks
+                try:
+                    new_guess = current_fit.get_popt()
+                    new_popt, new_pcov = curve_fit(multi_gauss_func, dt_axis, cv_col_intensities, method='trf',
+                                                   p0=current_fit.get_popt(),
+                                                   bounds=(fit_bounds_lower, fit_bounds_upper))
+                except (RuntimeError, ValueError):
+                    new_popt, new_pcov = [], []
 
-            # cut off scores that are dropping
-            if len(scores) > 2:
-                if score < scores[num_peaks - 1] and score < scores[num_peaks - 2]:
+                # for gaussian in updated_gaussians:
+                #     new_popt.extend(gaussian.return_popt())
+                updated_fit = SingleFitStats(dt_axis, cv_col_intensities, new_popt, cv_axis[cv_index])
+                updated_fit.score, updated_fit.peak_penalties = compute_fit_score(updated_fit.gaussians, updated_fit.adjrsq, dt_axis, penalty_scaling)
+                print('old score: {:.3f} {} peaks, new score: {:.3f} {} peaks'.format(current_fit.score, len(current_fit.gaussians), updated_fit.score, len(updated_fit.gaussians)))
+
+                updated_fit.plot_fit()
+
+                r2_all_fits.append([current_fit, updated_fit])
+                r2_final_fits.append(updated_fit)
+                final_fit = updated_fit
+            else:
+                r2_all_fits.append(current_fit)
+                r2_final_fits.append(current_fit)
+                final_fit = current_fit
+
+            # cut off scores that are dropping consistently
+            scores.append(final_fit.score)
+            cutoff_after_drops = 3
+            if len(scores) >= cutoff_after_drops + 1:
+                score_drops = []
+                for test_score in scores[-1 - cutoff_after_drops - 1:]:
+                    # determine if the current score is improved over the score from n rounds ago
+                    score_drops.append(final_fit.score > test_score)
+                # if the current score is not higher than the score in any of the previous n rounds, stop iterating
+                if True not in score_drops:
                     break
 
             num_peaks += 1
 
-        # plt.scatter(range(len(peak_guesses)), scores)
-        # plt.show()
-
         # get best score and use that data
         best_score_index = int(np.argmax(scores))
-        print('best score {:.4f} with {} peaks'.format(scores[best_score_index], best_score_index + 1))
+        print('best score {:.3f} with {} peaks'.format(scores[best_score_index], best_score_index + 1))
 
-        final_popt = popt_iterations[best_score_index]
-        final_pcov = pcov_iterations[best_score_index]
-        filt_popt = final_popt
-        if filter_width_max is not None:
-            filt_popt = filter_fits(final_popt, filter_width_max, intensity_thr)
-        filtered_params.append(filt_popt)
+        best_fit = r2_final_fits[best_score_index]
+        round2_diagnostics_container.all_fits_lists.append(r2_all_fits)
+        round2_diagnostics_container.append_best_fit_info(best_fit)
 
-        # save Gaussian information to container object lists
-        gaussians_with.append(generate_gaussians_from_popt(final_popt, cv_axis[cv_index], pcov))
+    # todo: edit CIUAnalysisObj for better saving (only save the rounds diagnostic containers and "gaussians")
+    analysis_obj.filtered_gaussians = round2_diagnostics_container.gauss_lists  # gaussians_with
+    analysis_obj.gaussians = round2_diagnostics_container.gauss_lists   # gaussians_with
 
-    # save fit information to the analysis object and return it
-    analysis_obj.gaussians = gaussians
-    # analysis_obj.filtered_gaussians = filtered_gaussians
-
-    analysis_obj.filtered_gaussians = gaussians_with
-    analysis_obj.gaussians = gaussians_with
-
-    analysis_obj.gauss_adj_r2s = adjrsq_arr
-    analysis_obj.gauss_fits = arrivtime_gausfit
-    analysis_obj.gauss_r2s = rsq_arr
-    analysis_obj.gauss_covariances = pcov_arr
-    analysis_obj.gauss_fit_stats = stats
+    analysis_obj.gauss_adj_r2s = round2_diagnostics_container.adjrsq_list
+    analysis_obj.gauss_fits = [fit.y_fit for fit in round2_diagnostics_container.fit_stats_list]
+    analysis_obj.gauss_r2s = [fit.rvalue ** 2 for fit in round2_diagnostics_container.fit_stats_list]
+    analysis_obj.gauss_covariances = [fit.pcov for fit in round2_diagnostics_container.fit_stats_list]
 
     if params_obj.gaussian_4_save_diagnostics:
         save_gaussfits_pdf(analysis_obj, outputpath)
@@ -566,7 +629,28 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
     return analysis_obj
 
 
-def compute_fit_score(popt, rsq, dt_axis):
+def remove_penalized_peaks(gaussian_list, peak_penalties, penalty_cutoff):
+    """
+    Remove any peaks penalized above the acceptable (cutoff) value. Returns the (possibly shortened)
+    popt list a boolean (True if any peaks were removed)
+    :param gaussian_list: list gaussians from curve_fit
+    :param peak_penalties: list of peak penalties from compute_fit_score
+    :param penalty_cutoff: float - threshold above which to remove a peak
+    :return: filtered_popt list, peaks_removed boolean
+    """
+    final_gaussians = []
+    any_peaks_removed = False
+    for index, gaussian in enumerate(gaussian_list):
+        # if the penalty for this Gaussian is below cutoff, include it.
+        if peak_penalties[index] < penalty_cutoff:
+            final_gaussians.append(gaussian)
+        else:
+            any_peaks_removed = True
+
+    return final_gaussians, any_peaks_removed
+
+
+def compute_fit_score(gaussian_list, rsq, dt_axis, penalty_scaling):
     """
     Uses a penalty function to attempt to regularize the fitting and score peak fits optimally.
     Penalty function is designed to penalize:
@@ -574,24 +658,37 @@ def compute_fit_score(popt, rsq, dt_axis):
         - large numbers of peaks
         - peaks that are too close together
         - large movement compared to previous CV
-    :param popt: optimized parameters from curve_fit
+    :param gaussian_list: optimized parameters from curve_fit, translated into list of Gaussian objects
     :param rsq: r-squared value comparing fitted data against observed
-    :return: score (float between 0, 1)
+    :param dt_axis: x-axis over which to evaluate penalties (e.g. for shared area)
+    :param penalty_scaling: how much to scale penalty (to reduce contribution relative to rsq)
+    :return: score (float between 0, 1), penalties by individual peaks
     """
-    gaussian_list = generate_gaussians_from_popt(popt, cv=None, pcov=None)
-    amplitudes = [gaussian.amplitude for gaussian in gaussian_list]
-    centroids = [gaussian.centroid for gaussian in gaussian_list]
-    widths = [gaussian.width for gaussian in gaussian_list]
+    # amplitudes = [gaussian.amplitude for gaussian in gaussian_list]
+    # centroids = [gaussian.centroid for gaussian in gaussian_list]
+    # widths = [gaussian.width for gaussian in gaussian_list]
+
+    # compute penalties by peak to allow removal of poorly fit peaks
+    peak_penalties = []
+    for gaussian in gaussian_list:
+        current_penalty = compute_width_penalty(gaussian.width, expected_width=0.45, tolerance=0.2, steepness=0.25)
+        if len(gaussian_list) > 1:
+            current_penalty += compute_area_penalty(gaussian, gaussian_list, dt_axis)
+        peak_penalties.append(current_penalty)
+
+    total_penalty = np.sum(peak_penalties)
 
     # width penalty function (some tolerance for allowed width)
-    total_penalty = 0
-    for width in widths:
-        total_penalty += compute_width_penalty(width, expected_width=0.45, tolerance=0.2, steepness=1)
+    # total_penalty = 0
+    # for width in widths:
+    #     total_penalty += compute_width_penalty(width, expected_width=0.45, tolerance=0.2, steepness=1)
+    #
+    # # shared area penalty function
+    # total_penalty += compute_area_penalty(gaussian_list, dt_axis)
 
-    # shared area penalty function
-    total_penalty += compute_area_penalty(gaussian_list, dt_axis)
-
-    return rsq - total_penalty
+    scaled_penalty = total_penalty * penalty_scaling
+    score = rsq - scaled_penalty
+    return score, peak_penalties
 
 
 def compute_width_penalty(input_width, expected_width, tolerance, steepness):
@@ -611,28 +708,33 @@ def compute_width_penalty(input_width, expected_width, tolerance, steepness):
         return steepness * penalized_width
 
 
-def compute_area_penalty(list_of_gaussians, dt_axis):
+def compute_area_penalty(gaussian, list_of_gaussians, dt_axis):
     """
     Shared area penalty intended to penalize peaks that are almost completely overlapped
     by others.
+    :param gaussian: Gaussian object to compare agaisnt the rest of the list
     :param list_of_gaussians: all gaussians currently fit at this CV
+    :param dt_axis: x axis array over which to compute overlap
     :return: penalty (float)
     """
-    # for each gaussian, compute how much area it shares with the rest of the list
+
+    # for this gaussian, compute how much area it shares with the rest of the list
     total_penalty = 0
-    for gaussian in list_of_gaussians:
-        my_area = scipy.integrate.trapz(gaussfunc(dt_axis, *gaussian.return_popt()), dt_axis)
+    # for gaussian in list_of_gaussians:
+    my_area = scipy.integrate.trapz(gaussfunc(dt_axis, *gaussian.return_popt()), dt_axis)
 
-        other_gaussians = [x for x in list_of_gaussians if x is not gaussian]
-        total_shared_area = 0
-        for other in other_gaussians:
-            total_shared_area += shared_area_gauss(dt_axis, gaussian.return_popt(), other.return_popt())
+    other_gaussians = [x for x in list_of_gaussians if x is not gaussian]
+    shared_areas = []
+    for other in other_gaussians:
+        shared_areas.append(shared_area_gauss(dt_axis, gaussian.return_popt(), other.return_popt()))
 
-        # compute shared area (ratio from 0 to 1) and any penalties if > 0.25 (not much until 0.5)
-        shared_area_ratio = total_shared_area / my_area
-        if shared_area_ratio > 0.25:
-            my_penalty = (shared_area_ratio - 0.25) ** 4
-            total_penalty += my_penalty
+    # compute shared area (ratio from 0 to 1) and any penalties if > 0.25 (not much until 0.5)
+    max_shared_area = np.max(shared_areas)
+    shared_area_ratio = max_shared_area / my_area
+    if shared_area_ratio > 0.25:
+        my_penalty = (1.6 * shared_area_ratio - 0.25) ** 4
+        total_penalty += my_penalty
+
     return total_penalty
 
 
