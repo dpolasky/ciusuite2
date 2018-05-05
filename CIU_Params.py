@@ -134,17 +134,31 @@ class Parameters(object):
         self.interp_2_bins = None
 
         # Plotting and saving output parameters
-        self.ciuplot_3_plot_title = None
-        self.ciuplot_1_x_title = None
-        self.ciuplot_2_y_title = None
-        self.ciuplot_4_cmap = None
-        self.ciuplot_5_figwidth = None
-        self.ciuplot_6_figheight = None
-        self.x_allplot_7_dpi = None
+        self.ciuplot_cmap_override = None
+        self.plot_01_cmap = None
+        self.plot_02_extension = None
+        self.plot_03_figwidth = None
+        self.plot_04_figheight = None
+        self.plot_05_dpi = None
+        self.plot_06_show_colorbar = None
+        self.plot_07_show_legend = None
+        self.plot_08_show_axes_titles = None
+        self.plot_09_x_title = None
+        self.plot_10_y_title = None
+        self.plot_11_show_title = None
+        self.plot_12_custom_title = None
 
-        self.x_allplot_1_extension = None
-        self.x_allplot_2_cmap = None
-        self.x_allplot_3_show_colorbar = None
+        # self.ciuplot_3_plot_title = None
+        # self.ciuplot_1_x_title = None
+        # self.ciuplot_2_y_title = None
+        # self.ciuplot_4_cmap = None
+        # self.ciuplot_5_figwidth = None
+        # self.ciuplot_6_figheight = None
+        # self.x_allplot_7_dpi = None
+        #
+        # self.x_allplot_1_extension = None
+        # self.x_allplot_2_cmap = None
+        # self.x_allplot_3_show_colorbar = None
 
         # self.compare_plot_1_x_title = None
         # self.compare_plot_2_y_title = None
@@ -167,21 +181,17 @@ class Parameters(object):
 
         self.reconstruct_1_mode = None
 
-        self.feature_cpt_min_length = None
-        self.feature_cpt_width_tol = None
-        self.feature_cpt_gap_tol = None
+        self.feature_1_ciu50_mode = None  # gaussian or standard mode
+        self.feature_2_min_length = None
+        self.feature_3_width_tol = None
+        self.feature_4_gap_tol = None
 
-        self.feature_gauss_min_length = None
-        self.feature_gauss_width_tol = None
-        self.feature_gauss_gap_tol = None
-
-        self.ciu50_cpt_mode = None
-        self.ciu50_gauss_mode = None
-        self.ciu50_cpt_2_combine_outputs = None
-        self.ciu50_gauss_2_combine_outputs = None
-        self.ciu50_3_interp_factor = None
-        self.ciu50_4_trans_interp_factor = None
-        self.ciu50_5_pad_transitions_cv = None
+        self.ciu50_1_centroiding_mode = None
+        self.ciu50_2_pad_transitions_cv = None
+        self.ciu50_3_combine_outputs = None
+        # advanced menu for ciu50 - move below others or something
+        self.ciu50_x_1_interp_factor = None
+        self.ciu50_x_2_trans_interp_factor = None
 
         # self.classif_feats_1_num_feats = None
         # self.classif_feats_2_min_score = None

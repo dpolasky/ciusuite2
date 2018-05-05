@@ -25,26 +25,33 @@ def ciu_plot(analysis_obj, params_obj, output_dir):
     """
     plt.clf()
     # save filename as plot title, unless a specific title is provided
-    if params_obj.ciuplot_3_plot_title is not None:
-        plot_title = params_obj.ciuplot_3_plot_title
+    if params_obj.plot_12_custom_title is not None:
+        plot_title = params_obj.plot_12_custom_title
         plt.title(plot_title)
+    elif params_obj.plot_11_show_title:
+        plot_title = analysis_obj.short_filename
     else:
         plot_title = ''
+    if params_obj.plot_06_show_colorbar:
+        plt.colorbar(ticks=[0, .25, .5, .75, 1])
+
+    # use filename and provided extension as output path with specific figure size and DPI
     output_title = analysis_obj.short_filename
-    output_path = os.path.join(output_dir, output_title + params_obj.x_allplot_1_extension)
+    output_path = os.path.join(output_dir, output_title + params_obj.plot_02_extension)
+    plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
 
-    plt.figure(figsize=(params_obj.ciuplot_5_figwidth, params_obj.ciuplot_6_figheight), dpi=params_obj.x_allplot_7_dpi)
-
-    plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap=params_obj.ciuplot_4_cmap)
-    plt.xlabel(params_obj.ciuplot_1_x_title, fontsize=16)
-    plt.ylabel(params_obj.ciuplot_2_y_title, fontsize=16)
+    # generate the contour plot with options specified by use
+    plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap=params_obj.ciuplot_cmap_override)
+    if params_obj.plot_08_show_axes_titles:
+        plt.xlabel(params_obj.plot_09_x_title, fontsize=16)
+        plt.ylabel(params_obj.plot_10_y_title, fontsize=16)
     plt.xticks(fontsize=16)
     plt.yticks(fontsize=16)
-    if params_obj.x_allplot_3_show_colorbar:
-        plt.colorbar(ticks=[0, .25, .5, .75, 1])  # plot a colorbar
+
     plt.savefig(output_path)
     plt.close()
 
+    # todo: fix this (in or out) and deal with method return value
     # save csv if desired
     if params_obj.output_1_save_csv:
         save_path = os.path.join(output_dir, plot_title)
@@ -75,41 +82,49 @@ def rmsd_difference(data_1, data_2):
     return dif, rmsd
 
 
-def rmsd_plot(label1, label2, difference_matrix, axes, x_label, y_label, contour_scale, tick_scale, rtext, outputdir,
-              extension='.png', blue_label=None, red_label=None, show_colobar=True):
+def rmsd_plot(difference_matrix, axes, contour_scale, tick_scale, rtext, outputdir, params_obj,
+              file1, file2, blue_label=None, red_label=None):
     """
     Make a CIUSuite comparison RMSD plot with provided parameters
-    :param label1: Filename/title of first (red) file being compared
-    :param label2: Filename/title of second (blue) file being compared
     :param difference_matrix: 2D ndarray with differences to plot
     :param axes: [DT axis, CV axis] - axes labels to use for plot
-    :param x_label: Label for x-axis (string)
-    :param y_label: Label for y-axis (string)
     :param contour_scale: Scaling axis for the contour plot, (default = -1 to 1 in 100 increments)
     :param tick_scale: Scaling axis for ticks on contour plot scalebar (default = -1 to 1 in 6 increments)
     :param rtext: RMSD label to apply to plot
     :param outputdir: directory in which to save plot
-    :param extension: plot extension to save (default: .png)
+    :param file1: filename of first file
+    :param file2: filename of second file
     :param blue_label: (optional) custom colorbar label for the second file
     :param red_label: (optional) custom colorbar label for the first file
-    :param show_colobar: (optional) whether to show colorbar or not. Default True
+    :param params_obj: Parameters container with plotting information
+    :type params_obj: Parameters
     :return: void
     """
-    # os.chdir(outputdir)
+    # initial plot setup
     plt.clf()
-    plt.title('Red: {} \nBlue: {}'.format(label1, label2))
+    if params_obj.plot_12_custom_title is not None:
+        plt.title(params_obj.plot_12_custom_title)
+    elif params_obj.plot_11_show_title:
+        plt.title('Red: {} \nBlue: {}'.format(file1, file2))
+
+    # make the RMSD contour plot
     plt.contourf(axes[1], axes[0], difference_matrix, contour_scale, cmap="bwr", ticks="none")
     plt.tick_params(axis='x', which='both', bottom='off', top='off', left='off', right='off')
     plt.tick_params(axis='y', which='both', bottom='off', top='off', left='off', right='off')
-    plt.annotate(rtext, xy=(200, 10), xycoords='axes points')
-    plt.xlabel(x_label)
-    plt.ylabel(y_label)
-    if show_colobar:
+
+    # plot labels and legends
+    if params_obj.plot_07_show_legend:
+        plt.annotate(rtext, xy=(200, 10), xycoords='axes points')
+    if params_obj.plot_06_show_colorbar:
         colorbar = plt.colorbar(ticks=tick_scale)
         if blue_label is not None and red_label is not None:
             colorbar.ax.set_yticklabels([blue_label, 'Equal', red_label])
+    if params_obj.plot_08_show_axes_titles:
+        plt.xlabel(params_obj.plot_09_x_title)
+        plt.ylabel(params_obj.plot_10_y_title)
 
-    plt.savefig(os.path.join(outputdir, '{}-{}{}'.format(label1, label2, extension)))
+    # save and close
+    plt.savefig(os.path.join(outputdir, '{}-{}{}'.format(file1, file2, params_obj.plot_02_extension)))
     plt.close()
 
 
@@ -124,22 +139,28 @@ def std_dev_plot(analysis_obj, std_dev_matrix, params_obj, output_dir):
     :param output_dir: directory in which to save output
     :return: void
     """
+    # plot standard deviation contour plot, normalized to the maximum std dev observed
     max_std_dev = np.max(std_dev_matrix)
     contour_scale = np.linspace(0, max_std_dev, 100, endpoint=True)
-    plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], std_dev_matrix, contour_scale, cmap="jet")
+    plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], std_dev_matrix, contour_scale, cmap=params_obj.plot_01_cmap)
 
-    plt.xlabel(params_obj.ciuplot_1_x_title)
-    plt.ylabel(params_obj.ciuplot_2_y_title)
-    colorbar_scale = np.linspace(0, max_std_dev, 6, endpoint=True)   # plot colorbar
+    # plot desired labels and legends
+    if params_obj.plot_08_show_axes_titles:
+        plt.xlabel(params_obj.plot_09_x_title)
+        plt.ylabel(params_obj.plot_10_y_title)
+    if params_obj.plot_06_show_colorbar:
+        colorbar_scale = np.linspace(0, max_std_dev, 6, endpoint=True)   # plot colorbar
+        plt.colorbar(ticks=colorbar_scale, format='%.2f')
+    if params_obj.plot_07_show_legend:
+        std_text = 'Max std deviation: {:.2f}'.format(max_std_dev)
+        plt.annotate(std_text, xy=(150, 10), xycoords='axes points')
 
-    plt.colorbar(ticks=colorbar_scale, format='%.2f')
-    std_text = 'Max std deviation: {:.2f}'.format(max_std_dev)
-    plt.annotate(std_text, xy=(150, 10), xycoords='axes points', color='white')
-
+    # save and close
     plt.savefig(os.path.join(output_dir, analysis_obj.short_filename + '_stdev.png'))
     plt.close()
 
 
+# todo: deprecate (?)
 def compare_by_cv(norm_data_1, norm_data_2, axes, smooth_window=None, crop_vals=None):
     """
     Generate an RMSD comparison at EACH collision energy and plot RMSD vs CV.
@@ -236,15 +257,17 @@ def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir):
 
     contour_scaling = np.linspace(-rmsd_plot_scaling, rmsd_plot_scaling, 50, endpoint=True)
     colorbar_scaling = np.linspace(-rmsd_plot_scaling, rmsd_plot_scaling, 3, endpoint=True)
-    rmsd_plot(analysis_obj1.short_filename, analysis_obj2.short_filename, dif, axes, params_obj.ciuplot_1_x_title, params_obj.ciuplot_2_y_title,
+    rmsd_plot(difference_matrix=dif,
+              axes=axes,
+              file1=analysis_obj1.short_filename,
+              file2=analysis_obj2.short_filename,
               contour_scale=contour_scaling,
               tick_scale=colorbar_scaling,
               rtext=rtext,
               outputdir=outputdir,
-              extension=params_obj.x_allplot_1_extension,
+              params_obj=params_obj,
               blue_label=params_obj.compare_2_custom_blue,
-              red_label=params_obj.compare_1_custom_red,
-              show_colobar=params_obj.x_allplot_3_show_colorbar)
+              red_label=params_obj.compare_1_custom_red)
 
     if params_obj.output_1_save_csv:
         save_path = os.path.join(outputdir, title)

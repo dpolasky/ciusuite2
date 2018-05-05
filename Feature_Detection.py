@@ -5,20 +5,18 @@ Date: 10/10/2017
 """
 
 import numpy as np
-# import changepy
-# import changepy.costs
 import pickle
 import matplotlib.pyplot as plt
 import scipy.stats
 import scipy.optimize
 import scipy.interpolate
 import os
+import CIU_Params
 
 # imports for type checking
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from CIU_analysis_obj import CIUAnalysisObj
-    from CIU_Params import Parameters
 
 TRANS_COLOR_DICT = {6: 'white',
                     0: 'red',
@@ -27,6 +25,541 @@ TRANS_COLOR_DICT = {6: 'white',
                     2: 'yellow',
                     1: 'orange',
                     5: 'purple'}
+
+
+def feature_detect_col_max(analysis_obj, params_obj):
+    """
+    Uses max values of each CV column to assign flat features to data. Should be roughly
+    analogous to the changepoint detection + flat features from column maxes in CIU-50 analysis,
+    but without reliance on the (somewhat fickle) changepoint detection
+    :param analysis_obj: CIUAnalysisObj with Gaussians previously fitted
+    :type analysis_obj: CIUAnalysisObj
+    :param params_obj: Parameters object with parameter information
+    :type params_obj: Parameters
+    :rtype: CIUAnalysisObj
+    :return: analysis object with features saved
+    """
+    features = []
+    # compute width tolerance in DT units
+    width_tol_dt = params_obj.feature_3_width_tol * analysis_obj.bin_spacing
+    gap_tol_cv = params_obj.feature_4_gap_tol  # * analysis_obj.cv_spacing
+    cv_spacing = analysis_obj.axes[1][1] - analysis_obj.axes[1][0]
+
+    # Search each gaussian for features it matches (based on centroid)
+    cv_axis = analysis_obj.axes[1]
+    for cv_index, col_max_dt in enumerate(analysis_obj.col_max_dts):
+        # check if any current features will accept the Gaussian
+        found_feature = False
+        for feature in features:
+            if feature.accept_centroid(col_max_dt, width_tol_dt, cv_axis[cv_index], gap_tol_cv, cv_spacing):
+                feature.cvs.append(cv_axis[cv_index])
+                feature.dt_max_vals.append(col_max_dt)
+                feature.cv_indices.append(cv_index)
+
+                found_feature = True
+                break
+
+        if not found_feature:
+            # no feature was found for this Gaussian, so create a new feature
+            new_feature = Feature(gaussian_bool=False)
+            new_feature.cvs.append(cv_axis[cv_index])
+            new_feature.dt_max_vals.append(col_max_dt)
+            new_feature.cv_indices.append(cv_index)
+            features.append(new_feature)
+
+    # filter features to remove 'loners' without a sufficient number of points
+    filtered_features = filter_features(features, params_obj.feature_2_min_length, mode='changept')
+
+    # finalize features by initializing data for ciu-50 analysis
+    # for feature in filtered_features:
+    #     feature.init_feature_data_changept(cv_index_list, feature.cvs, feature.dt_max_vals)
+    analysis_obj.features_changept = filtered_features
+    return analysis_obj
+
+
+def feature_detect_gaussians(analysis_obj, params_obj):
+    """
+    Uses fitted (and filtered) multi-gaussians to assign flat features to data. Should be roughly
+    analogous to the changepoint detection + flat features from column maxes in CIU-50 analysis,
+    but using gaussian data enables seeing all features instead only the most intense one(s).
+    :param analysis_obj: CIUAnalysisObj with Gaussians previously fitted
+    :type analysis_obj: CIUAnalysisObj
+    :param params_obj: Parameters object with parameter information
+    :type params_obj: Parameters
+    :rtype: CIUAnalysisObj
+    :return: analysis object with features saved
+    """
+    features = []
+    # compute width tolerance in DT units
+    width_tol_dt = params_obj.feature_3_width_tol * analysis_obj.bin_spacing
+    gap_tol_cv = params_obj.feature_4_gap_tol  # * analysis_obj.cv_spacing
+    cv_spacing = analysis_obj.axes[1][1] - analysis_obj.axes[1][0]
+
+    # Search each gaussian for features it matches (based on centroid)
+    # get the flat list of filtered gaussians
+    flat_gauss_list = [x for cv_list in analysis_obj.filtered_gaussians for x in cv_list]
+    for gaussian in flat_gauss_list:
+        # check if any current features will accept the Gaussian
+        found_feature = False
+        for feature in features:
+            if feature.accept_centroid(gaussian.centroid, width_tol_dt, gaussian.cv, gap_tol_cv, cv_spacing):
+                feature.gaussians.append(gaussian)
+                found_feature = True
+                break
+
+        if not found_feature:
+            # no feature was found for this Gaussian, so create a new feature
+            new_feature = Feature(gaussian_bool=True)
+            new_feature.gaussians.append(gaussian)
+            features.append(new_feature)
+    # filter features to remove 'loners' without a sufficient number of points
+    filtered_features = filter_features(features, params_obj.feature_2_min_length, mode='gaussian')
+    analysis_obj.features_gaussian = filtered_features
+    return analysis_obj
+
+
+def ciu50_main(analysis_obj, params_obj, outputdir, gaussian_bool):
+    """
+    Primary feature detection runner method. Calls appropriate sub-methods using data and
+    parameters from the passed analysis object
+    :param analysis_obj: CIUAnalysisObj with initial data processed and parameters
+    :type analysis_obj: CIUAnalysisObj
+    :param params_obj: Parameters object with parameter information
+    :type params_obj: Parameters
+    :param outputdir: directory in which to save output
+    :param gaussian_bool: (bool) whether to use Gaussian or raw data Features for CIU-50 fitting
+    :rtype: CIUAnalysisObj
+    :return: updated analysis object with feature detect information saved
+    """
+    # assemble the list of Features to use
+    if gaussian_bool:
+        if analysis_obj.features_gaussian is None:
+            feature_detect_gaussians(analysis_obj, params_obj)
+
+        # Adjust Features to avoid inclusion of any points without col maxes
+        features_list = adjust_gauss_features(analysis_obj, params_obj)
+
+        # Catch bad inputs (not enough features to compute a transition)
+        if len(features_list) <= 1:
+            print('Not enough features (<=1) in file {}. No transition analysis performed'.format(analysis_obj.short_filename))
+            return analysis_obj
+    else:
+        # detect features if none are present
+        if analysis_obj.features_changept is None:
+            analysis_obj = feature_detect_col_max(analysis_obj, params_obj)
+        features_list = analysis_obj.features_changept
+
+    # compute transitions
+    transitions_list = compute_transitions(analysis_obj, params_obj, features_list)
+    if len(transitions_list) == 0:
+        print('No transitions found for file {}'.format(os.path.basename(analysis_obj.filename).rstrip('.ciu')))
+
+    # generate output plot
+    plot_transitions(transitions_list, analysis_obj, params_obj, outputdir)
+
+    return analysis_obj
+
+
+def compute_transitions(analysis_obj, params_obj, adjusted_features):
+    """
+    Fit logistic/sigmoidal transition functions to the transition between each sequential pair
+    of features in the provided gaussian feature list. Saves Transition objects containing combined
+    feature pair info, fit, and resulting CIU-50 value.
+    :param adjusted_features: List of Features adjusted to only include CV data where col max is close to centroid
+    :param analysis_obj: CIU analysis object with gaussian features already prepared
+    :type analysis_obj: CIUAnalysisObj
+    :param params_obj: Parameters object with parameter information
+    :type params_obj: Parameters
+    :rtype: list[Transition]
+    :return: list of Transition objects (also saves to analysis_obj)
+    """
+    # initialize transition fitting information for gaussian feature lists
+    for feature in adjusted_features:
+        # Get indices of each CV relative to the complete fingerprint and corresponding DT max values
+        cv_indices = []
+        cv_axis = list(analysis_obj.axes[1])
+        for cv in feature.cvs:
+            overall_index = cv_axis.index(cv)
+            cv_indices.append(overall_index)
+        # cv_indices = [list(analysis_obj.axes[1]).index(feature.cvs[i]) for i in feature.cvs]
+        # dt_max_bins = analysis_obj.col_maxes[cv_indices[0]: cv_indices[len(cv_indices) - 1]]
+        dt_max_vals = analysis_obj.col_max_dts[cv_indices[0]: cv_indices[len(cv_indices) - 1]]
+        feature.init_feature_data(cv_indices, dt_max_vals)
+
+    # Fit sigmoids for transition calculations
+    index = 0
+    transition_list = []
+    while index < len(adjusted_features) - 1:
+        current_transition = Transition(adjusted_features[index],
+                                        adjusted_features[index + 1],
+                                        analysis_obj)
+        # check to make sure this is a transition that should be fitted (upper feature has a col max)
+        if current_transition.check_features(analysis_obj, params_obj):
+            current_transition.fit_transition(params_obj)
+            transition_list.append(current_transition)
+        else:
+            print('feature {} never reaches 50% intensity, '
+                  'skipping transition between {} and {}'.format(index + 2, index + 1, index + 2))
+        index += 1
+    analysis_obj.transitions = transition_list
+    return transition_list
+
+
+def filter_features(features, min_feature_length, mode):
+    """
+    Remove any features below the specified minimum feature length from the feature list
+    :param features: list of Features
+    :type features: list[Feature]
+    :param min_feature_length: minimum length (number of gaussians) to be included in a feature
+    :param mode: gaussian or changepoint: whether features are from gaussian fitting or changept detection
+    :return: filtered feature list with too-small features removed
+    """
+    filtered_list = []
+    for feature in features:
+        if mode == 'gaussian':
+            if len(feature.gaussians) >= min_feature_length:
+                filtered_list.append(feature)
+        elif mode == 'changept':
+            if len(feature.cvs) >= min_feature_length:
+                filtered_list.append(feature)
+        else:
+            print('invalid mode')
+    return filtered_list
+
+
+def adjust_gauss_features(analysis_obj, params_obj):
+    """
+    Run setup method to prepare Gaussian features for transition fitting. Removes any CV values
+    from features for which the max DT value at that CV is outside the width tolerance from the
+    feature's median DT. This is necessary because Gaussian features start/persist well before/after
+    they are the most abundant peak - which can cause bad fitting if incorrect CV's are included.
+    :param analysis_obj: CIUAnalysisObj with gaussian fitting and gaussian feature detect performed
+    :type analysis_obj: CIUAnalysisObj
+    :param params_obj: Parameters object with parameter information
+    :type params_obj: Parameters
+    :rtype: list[Feature]
+    :return: list of adjusted Features
+    """
+    adjusted_features = []
+    for feature in analysis_obj.features_gaussian:
+        final_cvs = []
+        for cv in feature.cvs:
+            # check if the ciu_data column max value is appropriate for this feature at this CV
+            cv_index = list(analysis_obj.axes[1]).index(cv)
+            dt_diff = abs(analysis_obj.col_max_dts[cv_index] - feature.gauss_median_centroid)
+            if dt_diff < bin_to_ms(params_obj.feature_3_width_tol, analysis_obj.bin_spacing):
+                # also check if a gap has formed and exclude features after the gap if so
+                if len(final_cvs) > 0:
+                    if cv - final_cvs[len(final_cvs) - 1] <= params_obj.feature_4_gap_tol:
+                        # difference is within tolerances; include this CV in the adjusted feature
+                        final_cvs.append(cv)
+                else:
+                    final_cvs.append(cv)
+
+        # initialize the new feature using the CV list (it will only have CV and centroid data)
+        if len(final_cvs) > 0:
+            adj_feature = Feature(gaussian_bool=True)
+            adj_feature.gauss_median_centroid = feature.gauss_median_centroid
+            adj_feature.cvs = final_cvs
+            adjusted_features.append(adj_feature)
+            adj_feature.gaussians = feature.gaussians
+    return adjusted_features
+
+
+def plot_features(analysis_obj, params_obj, outputdir):
+    """
+    Generate a plot of features using previously saved (into the analysis_obj) feature fitting data
+    :param analysis_obj: CIUAnalysisObj with fitting data previously saved to obj.features_gaussian
+    :type analysis_obj: CIUAnalysisObj
+    :param params_obj: Parameters object with parameter information
+    :type params_obj: Parameters
+    :param outputdir: directory in which to save output
+    :return: void
+    """
+    # plot the initial CIU contour plot for reference
+    plt.clf()
+    plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
+    plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap=params_obj.plot_01_cmap)
+
+    # prepare and plot the actual Features using saved data
+    feature_index = 1
+    if params_obj.feature_1_ciu50_mode == 'gaussian':
+        # plot the raw data to show what was fit
+        filt_centroids = analysis_obj.get_attribute_by_cv('centroid', True)
+        for x, y in zip(analysis_obj.axes[1], filt_centroids):
+            plt.scatter([x] * len(y), y, c='w')
+
+        for feature in analysis_obj.features_gaussian:
+            feature_x = [gaussian.cv for gaussian in feature.gaussians]
+            feature_y = [feature.gauss_median_centroid for _ in feature.gaussians]
+            lines = plt.plot(feature_x, feature_y, label='Feature {} median: {:.2f}'.format(feature_index,
+                                                                                            feature.get_median()))
+            feature_index += 1
+            plt.setp(lines, linewidth=3)
+    elif params_obj.feature_1_ciu50_mode == 'standard':
+        # plot the raw data to show what was fit
+        plt.plot(analysis_obj.axes[1], analysis_obj.col_max_dts, 'wo')
+
+        for feature in analysis_obj.features_changept:
+            feature_x = feature.cvs
+            feature_y = feature.dt_max_vals
+            lines = plt.plot(feature_x, feature_y, label='Feature {} median: {:.2f}'.format(feature_index,
+                                                                                            feature.get_median()))
+            feature_index += 1
+            plt.setp(lines, linewidth=3)
+    else:
+        print('invalid mode')
+
+    # plot titles, labels, and legends
+    if params_obj.plot_12_custom_title is not None:
+        plot_title = params_obj.plot_12_custom_title
+        plt.title(plot_title)
+    elif params_obj.plot_11_show_title:
+        plot_title = analysis_obj.short_filename
+        plt.title(plot_title)
+    if params_obj.plot_06_show_colorbar:
+        # default colorbar, since all data is normalized to a max value of 1
+        plt.colorbar(ticks=[0, .25, .5, .75, 1])
+    if params_obj.plot_07_show_legend:
+        plt.legend(loc='best')
+    if params_obj.plot_08_show_axes_titles:
+        plt.xlabel(params_obj.plot_09_x_title)
+        plt.ylabel(params_obj.plot_10_y_title)
+
+    # save plot
+    output_path = os.path.join(outputdir, analysis_obj.filename.rstrip('.ciu') + '_features' + params_obj.plot_02_extension)
+    plt.savefig(output_path)
+    plt.clf()
+
+
+def print_features_list(feature_list, outputpath, mode):
+    """
+    Write feature information to file
+    :param feature_list: list of Feature objects
+    :type feature_list: list[Feature]
+    :param outputpath: directory in which to save output
+    :param mode: gaussian or changepoint
+    :return: void
+    """
+    with open(outputpath, 'w') as outfile:
+        index = 1
+        for feature in feature_list:
+            if mode == 'gaussian':
+                outfile.write('Feature {},Median centroid:,{:.2f},CV range:,{} - {}\n'.format(index,
+                                                                                              feature.get_median(),
+                                                                                              feature.cvs[0],
+                                                                                              feature.cvs[len(feature.cvs) - 1]))
+                outfile.write('CV (V), Centroid, Amplitude, Width, Baseline, FWHM, Resolution\n')
+                for gaussian in feature.gaussians:
+                    outfile.write(gaussian.print_info() + '\n')
+            else:
+                outfile.write('Feature {},Median centroid:,{:.2f},CV range:,{} - {}\n'.format(index,
+                                                                                              feature.get_median(),
+                                                                                              feature.cvs[0],
+                                                                                              feature.cvs[len(feature.cvs) - 1]))
+                outfile.write('CV (V),Peak Drift Time')
+                cv_index = 0
+                for cv in feature.cvs:
+                    outfile.write('{},{:.2f}\n'.format(cv, feature.dt_max_vals[cv_index]))
+                    cv_index += 1
+
+            index += 1
+
+
+def save_ciu50_outputs(analysis_obj, outputpath, combine=False):
+    """
+    Print feature detection outputs to file. Must have feature detection already performed.
+    **NOTE: currently, feature plot is still in the feature detect module, but could (should?)
+    be moved here eventually.
+    :param analysis_obj: CIU container with transition information to save
+    :type analysis_obj: CIUAnalysisObj
+    :param outputpath: directory in which to save output
+    :param combine: whether to output directly for this file or return a string for combining
+    :return: void
+    """
+    output_name = os.path.join(outputpath, analysis_obj.filename + '_features.csv')
+    output_string = 'Transitions:,y0 (ms),ymax (ms),CIU-50 (V),k (steepness),r_squared\n'
+    trans_index = 1
+    for transition in analysis_obj.transitions:
+        output_string += 'transition {} -> {},'.format(trans_index, trans_index + 1)
+        output_string += '{:.2f},{:.2f},{:.2f},{:.2f}'.format(*transition.fit_params)
+        output_string += ',{:.3f}\n'.format(transition.rsq)
+        trans_index += 1
+
+    if combine:
+        # return the output string to be written together with many files
+        return output_string
+    else:
+        with open(output_name, 'w') as outfile:
+            outfile.write(output_string)
+
+
+def save_ciu50_short(analysis_obj, outputpath, combine=False):
+    """
+    Helper method to also save a shortened version of feature information
+    :param analysis_obj: CIU container with transition information to save
+    :type analysis_obj: CIUAnalysisObj
+    :param outputpath: directory in which to save output
+    :param combine: If True, return a string to be combined with other files instead of saving to file
+    :return:
+    """
+    output_name = os.path.join(outputpath, analysis_obj.filename + '_transitions-short.csv')
+    output_string = ''
+
+    # assemble the output
+    for transition in analysis_obj.transitions:
+        output_string += ',{:.2f}'.format(transition.fit_params[2])
+    output_string += '\n'
+
+    if combine:
+        # return the output string to be written together with many files
+        return output_string
+    else:
+        with open(output_name, 'w') as outfile:
+            outfile.write(output_string)
+
+
+def plot_transitions(transition_list, analysis_obj, params_obj, outputdir):
+    """
+    Provide a plot of provided transitions overlaid on top of the CIU contour plot for the
+    provided analysis object
+    :param transition_list: list of Transitions to plot
+    :type transition_list: list[Transition]
+    :param analysis_obj: object with CIU data to plot
+    :type analysis_obj: CIUAnalysisObj
+    :param params_obj: Parameters object with parameter information
+    :type params_obj: Parameters
+    :param outputdir: directory in which to save output
+    :return: void
+    """
+    x_axis = analysis_obj.axes[1]
+    y_data = analysis_obj.col_max_dts
+    plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
+
+    # plot the initial CIU contour plot for reference
+    plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap=params_obj.plot_01_cmap)
+
+    # plot markers for the features/segments assigned
+    plt.plot(x_axis, y_data, 'wo')
+
+    # plot all transitions
+    transition_num = 0
+    for transition in transition_list:
+        # prepare and plot the actual transition using fitted parameters
+        interp_x = np.linspace(x_axis[0], x_axis[len(x_axis) - 1], 200)
+        y_fit = logistic_func(interp_x, *transition.fit_params)
+
+        # use different colors for plotting the transition (up to 6 provided)
+        if transition_num <= 6:
+            trans_line_color = TRANS_COLOR_DICT[transition_num]
+        else:
+            trans_line_color = TRANS_COLOR_DICT[6]
+        trans_plot = plt.plot(interp_x, y_fit, color=trans_line_color, label='CIU50: {:.1f}, r2=: {:.2f}'.format(transition.ciu50, transition.rsq))
+        plt.setp(trans_plot, linewidth=2)
+        transition_num += 1
+
+    # plot titles, labels, and legends
+    if params_obj.plot_12_custom_title is not None:
+        plot_title = params_obj.plot_12_custom_title
+        plt.title(plot_title)
+    elif params_obj.plot_11_show_title:
+        plot_title = analysis_obj.short_filename
+        plt.title(plot_title)
+    if params_obj.plot_06_show_colorbar:
+        # default colorbar, since all data is normalized to a max value of 1
+        plt.colorbar(ticks=[0, .25, .5, .75, 1])
+    if params_obj.plot_08_show_axes_titles:
+        plt.xlabel(params_obj.plot_09_x_title)
+        plt.ylabel(params_obj.plot_10_y_title)
+    if params_obj.plot_07_show_legend:
+        plt.legend(loc='best')
+
+    # save plot to file
+    filename = os.path.basename(analysis_obj.filename).rstrip('.ciu') + '_transition' + params_obj.plot_02_extension
+    output_path = os.path.join(outputdir, filename)
+    plt.savefig(output_path)
+
+
+def bin_to_dt(bin_val, min_dt, bin_spacing):
+    """
+    Convert a bin value to a fingerprint-relative drift time. Adjusts for the minimum DT of
+    the fingerprint to give accurate drift axis results. Should NOT be used for conversion
+    of absolute bin -> DT
+    :param bin_val: (int) bin number to convert to DT space
+    :param min_dt: minimum DT of fingerprint
+    :param bin_spacing: spacing between DT bins (conversion factor)
+    :return: DT in drift axis units
+    """
+    dt = min_dt + (bin_val - 1) * bin_spacing
+    return dt
+
+
+def bin_to_ms(bin_val, bin_spacing):
+    """
+    Conversion from a number of bins to the corresponding time in ms (or other drift units)
+    for the provided spacing. Differs from bin to dt in that the output time is NOT adjusted
+    for the minimum of the fingerprint (an absolute conversion, rather than a fingerprint-relative
+    conversion).
+    :param bin_val: (int) number of bins to convert
+    :param bin_spacing: distance between bins in time units (conversion factor)
+    :return: time in drift axis units corresponding to bin val
+    """
+    dt = bin_val * bin_spacing
+    return dt
+
+
+def logistic_func(x, c, y0, x0, k):
+    """
+    Generalized logistic function for fitting to feature transitions
+    :param x: x value (independent variable)
+    :param c: height of the maximum/upper asymptote of the curve
+    :param y0: height of the minimum/lower asymptote of the curve
+    :param x0: centroid/midpoint of the curve (also CIU-50 value of the transition)
+    :param k: steepness of the curve/transition
+    :return: y = f(x)
+    """
+    # y = c / (1 + np.exp(-k * (x - x0))) + y0
+    y = y0 + ((c - y0) / (1 + np.exp(-k * (x - x0))))
+    return y
+
+
+def fit_logistic(x_axis, y_data, guess_center, guess_min, guess_max, steepness_guess):
+    """
+    Fit a general logistic function (defined above) to data using the SciPy.optimize
+    curve_fit module.
+    :param x_axis: x data to fit (list or ndarray)
+    :param y_data: y data to fit (list of ndarray)
+    :param guess_center: initial guess for x0 - should be around the midpoint of the transition
+    :param guess_max: initial guess for c - should be around the max y-value for the transition
+    :param guess_min: initial guess for y0 - should be around the min y-value for the transition
+    :param steepness_guess: initial guess for k. 0.1 works well for shallower transitions and still gets steep ones
+    :return: popt, pcov: popt = optimized parameters [c, y0, x0, k] from fitting, pcov = covariance matrix
+    """
+    # guess initial params: [c, y0, x0, k], default guess k=1
+    p0 = [guess_max, guess_min, guess_center, steepness_guess]
+    # constrain all parameters to positive values
+    fit_bounds_lower = [0, 0, 0, 0]
+    fit_bounds_upper = [np.inf, np.inf, np.inf, np.inf]
+    try:
+        popt, pcov = scipy.optimize.curve_fit(logistic_func, x_axis, y_data, p0=p0,
+                                              bounds=(fit_bounds_lower, fit_bounds_upper))
+    except ValueError:
+        print('Error: fitting failed due to bad input values. Please try smoothing the input data more')
+        popt, pcov = [], []
+    # popt, pcov = scipy.optimize.curve_fit(logistic_func, x_axis, y_data, p0=p0, maxfev=5000)
+    return popt, pcov
+
+
+def find_nearest(array, value):
+    """
+    Get the index in the array nearest to the input value. Handles values outside the
+    array by returning the end value in the correct direction.
+    :param array: array-like object to search within
+    :param value: value to find nearest index in the array
+    :return: index (int) of closest match in the array
+    """
+    idx = (np.abs(array - value)).argmin()
+    return idx
 
 
 class Feature(object):
@@ -125,350 +658,6 @@ class Feature(object):
         self.dt_max_vals = dt_val_list
 
 
-def feature_detect_col_max(analysis_obj, params_obj):
-    """
-    Uses max values of each CV column to assign flat features to data. Should be roughly
-    analogous to the changepoint detection + flat features from column maxes in CIU-50 analysis,
-    but without reliance on the (somewhat fickle) changepoint detection
-    :param analysis_obj: CIUAnalysisObj with Gaussians previously fitted
-    :type analysis_obj: CIUAnalysisObj
-    :param params_obj: Parameters object with parameter information
-    :type params_obj: Parameters
-    :rtype: CIUAnalysisObj
-    :return: analysis object with features saved
-    """
-    features = []
-    # compute width tolerance in DT units
-    width_tol_dt = params_obj.feature_cpt_width_tol * analysis_obj.bin_spacing
-    gap_tol_cv = params_obj.feature_cpt_gap_tol  # * analysis_obj.cv_spacing
-    cv_spacing = analysis_obj.axes[1][1] - analysis_obj.axes[1][0]
-
-    # Search each gaussian for features it matches (based on centroid)
-    cv_axis = analysis_obj.axes[1]
-    for cv_index, col_max_dt in enumerate(analysis_obj.col_max_dts):
-        # check if any current features will accept the Gaussian
-        found_feature = False
-        for feature in features:
-            if feature.accept_centroid(col_max_dt, width_tol_dt, cv_axis[cv_index], gap_tol_cv, cv_spacing):
-                feature.cvs.append(cv_axis[cv_index])
-                feature.dt_max_vals.append(col_max_dt)
-                feature.cv_indices.append(cv_index)
-
-                found_feature = True
-                break
-
-        if not found_feature:
-            # no feature was found for this Gaussian, so create a new feature
-            new_feature = Feature(gaussian_bool=False)
-            new_feature.cvs.append(cv_axis[cv_index])
-            new_feature.dt_max_vals.append(col_max_dt)
-            new_feature.cv_indices.append(cv_index)
-            features.append(new_feature)
-
-    # filter features to remove 'loners' without a sufficient number of points
-    filtered_features = filter_features(features, params_obj.feature_cpt_min_length, mode='changept')
-
-    # finalize features by initializing data for ciu-50 analysis
-    # for feature in filtered_features:
-    #     feature.init_feature_data_changept(cv_index_list, feature.cvs, feature.dt_max_vals)
-    analysis_obj.features_changept = filtered_features
-    return analysis_obj
-
-
-def feature_detect_gaussians(analysis_obj, params_obj):
-    """
-    Uses fitted (and filtered) multi-gaussians to assign flat features to data. Should be roughly
-    analogous to the changepoint detection + flat features from column maxes in CIU-50 analysis,
-    but using gaussian data enables seeing all features instead only the most intense one(s).
-    :param analysis_obj: CIUAnalysisObj with Gaussians previously fitted
-    :type analysis_obj: CIUAnalysisObj
-    :param params_obj: Parameters object with parameter information
-    :type params_obj: Parameters
-    :rtype: CIUAnalysisObj
-    :return: analysis object with features saved
-    """
-    features = []
-    # compute width tolerance in DT units
-    width_tol_dt = params_obj.feature_gauss_width_tol * analysis_obj.bin_spacing
-    gap_tol_cv = params_obj.feature_gauss_gap_tol  # * analysis_obj.cv_spacing
-    cv_spacing = analysis_obj.axes[1][1] - analysis_obj.axes[1][0]
-
-    # Search each gaussian for features it matches (based on centroid)
-    # get the flat list of filtered gaussians
-    flat_gauss_list = [x for cv_list in analysis_obj.filtered_gaussians for x in cv_list]
-    for gaussian in flat_gauss_list:
-        # check if any current features will accept the Gaussian
-        found_feature = False
-        for feature in features:
-            if feature.accept_centroid(gaussian.centroid, width_tol_dt, gaussian.cv, gap_tol_cv, cv_spacing):
-                feature.gaussians.append(gaussian)
-                found_feature = True
-                break
-
-        if not found_feature:
-            # no feature was found for this Gaussian, so create a new feature
-            new_feature = Feature(gaussian_bool=True)
-            new_feature.gaussians.append(gaussian)
-            features.append(new_feature)
-    # filter features to remove 'loners' without a sufficient number of points
-    filtered_features = filter_features(features, params_obj.feature_gauss_min_length, mode='gaussian')
-    analysis_obj.features_gaussian = filtered_features
-    return analysis_obj
-
-
-def compute_transitions_gaussian(analysis_obj, params_obj, adjusted_features):
-    """
-    Fit logistic/sigmoidal transition functions to the transition between each sequential pair
-    of features in the provided gaussian feature list. Saves Transition objects containing combined
-    feature pair info, fit, and resulting CIU-50 value.
-    :param adjusted_features: List of Features adjusted to only include CV data where col max is close to centroid
-    :param analysis_obj: CIU analysis object with gaussian features already prepared
-    :type analysis_obj: CIUAnalysisObj
-    :param params_obj: Parameters object with parameter information
-    :type params_obj: Parameters
-    :rtype: list[Transition]
-    :return: list of Transition objects (also saves to analysis_obj)
-    """
-    # initialize transition fitting information for gaussian feature lists
-    for feature in adjusted_features:
-        # Get indices of each CV relative to the complete fingerprint and corresponding DT max values
-        cv_indices = []
-        cv_axis = list(analysis_obj.axes[1])
-        for cv in feature.cvs:
-            overall_index = cv_axis.index(cv)
-            cv_indices.append(overall_index)
-        # cv_indices = [list(analysis_obj.axes[1]).index(feature.cvs[i]) for i in feature.cvs]
-        # dt_max_bins = analysis_obj.col_maxes[cv_indices[0]: cv_indices[len(cv_indices) - 1]]
-        dt_max_vals = analysis_obj.col_max_dts[cv_indices[0]: cv_indices[len(cv_indices) - 1]]
-        feature.init_feature_data(cv_indices, dt_max_vals)
-
-    # Fit sigmoids for transition calculations
-    index = 0
-    transition_list = []
-    while index < len(adjusted_features) - 1:
-        current_transition = Transition(adjusted_features[index],
-                                        adjusted_features[index + 1],
-                                        analysis_obj)
-        # check to make sure this is a transition that should be fitted (upper feature has a col max)
-        if current_transition.check_features(analysis_obj, params_obj):
-            current_transition.fit_transition(params_obj)
-            transition_list.append(current_transition)
-        else:
-            print('feature {} never reaches 50% intensity, '
-                  'skipping transition between {} and {}'.format(index + 2, index + 1, index + 2))
-        index += 1
-    analysis_obj.transitions = transition_list
-    return transition_list
-
-
-def filter_features(features, min_feature_length, mode):
-    """
-    Remove any features below the specified minimum feature length from the feature list
-    :param features: list of Features
-    :type features: list[Feature]
-    :param min_feature_length: minimum length (number of gaussians) to be included in a feature
-    :param mode: gaussian or changepoint: whether features are from gaussian fitting or changept detection
-    :return: filtered feature list with too-small features removed
-    """
-    filtered_list = []
-    for feature in features:
-        if mode == 'gaussian':
-            if len(feature.gaussians) >= min_feature_length:
-                filtered_list.append(feature)
-        elif mode == 'changept':
-            if len(feature.cvs) >= min_feature_length:
-                filtered_list.append(feature)
-        else:
-            print('invalid mode')
-    return filtered_list
-
-
-def adjust_gauss_features(analysis_obj, params_obj):
-    """
-    Run setup method to prepare Gaussian features for transition fitting. Removes any CV values
-    from features for which the max DT value at that CV is outside the width tolerance from the
-    feature's median DT. This is necessary because Gaussian features start/persist well before/after
-    they are the most abundant peak - which can cause bad fitting if incorrect CV's are included.
-    :param analysis_obj: CIUAnalysisObj with gaussian fitting and gaussian feature detect performed
-    :type analysis_obj: CIUAnalysisObj
-    :param params_obj: Parameters object with parameter information
-    :type params_obj: Parameters
-    :rtype: list[Feature]
-    :return: list of adjusted Features
-    """
-    adjusted_features = []
-    for feature in analysis_obj.features_gaussian:
-        final_cvs = []
-        for cv in feature.cvs:
-            # check if the ciu_data column max value is appropriate for this feature at this CV
-            cv_index = list(analysis_obj.axes[1]).index(cv)
-            dt_diff = abs(analysis_obj.col_max_dts[cv_index] - feature.gauss_median_centroid)
-            if dt_diff < bin_to_ms(params_obj.feature_gauss_width_tol, analysis_obj.bin_spacing):
-                # also check if a gap has formed and exclude features after the gap if so
-                if len(final_cvs) > 0:
-                    if cv - final_cvs[len(final_cvs) - 1] <= params_obj.feature_gauss_gap_tol:
-                        # difference is within tolerances; include this CV in the adjusted feature
-                        final_cvs.append(cv)
-                else:
-                    final_cvs.append(cv)
-
-        # initialize the new feature using the CV list (it will only have CV and centroid data)
-        if len(final_cvs) > 0:
-            adj_feature = Feature(gaussian_bool=True)
-            adj_feature.gauss_median_centroid = feature.gauss_median_centroid
-            adj_feature.cvs = final_cvs
-            adjusted_features.append(adj_feature)
-            adj_feature.gaussians = feature.gaussians
-    return adjusted_features
-
-
-def plot_features(analysis_obj, params_obj, outputdir, mode):
-    """
-    Generate a plot of features using gaussian-based feature fitting data previously saved
-    to a CIUAnalysisObj.
-    :param analysis_obj: CIUAnalysisObj with fitting data previously saved to obj.features_gaussian
-    :type analysis_obj: CIUAnalysisObj
-    :param params_obj: Parameters object with parameter information
-    :type params_obj: Parameters
-    :param outputdir: directory in which to save output
-    :param mode: gaussian or changept: whether features are from Gaussian or Changepoint based fitting
-    :return: void
-    """
-    # plot the initial CIU contour plot for reference
-    plt.clf()
-    plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap=params_obj.x_allplot_2_cmap)
-    if params_obj.x_allplot_3_show_colorbar:
-        plt.colorbar(ticks=[0, 1])
-
-    # plot blue circles of the gaussian centroids found
-    # filt_centroids = analysis_obj.get_attribute_by_cv('centroid', True)
-    # for x, y in zip(analysis_obj.axes[1], filt_centroids):
-    #     plt.scatter([x] * len(y), y)
-
-    # prepare and plot the actual transition using fitted parameters
-    feature_index = 1
-
-    if mode == 'gaussian':
-        # plot the raw data to show what was fit
-        filt_centroids = analysis_obj.get_attribute_by_cv('centroid', True)
-        for x, y in zip(analysis_obj.axes[1], filt_centroids):
-            plt.scatter([x] * len(y), y, c='w')
-
-        for feature in analysis_obj.features_gaussian:
-            feature_x = [gaussian.cv for gaussian in feature.gaussians]
-            feature_y = [feature.gauss_median_centroid for _ in feature.gaussians]
-            lines = plt.plot(feature_x, feature_y, label='Feature {} median: {:.2f}'.format(feature_index,
-                                                                                            feature.get_median()))
-            feature_index += 1
-            plt.setp(lines, linewidth=3)
-
-    elif mode == 'changept':
-        # plot the raw data to show what was fit
-        plt.plot(analysis_obj.axes[1], analysis_obj.col_max_dts, 'wo')
-
-        for feature in analysis_obj.features_changept:
-            feature_x = feature.cvs
-            feature_y = feature.dt_max_vals
-            lines = plt.plot(feature_x, feature_y, label='Feature {} median: {:.2f}'.format(feature_index,
-                                                                                            feature.get_median()))
-            feature_index += 1
-            plt.setp(lines, linewidth=3)
-    else:
-        print('invalid mode')
-    plt.legend(loc='best')
-    output_path = os.path.join(outputdir, analysis_obj.filename.rstrip('.ciu') + '_features' + params_obj.x_allplot_1_extension)
-    plt.savefig(output_path)
-    plt.clf()
-
-
-def print_features_list(feature_list, outputpath, mode):
-    """
-    Write feature information to file
-    :param feature_list: list of Feature objects
-    :type feature_list: list[Feature]
-    :param outputpath: directory in which to save output
-    :param mode: gaussian or changepoint
-    :return: void
-    """
-    with open(outputpath, 'w') as outfile:
-        index = 1
-        for feature in feature_list:
-
-            if mode == 'gaussian':
-                outfile.write('Feature {},Median centroid:,{:.2f},CV range:,{} - {}\n'.format(index,
-                                                                                              feature.get_median(),
-                                                                                              feature.cvs[0],
-                                                                                              feature.cvs[len(feature.cvs) - 1]))
-                outfile.write('CV (V), Centroid, Amplitude, Width, Baseline, FWHM, Resolution\n')
-                for gaussian in feature.gaussians:
-                    outfile.write(gaussian.print_info() + '\n')
-            else:
-                outfile.write('Feature {},Median centroid:,{:.2f},CV range:,{} - {}\n'.format(index,
-                                                                                              feature.get_median(),
-                                                                                              feature.cvs[0],
-                                                                                              feature.cvs[len(feature.cvs) - 1]))
-                outfile.write('CV (V),Peak Drift Time')
-                cv_index = 0
-                for cv in feature.cvs:
-                    outfile.write('{},{:.2f}\n'.format(cv, feature.dt_max_vals[cv_index]))
-                    cv_index += 1
-
-            index += 1
-
-
-def save_ciu50_outputs(analysis_obj, outputpath, combine=False):
-    """
-    Print feature detection outputs to file. Must have feature detection already performed.
-    **NOTE: currently, feature plot is still in the feature detect module, but could (should?)
-    be moved here eventually.
-    :param analysis_obj: CIU container with transition information to save
-    :type analysis_obj: CIUAnalysisObj
-    :param outputpath: directory in which to save output
-    :param combine: whether to output directly for this file or return a string for combining
-    :return: void
-    """
-    output_name = os.path.join(outputpath, analysis_obj.filename + '_features.csv')
-    output_string = 'Transitions:,y0 (ms),ymax (ms),CIU-50 (V),k (steepness),r_squared\n'
-    trans_index = 1
-    for transition in analysis_obj.transitions:
-        output_string += 'transition {} -> {},'.format(trans_index, trans_index + 1)
-        output_string += '{:.2f},{:.2f},{:.2f},{:.2f}'.format(*transition.fit_params)
-        output_string += ',{:.3f}\n'.format(transition.rsq)
-        trans_index += 1
-
-    if combine:
-        # return the output string to be written together with many files
-        return output_string
-    else:
-        with open(output_name, 'w') as outfile:
-            outfile.write(output_string)
-
-
-def save_ciu50_short(analysis_obj, outputpath, combine=False):
-    """
-    Helper method to also save a shortened version of feature information
-    :param analysis_obj: CIU container with transition information to save
-    :type analysis_obj: CIUAnalysisObj
-    :param outputpath: directory in which to save output
-    :param combine: If True, return a string to be combined with other files instead of saving to file
-    :return:
-    """
-    output_name = os.path.join(outputpath, analysis_obj.filename + '_transitions-short.csv')
-    output_string = ''
-
-    # assemble the output
-    for transition in analysis_obj.transitions:
-        output_string += ',{:.2f}'.format(transition.fit_params[2])
-    output_string += '\n'
-
-    if combine:
-        # return the output string to be written together with many files
-        return output_string
-    else:
-        with open(output_name, 'w') as outfile:
-            outfile.write(output_string)
-
-
 class Transition(object):
     """
     Store information about a CIU transition, including the starting and ending feature,
@@ -560,6 +749,8 @@ class Transition(object):
         """
         # initial fitting guesses: center is in between the features, min/max are median DTs of features 1 and 2
         center_guess = self.feature2.start_cv_val - (self.feat_distance / 2.0)   # halfway between features
+
+        # todo: deprecate?
         # if gaussian_bool:
         #     self.min_guess = self.feature1.gauss_median_centroid
         #     self.max_guess = self.feature2.gauss_median_centroid
@@ -577,41 +768,42 @@ class Transition(object):
             print('Caution: negative slope transition observed in file {}. Data may require additional smoothing if this is unexpected'.format(self.filename))
 
         # for interpolation of transition modes - determine transition region to interpolate
-        pad_cv = params_obj.ciu50_5_pad_transitions_cv
+        pad_cv = params_obj.ciu50_2_pad_transitions_cv
         trans_start_cv = self.feature1.end_cv_val - pad_cv
         trans_end_cv = self.feature2.start_cv_val + pad_cv
         trans_distance = self.feat_distance
 
-        if params_obj.ciu50_3_interp_factor > 0:
+        # todo: deprecate? or leave at 2 always (or some kind of advanced menu)
+        if params_obj.ciu50_x_1_interp_factor > 0:
             # interpolate whole dataset
             interp_x_vals = np.linspace(self.combined_x_axis[0], self.combined_x_axis[len(self.combined_x_axis) - 1],
-                                        len(self.combined_x_axis) * params_obj.ciu50_3_interp_factor)
+                                        len(self.combined_x_axis) * params_obj.ciu50_x_1_interp_factor)
             interp_function = scipy.interpolate.interp1d(self.combined_x_axis, self.combined_y_vals)
             interp_y_vals = interp_function(interp_x_vals)
         else:
             interp_x_vals = self.combined_x_axis
             interp_y_vals = self.combined_y_vals
 
-        if params_obj.ciu50_cpt_mode == 1:
+        if params_obj.ciu50_1_centroiding_mode == 'max':
             # no spectral centroiding
             final_x_vals, final_y_vals = self.assemble_transition_data(interp_x_vals, interp_y_vals, trans_start_cv,
                                                                        trans_end_cv, trans_distance)
 
-        elif params_obj.ciu50_cpt_mode == 2:
+        elif params_obj.ciu50_1_centroiding_mode == 'average':
             # spectral averaging
             interp_function_raw = scipy.interpolate.interp1d(self.combined_x_axis, self.combined_y_avg_raw)
             interp_y_vals = interp_function_raw(interp_x_vals)
             final_x_vals, final_y_vals = self.assemble_transition_data(interp_x_vals, interp_y_vals, trans_start_cv,
                                                                        trans_end_cv, trans_distance,
-                                                                       interp_trans_factor=params_obj.ciu50_4_trans_interp_factor,
+                                                                       interp_trans_factor=params_obj.ciu50_x_2_trans_interp_factor,
                                                                        trans_interp_fn=interp_function_raw)
-        elif params_obj.ciu50_cpt_mode == 3:
+        elif params_obj.ciu50_1_centroiding_mode == 'median':
             # spectral median
             interp_function_raw = scipy.interpolate.interp1d(self.combined_x_axis, self.combined_y_median_raw)
             interp_y_vals = interp_function_raw(interp_x_vals)
             final_x_vals, final_y_vals = self.assemble_transition_data(interp_x_vals, interp_y_vals, trans_start_cv,
                                                                        trans_end_cv, trans_distance,
-                                                                       interp_trans_factor=params_obj.ciu50_4_trans_interp_factor,
+                                                                       interp_trans_factor=params_obj.ciu50_x_2_trans_interp_factor,
                                                                        trans_interp_fn=interp_function_raw)
 
         else:
@@ -699,7 +891,7 @@ class Transition(object):
             return False
 
         feature2_cv_indices = np.arange(self.feature2.start_cv_index, self.feature2.end_cv_index)
-        width_tol_dt = params_obj.feature_gauss_width_tol * analysis_obj.bin_spacing
+        width_tol_dt = params_obj.feature_3_width_tol * analysis_obj.bin_spacing
         for cv_index in feature2_cv_indices:
             # check if a column max is within tolerance of the feature median
             current_max_dt = analysis_obj.col_max_dts[cv_index]
@@ -710,198 +902,43 @@ class Transition(object):
         # no CV found with column max within tolerance - return false
         return False
 
-    def plot_transition(self, analysis_obj, params_obj, outputdir, transition_num):
-        """
-        Provide a plot of this transition overlaid on top of the CIU contour plot
-        :param analysis_obj: object with CIU data to plot
-        :type analysis_obj: CIUAnalysisObj
-        :param params_obj: Parameters object with parameter information
-        :type params_obj: Parameters
-        :param outputdir: directory in which to save output
-        :param transition_num: Because this method is called repeatedly to plot a series of transitions, this determines
-        what number transition for color and plot setup purposes
-        :return: void
-        """
-        x_axis = analysis_obj.axes[1]
-        y_data = analysis_obj.col_max_dts
 
-        # plot the initial CIU contour plot for reference
-        if transition_num == 0:
-            plt.figure(dpi=params_obj.x_allplot_7_dpi)
-            plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap=params_obj.x_allplot_2_cmap)
-            if params_obj.x_allplot_3_show_colorbar:
-                plt.colorbar(ticks=[0, 1])
-
-            # plot markers for the features/segments assigned
-            plt.plot(x_axis, y_data, 'wo')
-
-        # prepare and plot the actual transition using fitted parameters
-        interp_x = np.linspace(x_axis[0], x_axis[len(x_axis) - 1], 200)
-        y_fit = logistic_func(interp_x, *self.fit_params)
-        # plt.plot(interp_x, y_fit, 'white', label='CIU50: {:.1f} +/- {:.2f}, r2=: {:.2f}'.format(self.ciu50, self.fit_param_errors[2], self.rsq))
-
-        # use different colors for plotting the transition (up to 6 provided)
-        if transition_num <= 6:
-            trans_line_color = TRANS_COLOR_DICT[transition_num]
-        else:
-            trans_line_color = TRANS_COLOR_DICT[6]
-        trans_plot = plt.plot(interp_x, y_fit, color=trans_line_color, label='CIU50: {:.1f}, r2=: {:.2f}'.format(self.ciu50, self.rsq))
-        plt.setp(trans_plot, linewidth=2)
-
-        plt.legend(loc='best')
-        filename = os.path.basename(analysis_obj.filename).rstrip('.ciu') + '_transition' + params_obj.x_allplot_1_extension
-        output_path = os.path.join(outputdir, filename)
-        plt.savefig(output_path)
-
-
-def bin_to_dt(bin_val, min_dt, bin_spacing):
-    """
-    Convert a bin value to a fingerprint-relative drift time. Adjusts for the minimum DT of
-    the fingerprint to give accurate drift axis results. Should NOT be used for conversion
-    of absolute bin -> DT
-    :param bin_val: (int) bin number to convert to DT space
-    :param min_dt: minimum DT of fingerprint
-    :param bin_spacing: spacing between DT bins (conversion factor)
-    :return: DT in drift axis units
-    """
-    dt = min_dt + (bin_val - 1) * bin_spacing
-    return dt
-
-
-def bin_to_ms(bin_val, bin_spacing):
-    """
-    Conversion from a number of bins to the corresponding time in ms (or other drift units)
-    for the provided spacing. Differs from bin to dt in that the output time is NOT adjusted
-    for the minimum of the fingerprint (an absolute conversion, rather than a fingerprint-relative
-    conversion).
-    :param bin_val: (int) number of bins to convert
-    :param bin_spacing: distance between bins in time units (conversion factor)
-    :return: time in drift axis units corresponding to bin val
-    """
-    dt = bin_val * bin_spacing
-    return dt
-
-
-def logistic_func(x, c, y0, x0, k):
-    """
-    Generalized logistic function for fitting to feature transitions
-    :param x: x value (independent variable)
-    :param c: height of the maximum/upper asymptote of the curve
-    :param y0: height of the minimum/lower asymptote of the curve
-    :param x0: centroid/midpoint of the curve (also CIU-50 value of the transition)
-    :param k: steepness of the curve/transition
-    :return: y = f(x)
-    """
-    # y = c / (1 + np.exp(-k * (x - x0))) + y0
-    y = y0 + ((c - y0) / (1 + np.exp(-k * (x - x0))))
-    return y
-
-
-def fit_logistic(x_axis, y_data, guess_center, guess_min, guess_max, steepness_guess):
-    """
-    Fit a general logistic function (defined above) to data using the SciPy.optimize
-    curve_fit module.
-    :param x_axis: x data to fit (list or ndarray)
-    :param y_data: y data to fit (list of ndarray)
-    :param guess_center: initial guess for x0 - should be around the midpoint of the transition
-    :param guess_max: initial guess for c - should be around the max y-value for the transition
-    :param guess_min: initial guess for y0 - should be around the min y-value for the transition
-    :param steepness_guess: initial guess for k. 0.1 works well for shallower transitions and still gets steep ones
-    :return: popt, pcov: popt = optimized parameters [c, y0, x0, k] from fitting, pcov = covariance matrix
-    """
-    # guess initial params: [c, y0, x0, k], default guess k=1
-    p0 = [guess_max, guess_min, guess_center, steepness_guess]
-    # constrain all parameters to positive values
-    fit_bounds_lower = [0, 0, 0, 0]
-    fit_bounds_upper = [np.inf, np.inf, np.inf, np.inf]
-    try:
-        popt, pcov = scipy.optimize.curve_fit(logistic_func, x_axis, y_data, p0=p0,
-                                              bounds=(fit_bounds_lower, fit_bounds_upper))
-    except ValueError:
-        print('Error: fitting failed due to bad input values. Please try smoothing the input data more')
-        popt, pcov = [], []
-    # popt, pcov = scipy.optimize.curve_fit(logistic_func, x_axis, y_data, p0=p0, maxfev=5000)
-    return popt, pcov
-
-
-def find_nearest(array, value):
-    """
-    Get the index in the array nearest to the input value. Handles values outside the
-    array by returning the end value in the correct direction.
-    :param array: array-like object to search within
-    :param value: value to find nearest index in the array
-    :return: index (int) of closest match in the array
-    """
-    idx = (np.abs(array - value)).argmin()
-    return idx
-
-
-def ciu50_main(analysis_obj, params_obj, outputdir):
-    """
-    Primary feature detection runner method. Calls appropriate sub-methods using data and
-    parameters from the passed analysis object
-    :param analysis_obj: CIUAnalysisObj with initial data processed and parameters
-    :type analysis_obj: CIUAnalysisObj
-    :param params_obj: Parameters object with parameter information
-    :type params_obj: Parameters
-    :param outputdir: directory in which to save output
-    :rtype: CIUAnalysisObj
-    :return: updated analysis object with feature detect information saved
-    """
-    # change_indices, change_cvs = changepoint_detect(analysis_obj)
-    # features_list = partition_to_features(analysis_obj,
-    #                                       change_indices,
-    #                                       params_obj.min_feature_length,
-    #                                       params_obj.flat_width_tolerance)
-    if analysis_obj.features_changept is None:
-        # analysis_obj = feature_detect_changept(analysis_obj, params_obj)
-        analysis_obj = feature_detect_col_max(analysis_obj, params_obj)
-    transitions_list = compute_transitions_gaussian(analysis_obj, params_obj, analysis_obj.features_changept)
-    if len(transitions_list) == 0:
-        print('No transitions found for file {}'.format(os.path.basename(analysis_obj.filename).rstrip('.ciu')))
-    trans_num = 0
-    for transition in transitions_list:
-        transition.plot_transition(analysis_obj, params_obj, outputdir, trans_num)
-        trans_num += 1
-    plt.clf()
-    return analysis_obj
-
-
-def ciu50_gaussians(analysis_obj, params_obj, outputdir):
-    """
-    CIU-50 method using Gaussian features instead of changepoint features. Requires that gaussian
-    fitting and feature detection have previously been performed on the analysis_obj
-    :param analysis_obj: CIUAnalysisObj with gaussians and feature data
-    :type analysis_obj: CIUAnalysisObj
-    :param params_obj: Parameters object with parameter information
-    :type params_obj: Parameters
-    :param outputdir: directory in which to save output
-    :rtype: CIUAnalysisObj
-    :return: analysis object
-    """
-    if analysis_obj.features_gaussian is None:
-        feature_detect_gaussians(analysis_obj, params_obj)
-
-    # Adjust Features to avoid inclusion of any points without col maxes
-    adj_features = adjust_gauss_features(analysis_obj, params_obj)
-    # analysis_obj.features_gaussian = adj_features
-
-    # Catch bad inputs (not enough features to compute a transition)
-    if len(adj_features) <= 1:
-        filename = os.path.basename(analysis_obj.filename).rstrip('.ciu')
-        print('Not enough features (<=1) in file {}. No transition analysis performed'.format(filename))
-        return analysis_obj
-
-    # compute transitions and save output
-    transitions_list = compute_transitions_gaussian(analysis_obj, params_obj=params_obj, adjusted_features=adj_features)
-    if len(transitions_list) == 0:
-        print('No transitions found for file {}'.format(os.path.basename(analysis_obj.filename).rstrip('.ciu')))
-    trans_num = 0
-    for transition in transitions_list:
-        transition.plot_transition(analysis_obj, params_obj, outputdir, trans_num)
-        trans_num += 1
-    plt.clf()
-    return analysis_obj
+# todo: deprecated
+# def ciu50_gaussians(analysis_obj, params_obj, outputdir):
+#     """
+#     CIU-50 method using Gaussian features instead of changepoint features. Requires that gaussian
+#     fitting and feature detection have previously been performed on the analysis_obj
+#     :param analysis_obj: CIUAnalysisObj with gaussians and feature data
+#     :type analysis_obj: CIUAnalysisObj
+#     :param params_obj: Parameters object with parameter information
+#     :type params_obj: Parameters
+#     :param outputdir: directory in which to save output
+#     :rtype: CIUAnalysisObj
+#     :return: analysis object
+#     """
+#     if analysis_obj.features_gaussian is None:
+#         feature_detect_gaussians(analysis_obj, params_obj)
+#
+#     # Adjust Features to avoid inclusion of any points without col maxes
+#     adj_features = adjust_gauss_features(analysis_obj, params_obj)
+#     # analysis_obj.features_gaussian = adj_features
+#
+#     # Catch bad inputs (not enough features to compute a transition)
+#     if len(adj_features) <= 1:
+#         filename = os.path.basename(analysis_obj.filename).rstrip('.ciu')
+#         print('Not enough features (<=1) in file {}. No transition analysis performed'.format(filename))
+#         return analysis_obj
+#
+#     # compute transitions and save output
+#     transitions_list = compute_transitions(analysis_obj, params_obj=params_obj, adjusted_features=adj_features)
+#     if len(transitions_list) == 0:
+#         print('No transitions found for file {}'.format(os.path.basename(analysis_obj.filename).rstrip('.ciu')))
+#     trans_num = 0
+#     for transition in transitions_list:
+#         transition.plot_transition(analysis_obj, params_obj, outputdir, trans_num)
+#         trans_num += 1
+#     plt.clf()
+#     return analysis_obj
 
 
 # testing
@@ -909,15 +946,20 @@ if __name__ == '__main__':
     import tkinter
     from tkinter import filedialog
 
+    # open a filechoose to choose .ciu files (change to .csv and add generate_raw_obj/process_raw_obj from CIU2 main if analyzing _raw.csv data)
     root = tkinter.Tk()
     root.withdraw()
     files = filedialog.askopenfilenames(filetypes=[('CIU', '.ciu')])
     main_dir = os.path.dirname(files[0])
 
+    # initialize parameters to defaults
+    params = CIU_Params.Parameters()
+    params.set_params(CIU_Params.parse_params_file(CIU_Params.hard_descripts_file))
+
+    # load files and run feature detection and/or CIU-50
     for file in files:
         with open(file, 'rb') as analysis_file:
             obj = pickle.load(analysis_file)
-        # ciu50_main(obj, main_dir)
-        # obj.features_gaussian = feature_detect_gaussians(obj)
-        # plot_feature_gaussians(obj, main_dir)
-        # ciu50_gaussians(obj, main_dir)
+
+        obj = feature_detect_col_max(obj, params)
+        obj = ciu50_main(obj, params, main_dir, gaussian_bool=False)

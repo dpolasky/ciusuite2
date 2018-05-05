@@ -64,6 +64,7 @@ class CIUSuite2(object):
             'on_button_printparams_clicked': self.on_button_printparams_clicked,
             'on_button_update_param_defaults_clicked': self.on_button_update_param_defaults_clicked,
             'on_button_changedir_clicked': self.on_button_changedir_clicked,
+            'on_button_plot_options_clicked': self.on_button_plot_options_clicked,
             'on_button_oldplot_clicked': self.on_button_oldplot_clicked,
             'on_button_oldcompare_clicked': self.on_button_oldcompare_clicked,
             'on_button_oldavg_clicked': self.on_button_oldavg_clicked,
@@ -71,11 +72,9 @@ class CIUSuite2(object):
             'on_button_crop_clicked': self.on_button_crop_clicked,
             'on_button_restore_clicked': self.on_button_restore_clicked,
             'on_button_gaussfit_clicked': self.on_button_gaussfit_clicked,
+            'on_button_feature_detect_clicked': self.on_button_feature_detect_clicked,
             'on_button_ciu50_clicked': self.on_button_ciu50_clicked,
-            'on_button_ciu50_gaussian_clicked': self.on_button_ciu50_gaussian_clicked,
             'on_button_gaussian_reconstruction_clicked': self.on_button_gaussian_reconstruct_clicked,
-            'on_button_feature_gaussian_clicked': self.on_button_feature_gaussian_clicked,
-            'on_button_feature_changept_clicked': self.on_button_feature_changept_clicked,
             'on_button_classification_supervised_clicked': self.on_button_classification_supervised_clicked,
             'on_button_classify_unknown_clicked': self.on_button_classify_unknown_clicked,
             'on_button_smoothing_clicked': self.on_button_smoothing_clicked
@@ -337,12 +336,21 @@ class CIUSuite2(object):
             return True
         return False
 
+    def on_button_plot_options_clicked(self):
+        """
+        Update parameters object with new plot options for all methods
+        :return: void
+        """
+        plot_keys = [x for x in self.params_obj.params_dict.keys() if 'plot' in x]
+        self.run_param_ui('Plot parameters', plot_keys)
+        self.progress_done()
+
     def on_button_oldplot_clicked(self):
         """
         Run old CIU plot method to generate a plot in the output directory
         :return: void (saves to output dir)
         """
-        plot_keys = [x for x in self.params_obj.params_dict.keys() if 'ciuplot' in x or 'allplot' in x and 'allplot_2' not in x]
+        plot_keys = [x for x in self.params_obj.params_dict.keys() if 'plot_0' in x]
         if self.run_param_ui('Plot parameters', plot_keys):
             # Determine if a file range has been specified
             files_to_read = self.check_file_range_entries()
@@ -369,7 +377,7 @@ class CIUSuite2(object):
             if len(newfiles) == 0:
                 return
 
-            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x or 'allplot' in x and ('batch' not in x and 'cmap' not in x)]
+            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x and 'batch' not in x]
             if self.run_param_ui('Plot parameters', batch_keys):
                 rmsd_print_list = ['File 1, File 2, RMSD (%)']
                 std_file = files_to_read[0]
@@ -386,7 +394,7 @@ class CIUSuite2(object):
 
         if len(files_to_read) == 2:
             # Direct compare between two files
-            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x or 'allplot' in x and ('batch' not in x and 'cmap' not in x)]
+            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x and 'batch' not in x ]
             if self.run_param_ui('Plot parameters', batch_keys):
                 ciu1 = load_analysis_obj(files_to_read[0])
                 ciu2 = load_analysis_obj(files_to_read[1])
@@ -394,7 +402,7 @@ class CIUSuite2(object):
                 Original_CIU.compare_basic_raw(updated_obj_list[0], updated_obj_list[1], self.params_obj, self.output_dir)
 
         elif len(files_to_read) > 2:
-            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x or 'allplot' in x and 'cmap' not in x]
+            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x]
             if self.run_param_ui('Plot parameters', batch_keys):
                 rmsd_print_list = ['File 1, File 2, RMSD (%)']
                 # batch compare - compare all against all.
@@ -582,7 +590,7 @@ class CIUSuite2(object):
         files
         :return: void
         """
-        param_keys = [x for x in self.params_obj.params_dict.keys() if 'gauss' not in x and 'ciu50' in x or 'allplot' in x]
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'ciu50' in x]
         if self.run_param_ui('CIU-50 Parameters', param_keys):
             files_to_read = self.check_file_range_entries()
             self.progress_started()
@@ -592,16 +600,20 @@ class CIUSuite2(object):
             short_outputs = ''
             filename = ''
             combine_flag = False
+            gaussian_bool = False
+            if self.params_obj.feature_1_ciu50_mode == 'gaussian':
+                gaussian_bool = True
+
             for file in files_to_read:
                 # load file
                 analysis_obj = load_analysis_obj(file)
 
                 # run feature detection
-                analysis_obj = Feature_Detection.ciu50_main(analysis_obj, self.params_obj, outputdir=self.output_dir)
+                analysis_obj = Feature_Detection.ciu50_main(analysis_obj, self.params_obj, outputdir=self.output_dir, gaussian_bool=gaussian_bool)
                 filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
                 new_file_list.append(filename)
 
-                if not self.params_obj.ciu50_cpt_2_combine_outputs:
+                if not self.params_obj.ciu50_3_combine_outputs:
                     Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir)
                     Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir)
                     combine_flag = False
@@ -623,53 +635,54 @@ class CIUSuite2(object):
             self.display_analysis_files()
         self.progress_done()
 
-    def on_button_ciu50_gaussian_clicked(self):
-        """
-        Repeat of CIU50 button, but with Gaussian feature det instead of changepoint. Will clean up
-        so there's only one method once final analysis method is decided on.
-        :return: void
-        """
-        param_keys = [x for x in self.params_obj.params_dict.keys() if 'ciu50_gauss' in x or 'allplot' in x and 'cpt' not in x]
-        if self.run_param_ui('CIU-50 Parameters', param_keys):
-            files_to_read = self.check_file_range_entries()
-            self.progress_started()
-
-            new_file_list = []
-            all_outputs = ''
-            short_outputs = ''
-            filename = ''
-            combine_flag = False
-            for file in files_to_read:
-                # load file
-                analysis_obj = load_analysis_obj(file)
-
-                # run feature detection
-                analysis_obj = Feature_Detection.ciu50_gaussians(analysis_obj, self.params_obj, outputdir=self.output_dir)
-                filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
-                new_file_list.append(filename)
-
-                if not self.params_obj.ciu50_gauss_2_combine_outputs:
-                    Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir)
-                    Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir)
-                    combine_flag = False
-                else:
-                    file_string = os.path.basename(filename).rstrip('.ciu') + '\n'
-                    all_outputs += file_string
-                    all_outputs += Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir, combine=True)
-                    short_outputs += os.path.basename(filename).rstrip('.ciu')
-                    short_outputs += Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir, combine=True)
-                    combine_flag = True
-                self.update_progress(files_to_read.index(file), len(files_to_read))
-
-            if combine_flag:
-                outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_ciu50s.csv')
-                outputpath_short = os.path.join(self.output_dir,
-                                                os.path.basename(filename.rstrip('.ciu')) + '_ciu50-short.csv')
-                save_existing_output_string(outputpath, all_outputs)
-                save_existing_output_string(outputpath_short, short_outputs)
-
-            self.display_analysis_files()
-        self.progress_done()
+    # todo: deprecated
+    # def on_button_ciu50_gaussian_clicked(self):
+    #     """
+    #     Repeat of CIU50 button, but with Gaussian feature det instead of changepoint. Will clean up
+    #     so there's only one method once final analysis method is decided on.
+    #     :return: void
+    #     """
+    #     param_keys = [x for x in self.params_obj.params_dict.keys() if 'ciu50_gauss' in x and 'cpt' not in x]
+    #     if self.run_param_ui('CIU-50 Parameters', param_keys):
+    #         files_to_read = self.check_file_range_entries()
+    #         self.progress_started()
+    #
+    #         new_file_list = []
+    #         all_outputs = ''
+    #         short_outputs = ''
+    #         filename = ''
+    #         combine_flag = False
+    #         for file in files_to_read:
+    #             # load file
+    #             analysis_obj = load_analysis_obj(file)
+    #
+    #             # run feature detection
+    #             analysis_obj = Feature_Detection.ciu50_gaussians(analysis_obj, self.params_obj, outputdir=self.output_dir)
+    #             filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
+    #             new_file_list.append(filename)
+    #
+    #             if not self.params_obj.ciu50_gauss_2_combine_outputs:
+    #                 Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir)
+    #                 Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir)
+    #                 combine_flag = False
+    #             else:
+    #                 file_string = os.path.basename(filename).rstrip('.ciu') + '\n'
+    #                 all_outputs += file_string
+    #                 all_outputs += Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir, combine=True)
+    #                 short_outputs += os.path.basename(filename).rstrip('.ciu')
+    #                 short_outputs += Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir, combine=True)
+    #                 combine_flag = True
+    #             self.update_progress(files_to_read.index(file), len(files_to_read))
+    #
+    #         if combine_flag:
+    #             outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_ciu50s.csv')
+    #             outputpath_short = os.path.join(self.output_dir,
+    #                                             os.path.basename(filename.rstrip('.ciu')) + '_ciu50-short.csv')
+    #             save_existing_output_string(outputpath, all_outputs)
+    #             save_existing_output_string(outputpath_short, short_outputs)
+    #
+    #         self.display_analysis_files()
+    #     self.progress_done()
 
     def on_button_gaussian_reconstruct_clicked(self):
         """
@@ -718,47 +731,12 @@ class CIUSuite2(object):
             self.display_analysis_files()
         self.progress_done()
 
-    def on_button_feature_gaussian_clicked(self):
+    def on_button_feature_detect_clicked(self):
         """
-        Run Gaussian-based feature detection routine. Ensure Gaussians have been fit previously.
+        Run feature detection routine.
         :return: void
         """
-        param_keys = [x for x in self.params_obj.params_dict.keys() if 'feature_gauss' in x or 'allplot' in x]
-        if self.run_param_ui('Feature Detection Parameters from Gaussians', param_keys):
-            files_to_read = self.check_file_range_entries()
-            self.progress_started()
-            new_file_list = []
-
-            for file in files_to_read:
-                # load file
-                analysis_obj = load_analysis_obj(file)
-
-                # check to make sure the analysis_obj has Gaussian data fitted
-                if analysis_obj.gaussians is None:
-                    messagebox.showwarning('Gaussian fitting required', 'Data in file {} does not have Gaussian fitting'
-                                                                        'performed. Please run Gaussian fitting, then try '
-                                                                        'again.')
-                    break
-
-                # If gaussian data exists, perform the analysis
-                analysis_obj = Feature_Detection.feature_detect_gaussians(analysis_obj, self.params_obj)
-                filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
-                new_file_list.append(filename)
-
-                Feature_Detection.plot_features(analysis_obj, self.params_obj, self.output_dir, mode='gaussian')
-                outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_features.csv')
-                Feature_Detection.print_features_list(analysis_obj.features_gaussian, outputpath, mode='gaussian')
-                self.update_progress(files_to_read.index(file), len(files_to_read))
-
-            self.display_analysis_files()
-        self.progress_done()
-
-    def on_button_feature_changept_clicked(self):
-        """
-        Run simple flat feature detection routine. Does NOT require Gaussian fitting
-        :return: void
-        """
-        param_keys = [x for x in self.params_obj.params_dict.keys() if 'feature_cpt' in x or 'allplot' in x]
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'feature' in x]
         if self.run_param_ui('Feature Detection Parameters', param_keys):
             files_to_read = self.check_file_range_entries()
             self.progress_started()
@@ -768,19 +746,63 @@ class CIUSuite2(object):
                 # load file
                 analysis_obj = load_analysis_obj(file)
 
-                # analysis_obj = Feature_Detection.feature_detect_changept(analysis_obj, self.params_obj)
-                analysis_obj = Feature_Detection.feature_detect_col_max(analysis_obj, self.params_obj)
+                if self.params_obj.feature_1_ciu50_mode == 'gaussian':
+                    # check to make sure the analysis_obj has Gaussian data fitted
+                    if analysis_obj.gaussians is None:
+                        messagebox.showwarning('Gaussian fitting required', 'Data in file {} does not have Gaussian fitting'
+                                                                            'performed. Please run Gaussian fitting, then try '
+                                                                            'again.')
+                        break
 
-                filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
-                new_file_list.append(filename)
+                    # Detect features in the appropriate mode
+                    analysis_obj = Feature_Detection.feature_detect_gaussians(analysis_obj, self.params_obj)
+                    features_list = analysis_obj.features_gaussian
+                    filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
+                    new_file_list.append(filename)
+                else:
+                    # Detect features in the appropriate mode
+                    analysis_obj = Feature_Detection.feature_detect_col_max(analysis_obj, self.params_obj)
+                    features_list = analysis_obj.features_changept
+                    filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
+                    new_file_list.append(filename)
 
-                Feature_Detection.plot_features(analysis_obj, self.params_obj, self.output_dir, mode='changept')
+                Feature_Detection.plot_features(analysis_obj, self.params_obj, self.output_dir)
                 outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_features.csv')
-                Feature_Detection.print_features_list(analysis_obj.features_changept, outputpath, mode='changept')
+                Feature_Detection.print_features_list(features_list, outputpath, mode=self.params_obj.feature_1_ciu50_mode)
                 self.update_progress(files_to_read.index(file), len(files_to_read))
 
             self.display_analysis_files()
         self.progress_done()
+
+    # todo: deprecated
+    # def on_button_feature_changept_clicked(self):
+    #     """
+    #     Run simple flat feature detection routine. Does NOT require Gaussian fitting
+    #     :return: void
+    #     """
+    #     param_keys = [x for x in self.params_obj.params_dict.keys() if 'feature_cpt' in x]
+    #     if self.run_param_ui('Feature Detection Parameters', param_keys):
+    #         files_to_read = self.check_file_range_entries()
+    #         self.progress_started()
+    #         new_file_list = []
+    #
+    #         for file in files_to_read:
+    #             # load file
+    #             analysis_obj = load_analysis_obj(file)
+    #
+    #             # analysis_obj = Feature_Detection.feature_detect_changept(analysis_obj, self.params_obj)
+    #             analysis_obj = Feature_Detection.feature_detect_col_max(analysis_obj, self.params_obj)
+    #
+    #             filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
+    #             new_file_list.append(filename)
+    #
+    #             Feature_Detection.plot_features(analysis_obj, self.params_obj, self.output_dir, mode='changept')
+    #             outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_features.csv')
+    #             Feature_Detection.print_features_list(analysis_obj.features_changept, outputpath, mode='changept')
+    #             self.update_progress(files_to_read.index(file), len(files_to_read))
+    #
+    #         self.display_analysis_files()
+    #     self.progress_done()
 
     def on_button_classification_supervised_clicked(self):
         """
@@ -864,7 +886,6 @@ class CIUSuite2(object):
             #     self.progress_done()
 
             # Run the classification
-
             if self.params_obj.classif_5_auto_featselect == 'automatic':
                 self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
                 scheme = Classification.main_build_classification(data_labels, obj_list_by_label, self.params_obj, self.output_dir)

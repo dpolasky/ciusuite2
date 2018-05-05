@@ -286,6 +286,11 @@ def crop(analysis_obj, crop_vals):
 
     # save output to a new analysis object (clears fitting results/etc that can fail if axes are different)
     new_obj = CIUAnalysisObj(analysis_obj.raw_obj, ciu_data_matrix, new_axes, analysis_obj.params)
+
+    # for a specific figure
+    # new_obj.gaussians = analysis_obj.gaussians
+    # new_obj.filtered_gaussians = analysis_obj.filtered_gaussians
+
     # new_obj.short_filename = analysis_obj.short_filename + '_crop'
 
     return new_obj
