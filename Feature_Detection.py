@@ -41,7 +41,7 @@ def feature_detect_col_max(analysis_obj, params_obj):
     """
     features = []
     # compute width tolerance in DT units
-    width_tol_dt = params_obj.feature_3_width_tol * analysis_obj.bin_spacing
+    width_tol_dt = params_obj.feature_3_width_tol  # * analysis_obj.bin_spacing
     gap_tol_cv = params_obj.feature_4_gap_tol  # * analysis_obj.cv_spacing
     cv_spacing = analysis_obj.axes[1][1] - analysis_obj.axes[1][0]
 
@@ -91,7 +91,7 @@ def feature_detect_gaussians(analysis_obj, params_obj):
     """
     features = []
     # compute width tolerance in DT units
-    width_tol_dt = params_obj.feature_3_width_tol * analysis_obj.bin_spacing
+    width_tol_dt = params_obj.feature_3_width_tol  # * analysis_obj.bin_spacing
     gap_tol_cv = params_obj.feature_4_gap_tol  # * analysis_obj.cv_spacing
     cv_spacing = analysis_obj.axes[1][1] - analysis_obj.axes[1][0]
 

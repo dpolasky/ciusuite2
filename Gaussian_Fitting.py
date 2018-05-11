@@ -950,7 +950,7 @@ def plot_fwhms(analysis_obj, outputpath):
     plt.ylabel('ATD_FWHM')
     plt.grid('on')
     output_name = os.path.basename(analysis_obj.filename).rstrip('.ciu') + '_FWHM.png'
-    plt.savefig(os.path.join(outputpath, output_name), dpi=500)
+    plt.savefig(os.path.join(outputpath, output_name), dpi=300)
     plt.close()
     # print('Saving TrapCVvsFWHM_' + str(analysis_obj.raw_obj.filename) + '_.png')
 

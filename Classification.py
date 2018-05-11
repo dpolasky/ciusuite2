@@ -431,8 +431,8 @@ def peak_crossval_score_detect(test_score_means, diff_from_max):
                 if max_score - value <= diff_from_max:
                     return index + 1, value     # index + 1 because we're determining the NUM of features, indexed from 1 (not 0)
         except IndexError:
-            # reached the end of the list - return final index/value
-            return index, value
+            # reached the end of the list - return final index + 1 (because indexing from 1 for num feats) and value
+            return index + 1, value
 
 
 def save_crossval_score(crossval_data, scheme_name, outputpath):

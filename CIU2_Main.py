@@ -152,29 +152,32 @@ class CIUSuite2(object):
         """
         # clear analysis list
         self.analysis_file_list = []
-        raw_files = open_files([('_raw.csv', '_raw.csv')])
+        raw_files = self.open_files(filetype=[('_raw.csv', '_raw.csv')])
         if len(raw_files) > 0:
-            self.progress_started()
+            # Ask user for smoothing input
+            plot_keys = [x for x in self.params_obj.params_dict.keys() if 'smoothing' in x]
+            if self.run_param_ui('Initial Smoothing Parameters', plot_keys):
+                self.progress_started()
 
-            # run raw processing
-            for raw_file in raw_files:
-                try:
-                    raw_obj = generate_raw_obj(raw_file)
-                except ValueError as err:
-                    messagebox.showerror('Data Import Error', message='{}{}. Problem: {}. Press OK to continue'.format(*err.args))
-                    continue
-                analysis_obj = process_raw_obj(raw_obj, self.params_obj)
-                analysis_filename = save_analysis_obj(analysis_obj, self.params_obj, os.path.dirname(raw_obj.filepath))
-                self.analysis_file_list.append(analysis_filename)
-                self.update_progress(raw_files.index(raw_file), len(raw_files))
+                # run raw processing
+                for raw_file in raw_files:
+                    try:
+                        raw_obj = generate_raw_obj(raw_file)
+                    except ValueError as err:
+                        messagebox.showerror('Data Import Error', message='{}{}. Problem: {}. Press OK to continue'.format(*err.args))
+                        continue
+                    analysis_obj = process_raw_obj(raw_obj, self.params_obj)
+                    analysis_filename = save_analysis_obj(analysis_obj, self.params_obj, os.path.dirname(raw_obj.filepath))
+                    self.analysis_file_list.append(analysis_filename)
+                    self.update_progress(raw_files.index(raw_file), len(raw_files))
 
-            # update the list of analysis files to display
-            self.display_analysis_files()
+                # update the list of analysis files to display
+                self.display_analysis_files()
 
-            # update directory to match the loaded files
-            if not self.output_dir_override:
-                self.output_dir = os.path.dirname(self.analysis_file_list[0])
-                self.update_dir_entry()
+                # update directory to match the loaded files
+                if not self.output_dir_override:
+                    self.output_dir = os.path.dirname(self.analysis_file_list[0])
+                    self.update_dir_entry()
             self.progress_done()
 
     def on_button_analysisfile_clicked(self):
@@ -182,7 +185,7 @@ class CIUSuite2(object):
         Open a filechooser for the user to select previously process analysis (.ciu) files
         :return:
         """
-        analysis_files = open_files([('CIU files', '.ciu')])
+        analysis_files = self.open_files(filetype=[('CIU files', '.ciu')])
         self.analysis_file_list = analysis_files
         self.display_analysis_files()
 
@@ -373,24 +376,33 @@ class CIUSuite2(object):
 
         if len(files_to_read) == 1:
             # re-open filechooser to choose a list of files to compare to this standard
-            newfiles = filedialog.askopenfilenames(filetypes=[('_raw.csv', '_raw.csv')])
+            newfiles = self.open_files(filetype=[('CIU files', '.ciu')])
             if len(newfiles) == 0:
                 return
 
+            # run parameter dialog for comparison
             batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x and 'batch' not in x]
             if self.run_param_ui('Plot parameters', batch_keys):
                 rmsd_print_list = ['File 1, File 2, RMSD (%)']
+
+                # load all files and check axes for comparison
                 std_file = files_to_read[0]
+                std_obj = load_analysis_obj(std_file)
+                compare_objs = [load_analysis_obj(file) for file in newfiles]
+                all_objs = [std_obj]
+                all_objs.extend(compare_objs)
+                check_axes_and_warn(all_objs)
+
+                # compare each CIU analysis object against the standard
                 index = 0
-                for file in newfiles:
-                    compare_obj = load_analysis_obj(file)
-                    rmsd = Original_CIU.compare_basic_raw(std_file, compare_obj, self.params_obj, self.output_dir)
-                    printstring = '{},{},{:.2f}'.format(os.path.basename(std_file).rstrip('.ciu'),
-                                                        os.path.basename(newfiles[index]).rstrip('.ciu'),
+                for compare_obj in compare_objs:
+                    rmsd = Original_CIU.compare_basic_raw(std_obj, compare_obj, self.params_obj, self.output_dir)
+                    printstring = '{},{},{:.2f}'.format(std_obj.short_filename,
+                                                        compare_obj.short_filename,
                                                         rmsd)
                     rmsd_print_list.append(printstring)
                     index += 1
-                    self.update_progress(newfiles.index(file), len(newfiles))
+                    self.update_progress(compare_objs.index(compare_obj), len(compare_objs))
 
         if len(files_to_read) == 2:
             # Direct compare between two files
@@ -1098,18 +1110,20 @@ class CIUSuite2(object):
         # added to keep program from exiting when run from command line - not sure if there's a better fix
         self.run()
 
+    def open_files(self, filetype):
+        """
+        Open a tkinter filedialog to choose files of the specified type. NOTE: withdraws the main window of the
+        UI (self) to prevent users from clicking on any other GUI elements while the filedialog is active.
+        :param filetype: filetype filter in form [(name, extension)]
+        :return: list of selected files
+        """
+        self.mainwindow.withdraw()
+        files = filedialog.askopenfilenames(filetypes=filetype)
+        self.mainwindow.deiconify()
+        return files
+
 
 # ****** CIU Main I/O methods ******
-def open_files(filetype):
-    """
-    Open a tkinter filedialog to choose files of the specified type
-    :param filetype: filetype filter in form [(name, extension)]
-    :return: list of selected files
-    """
-    files = filedialog.askopenfilenames(filetypes=filetype)
-    return files
-
-
 def save_existing_output_string(full_output_path, string_to_save):
     """
     Write an existing (e.g. combined from several objects) string to file
