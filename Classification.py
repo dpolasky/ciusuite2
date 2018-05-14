@@ -468,6 +468,7 @@ def plot_crossval_scores(crossval_data, scheme_name, params_obj, outputdir):
     :param outputdir: directory in which to save output
     :return: void
     """
+    plt.clf()
     plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
 
     train_score_means = crossval_data[0]
@@ -484,18 +485,17 @@ def plot_crossval_scores(crossval_data, scheme_name, params_obj, outputdir):
     # plot titles, labels, and legends
     if params_obj.plot_12_custom_title is not None:
         plot_title = params_obj.plot_12_custom_title
-        plt.title(plot_title)
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
     elif params_obj.plot_11_show_title:
         plot_title = scheme_name
-        plt.title(plot_title)
-    if params_obj.plot_06_show_colorbar:
-        # default colorbar, since all data is normalized to a max value of 1
-        plt.colorbar(ticks=[0, .25, .5, .75, 1])
-    if params_obj.plot_07_show_legend:
-        plt.legend(loc='best')
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
     if params_obj.plot_08_show_axes_titles:
-        plt.xlabel('Number of Features (Activation energies/voltages)')
-        plt.ylabel('Accuracy Ratio')
+        plt.xlabel('Number of Features (Collision Voltages)', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        plt.ylabel('Accuracy Ratio', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+    plt.xticks(fontsize=params_obj.plot_13_font_size)
+    plt.yticks(fontsize=params_obj.plot_13_font_size)
+    if params_obj.plot_07_show_legend:
+        plt.legend(loc='best', fontsize=params_obj.plot_13_font_size)
 
     outputname = os.path.join(outputdir, scheme_name + '_crossval' + params_obj.plot_02_extension)
     plt.savefig(outputname)
@@ -804,18 +804,18 @@ def plot_feature_scores(feature_list, params_obj, scheme_name, output_path):
     # plot titles, labels, and legends
     if params_obj.plot_12_custom_title is not None:
         plot_title = params_obj.plot_12_custom_title
-        plt.title(plot_title)
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
     elif params_obj.plot_11_show_title:
         plot_title = scheme_name
-        plt.title(plot_title)
-    if params_obj.plot_06_show_colorbar:
-        # default colorbar, since all data is normalized to a max value of 1
-        plt.colorbar(ticks=[0, .25, .5, .75, 1])
-    if params_obj.plot_07_show_legend:
-        plt.legend(loc='best')
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
     if params_obj.plot_08_show_axes_titles:
-        plt.xlabel(params_obj.plot_09_x_title)
-        plt.ylabel('-Log10(pvalues)')
+        plt.xlabel(params_obj.plot_09_x_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        plt.ylabel('-Log10(pvalues)', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+    plt.xticks(fontsize=params_obj.plot_13_font_size)
+    plt.yticks(fontsize=params_obj.plot_13_font_size)
+    if params_obj.plot_07_show_legend:
+        plt.legend(loc='best', fontsize=params_obj.plot_13_font_size)
+
     plt.savefig(os.path.join(output_path, scheme_name + '_feature-scores' + params_obj.plot_02_extension))
     plt.close()
 
@@ -831,6 +831,10 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
     :param filename:
     :return:
     """
+    if np.shape(class_scheme.transformed_test_data)[1] > 2:
+        # do not plot images with more than 2 dimensions
+        return
+
     plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
 
     markers = ('s', 'x', 'o', '^', 'v', 'D', '<', '>', '4', '8', 'h', 'H', '1', '2', '3', '+', '*', 'p', 'P')
@@ -841,6 +845,7 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
     ax = plt.subplot(111)
 
     # plot 1D or 2D decision regions
+    xlabel, ylabel = '', ''
     if shape_lda[1] == 1:
         x1_min, x1_max = np.floor(class_scheme.transformed_test_data.min()), np.ceil(class_scheme.transformed_test_data.max())
         if unknown_tups is not None:
@@ -857,7 +862,9 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
         z = z.reshape(x_grid.shape)
 
         plt.contourf(x_grid, y_grid, z, alpha=0.2, cmap=cmap)
-        plot_sklearn_lda_1ld(class_scheme, markers, colors, params_obj.plot_08_show_axes_titles)
+        plot_sklearn_lda_1ld(class_scheme, markers, colors)
+        if params_obj.plot_08_show_axes_titles:
+            plt.xlabel('LD1', fontsize=params_obj.plot_13_font_size, fontweight='bold')
         if unknown_tups is not None:
             for ind, unknown_tup in enumerate(unknown_tups):
                 marklist = list(itertools.islice(itertools.cycle(markers), ind+1, ind+1+len(unknown_tups)))
@@ -883,7 +890,9 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
 
         plt.contourf(x_grid_1, x_grid_2, z, alpha=0.2, cmap=cmap)
         plot_sklearn_lda_2ld(class_scheme, markers, colors, params_obj.plot_08_show_axes_titles)
-
+        if params_obj.plot_08_show_axes_titles:
+            plt.xlabel('LD1', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+            plt.ylabel('LD2', fontsize=params_obj.plot_13_font_size, fontweight='bold')
         if unknown_tups is not None:
             for ind, unknown_tup in enumerate(unknown_tups):
                 plt.scatter(x=unknown_tup[0][:, 0], y=unknown_tup[0][:, 1], marker=markers[ind], color='black', alpha=0.5, label=unknown_tup[1])
@@ -891,16 +900,19 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
     # plot titles, labels, and legends
     if params_obj.plot_12_custom_title is not None:
         plot_title = params_obj.plot_12_custom_title
-        plt.title(plot_title)
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
     elif params_obj.plot_11_show_title:
         cv_string = ', '.join([str(np.round(x.cv, 1)) for x in class_scheme.selected_features])
-        plt.title('From CVs: {}'.format(cv_string))
+        plot_title = 'From CVs: {}'.format(cv_string)
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
     if params_obj.plot_07_show_legend:
         box = ax.get_position()
         ax.set_position([box.x0, box.y0, box.width*0.8, box.height])
-        ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), fancybox=True)
+        ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), fancybox=True, fontsize=params_obj.plot_13_font_size)
+    plt.xticks(fontsize=params_obj.plot_13_font_size)
+    plt.yticks(fontsize=params_obj.plot_13_font_size)
 
-    plt.savefig(os.path.join(output_path, filename + '_classif' + params_obj.plot_02_extension))
+    plt.savefig(os.path.join(output_path, class_scheme.name + '_output' + params_obj.plot_02_extension))
     plt.close()
 
 
@@ -959,13 +971,12 @@ def plot_sklearn_lda_2ld(class_scheme, marker, color, label_axes):
         plt.ylabel('LD2')
 
 
-def plot_sklearn_lda_1ld(class_scheme, marker, color, label_axes):
+def plot_sklearn_lda_1ld(class_scheme, marker, color):
     """
 
     :param class_scheme:
     :param marker:
     :param color:
-    :param label_axes:
     :return:
     """
     x_data = class_scheme.transformed_test_data
@@ -973,10 +984,8 @@ def plot_sklearn_lda_1ld(class_scheme, marker, color, label_axes):
     unique_labels = class_scheme.unique_labels
 
     for label, marker, color in zip(range(0, len(unique_labels)), marker, color):
-        plt.scatter(x_data[:, 0][y_values == label + 1], np.zeros(np.shape(x_data[:, 0][y_values == label + 1])), marker=marker, color=color,
+        plt.scatter(x=x_data[:, 0][y_values == label + 1], y=np.zeros(np.shape(x_data[:, 0][y_values == label + 1])), s=100, marker=marker, color=color,
                     alpha=0.5, label=unique_labels[label])
-    if label_axes:
-        plt.xlabel('LD1')
 
 
 def save_scheme(scheme, outputdir):

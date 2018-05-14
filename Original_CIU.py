@@ -24,29 +24,33 @@ def ciu_plot(analysis_obj, params_obj, output_dir):
     :return: void
     """
     plt.clf()
+    plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
+
     # save filename as plot title, unless a specific title is provided
     if params_obj.plot_12_custom_title is not None:
         plot_title = params_obj.plot_12_custom_title
-        plt.title(plot_title)
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
     elif params_obj.plot_11_show_title:
         plot_title = analysis_obj.short_filename
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
     else:
         plot_title = ''
-    if params_obj.plot_06_show_colorbar:
-        plt.colorbar(ticks=[0, .25, .5, .75, 1])
 
     # use filename and provided extension as output path with specific figure size and DPI
     output_title = analysis_obj.short_filename
     output_path = os.path.join(output_dir, output_title + params_obj.plot_02_extension)
-    plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
 
     # generate the contour plot with options specified by use
     plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap=params_obj.ciuplot_cmap_override)
+
+    if params_obj.plot_06_show_colorbar:
+        cbar = plt.colorbar(ticks=[0, .25, .5, .75, 1])
+        cbar.ax.tick_params(labelsize=params_obj.plot_13_font_size)
     if params_obj.plot_08_show_axes_titles:
-        plt.xlabel(params_obj.plot_09_x_title, fontsize=16)
-        plt.ylabel(params_obj.plot_10_y_title, fontsize=16)
-    plt.xticks(fontsize=16)
-    plt.yticks(fontsize=16)
+        plt.xlabel(params_obj.plot_09_x_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        plt.ylabel(params_obj.plot_10_y_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+    plt.xticks(fontsize=params_obj.plot_13_font_size)
+    plt.yticks(fontsize=params_obj.plot_13_font_size)
 
     plt.savefig(output_path)
     plt.close()
@@ -102,10 +106,15 @@ def rmsd_plot(difference_matrix, axes, contour_scale, tick_scale, rtext, outputd
     """
     # initial plot setup
     plt.clf()
+    plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
+
+    # save filename as plot title, unless a specific title is provided
     if params_obj.plot_12_custom_title is not None:
-        plt.title(params_obj.plot_12_custom_title)
+        plot_title = params_obj.plot_12_custom_title
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
     elif params_obj.plot_11_show_title:
-        plt.title('Red: {} \nBlue: {}'.format(file1, file2))
+        plot_title = 'Red: {} \nBlue: {}'.format(file1, file2)
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
 
     # make the RMSD contour plot
     plt.contourf(axes[1], axes[0], difference_matrix, contour_scale, cmap="bwr", ticks="none")
@@ -114,14 +123,18 @@ def rmsd_plot(difference_matrix, axes, contour_scale, tick_scale, rtext, outputd
 
     # plot labels and legends
     if params_obj.plot_07_show_legend:
-        plt.annotate(rtext, xy=(200, 10), xycoords='axes points')
+        plt.annotate(rtext, xy=(200, 10), xycoords='axes points', fontsize=params_obj.plot_13_font_size)
     if params_obj.plot_06_show_colorbar:
         colorbar = plt.colorbar(ticks=tick_scale)
         if blue_label is not None and red_label is not None:
             colorbar.ax.set_yticklabels([blue_label, 'Equal', red_label])
+        colorbar.ax.tick_params(labelsize=params_obj.plot_13_font_size)
+
     if params_obj.plot_08_show_axes_titles:
-        plt.xlabel(params_obj.plot_09_x_title)
-        plt.ylabel(params_obj.plot_10_y_title)
+        plt.xlabel(params_obj.plot_09_x_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        plt.ylabel(params_obj.plot_10_y_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+    plt.xticks(fontsize=params_obj.plot_13_font_size)
+    plt.yticks(fontsize=params_obj.plot_13_font_size)
 
     # save and close
     plt.savefig(os.path.join(outputdir, '{}-{}{}'.format(file1, file2, params_obj.plot_02_extension)))
@@ -139,6 +152,18 @@ def std_dev_plot(analysis_obj, std_dev_matrix, params_obj, output_dir):
     :param output_dir: directory in which to save output
     :return: void
     """
+    # initial plot setup
+    plt.clf()
+    plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
+
+    # save filename as plot title, unless a specific title is provided
+    if params_obj.plot_12_custom_title is not None:
+        plot_title = params_obj.plot_12_custom_title
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+    elif params_obj.plot_11_show_title:
+        plot_title = analysis_obj.short_filename
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+
     # plot standard deviation contour plot, normalized to the maximum std dev observed
     max_std_dev = np.max(std_dev_matrix)
     contour_scale = np.linspace(0, max_std_dev, 100, endpoint=True)
@@ -146,14 +171,17 @@ def std_dev_plot(analysis_obj, std_dev_matrix, params_obj, output_dir):
 
     # plot desired labels and legends
     if params_obj.plot_08_show_axes_titles:
-        plt.xlabel(params_obj.plot_09_x_title)
-        plt.ylabel(params_obj.plot_10_y_title)
+        plt.xlabel(params_obj.plot_09_x_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        plt.ylabel(params_obj.plot_10_y_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+    plt.xticks(fontsize=params_obj.plot_13_font_size)
+    plt.yticks(fontsize=params_obj.plot_13_font_size)
     if params_obj.plot_06_show_colorbar:
         colorbar_scale = np.linspace(0, max_std_dev, 6, endpoint=True)   # plot colorbar
-        plt.colorbar(ticks=colorbar_scale, format='%.2f')
+        cbar = plt.colorbar(ticks=colorbar_scale, format='%.2f')
+        cbar.ax.tick_params(labelsize=params_obj.plot_13_font_size)
     if params_obj.plot_07_show_legend:
         std_text = 'Max std deviation: {:.2f}'.format(max_std_dev)
-        plt.annotate(std_text, xy=(150, 10), xycoords='axes points')
+        plt.annotate(std_text, xy=(150, 10), xycoords='axes points', fontsize=params_obj.plot_13_font_size)
 
     # save and close
     plt.savefig(os.path.join(output_dir, analysis_obj.short_filename + '_stdev.png'))

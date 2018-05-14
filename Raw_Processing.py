@@ -315,6 +315,7 @@ def interpolate_axes(analysis_obj, new_axes):
     # save to analysis object and return
     analysis_obj.ciu_data = ciu_interp_data
     analysis_obj.axes = new_axes
+    analysis_obj.refresh_data()
     return analysis_obj
 
 

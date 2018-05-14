@@ -12,6 +12,7 @@ import scipy.optimize
 import scipy.interpolate
 import os
 import CIU_Params
+import Raw_Processing
 
 # imports for type checking
 from typing import TYPE_CHECKING
@@ -40,13 +41,24 @@ def feature_detect_col_max(analysis_obj, params_obj):
     :return: analysis object with features saved
     """
     features = []
-    # compute width tolerance in DT units
+
+    # interpolate CV axis if the spacing is not equal
+    cv_axis = analysis_obj.axes[1]
+    bin_spacings = [cv_axis[x + 1] - cv_axis[x] for x in range(len(cv_axis) - 1)]
+    unique_spacings = set(bin_spacings)
+    if len(unique_spacings) > 1:
+        # uneven CV spacing - interpolate axis to even spacing (smallest previous bin spacing) before analysis
+        new_num_bins = len(np.arange(cv_axis[0], cv_axis[-1], min(unique_spacings))) + 1
+        cv_axis = np.linspace(cv_axis[0], cv_axis[-1], new_num_bins)
+        analysis_obj = Raw_Processing.interpolate_axes(analysis_obj, [analysis_obj.axes[0], cv_axis])
+        print('NOTE: CV axis in file {} was not evenly spaced; Feature Detection requires even spacing. Axis has been interpolated to fit. Use "Restore Original Data" button to undo interpolation'.format(analysis_obj.short_filename))
+
+    # compute width tolerance in DT units, CV gap in bins (NOT cv axis units)
     width_tol_dt = params_obj.feature_3_width_tol  # * analysis_obj.bin_spacing
-    gap_tol_cv = params_obj.feature_4_gap_tol  # * analysis_obj.cv_spacing
+    gap_tol_cv = params_obj.feature_4_gap_tol * analysis_obj.cv_spacing
     cv_spacing = analysis_obj.axes[1][1] - analysis_obj.axes[1][0]
 
     # Search each gaussian for features it matches (based on centroid)
-    cv_axis = analysis_obj.axes[1]
     for cv_index, col_max_dt in enumerate(analysis_obj.col_max_dts):
         # check if any current features will accept the Gaussian
         found_feature = False
@@ -276,9 +288,11 @@ def plot_features(analysis_obj, params_obj, outputdir):
     :param outputdir: directory in which to save output
     :return: void
     """
-    # plot the initial CIU contour plot for reference
+    # initialize plot
     plt.clf()
     plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
+
+    # plot the initial CIU contour plot for reference
     plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap=params_obj.plot_01_cmap)
 
     # prepare and plot the actual Features using saved data
@@ -313,18 +327,20 @@ def plot_features(analysis_obj, params_obj, outputdir):
     # plot titles, labels, and legends
     if params_obj.plot_12_custom_title is not None:
         plot_title = params_obj.plot_12_custom_title
-        plt.title(plot_title)
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
     elif params_obj.plot_11_show_title:
         plot_title = analysis_obj.short_filename
-        plt.title(plot_title)
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
     if params_obj.plot_06_show_colorbar:
-        # default colorbar, since all data is normalized to a max value of 1
-        plt.colorbar(ticks=[0, .25, .5, .75, 1])
-    if params_obj.plot_07_show_legend:
-        plt.legend(loc='best')
+        cbar = plt.colorbar(ticks=[0, .25, .5, .75, 1])
+        cbar.ax.tick_params(labelsize=params_obj.plot_13_font_size)
     if params_obj.plot_08_show_axes_titles:
-        plt.xlabel(params_obj.plot_09_x_title)
-        plt.ylabel(params_obj.plot_10_y_title)
+        plt.xlabel(params_obj.plot_09_x_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        plt.ylabel(params_obj.plot_10_y_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+    plt.xticks(fontsize=params_obj.plot_13_font_size)
+    plt.yticks(fontsize=params_obj.plot_13_font_size)
+    if params_obj.plot_07_show_legend:
+        plt.legend(loc='best', fontsize=params_obj.plot_13_font_size)
 
     # save plot
     output_path = os.path.join(outputdir, analysis_obj.filename.rstrip('.ciu') + '_features' + params_obj.plot_02_extension)
@@ -461,18 +477,20 @@ def plot_transitions(transition_list, analysis_obj, params_obj, outputdir):
     # plot titles, labels, and legends
     if params_obj.plot_12_custom_title is not None:
         plot_title = params_obj.plot_12_custom_title
-        plt.title(plot_title)
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
     elif params_obj.plot_11_show_title:
         plot_title = analysis_obj.short_filename
-        plt.title(plot_title)
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
     if params_obj.plot_06_show_colorbar:
-        # default colorbar, since all data is normalized to a max value of 1
-        plt.colorbar(ticks=[0, .25, .5, .75, 1])
+        cbar = plt.colorbar(ticks=[0, .25, .5, .75, 1])
+        cbar.ax.tick_params(labelsize=params_obj.plot_13_font_size)
     if params_obj.plot_08_show_axes_titles:
-        plt.xlabel(params_obj.plot_09_x_title)
-        plt.ylabel(params_obj.plot_10_y_title)
+        plt.xlabel(params_obj.plot_09_x_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        plt.ylabel(params_obj.plot_10_y_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+    plt.xticks(fontsize=params_obj.plot_13_font_size)
+    plt.yticks(fontsize=params_obj.plot_13_font_size)
     if params_obj.plot_07_show_legend:
-        plt.legend(loc='best')
+        plt.legend(loc='best', fontsize=params_obj.plot_13_font_size)
 
     # save plot to file
     filename = os.path.basename(analysis_obj.filename).rstrip('.ciu') + '_transition' + params_obj.plot_02_extension

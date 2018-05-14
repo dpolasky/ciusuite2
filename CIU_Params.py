@@ -147,6 +147,7 @@ class Parameters(object):
         self.plot_10_y_title = None
         self.plot_11_show_title = None
         self.plot_12_custom_title = None
+        self.plot_13_font_size = None
 
         # self.ciuplot_3_plot_title = None
         # self.ciuplot_1_x_title = None

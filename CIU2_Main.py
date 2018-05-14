@@ -26,6 +26,9 @@ import Gaussian_Fitting
 import Feature_Detection
 import Classification
 
+from matplotlib import rcParams
+rcParams.update({'figure.autolayout': True})
+
 # hard_file_path_ui = r"C:\CIUSuite2\CIUSuite2_2.ui"
 hard_file_path_ui = r"C:\CIUSuite2\CIUSuite2.ui"
 
@@ -353,7 +356,7 @@ class CIUSuite2(object):
         Run old CIU plot method to generate a plot in the output directory
         :return: void (saves to output dir)
         """
-        plot_keys = [x for x in self.params_obj.params_dict.keys() if 'plot_0' in x]
+        plot_keys = [x for x in self.params_obj.params_dict.keys() if 'ciuplot_cmap_override' in x]
         if self.run_param_ui('Plot parameters', plot_keys):
             # Determine if a file range has been specified
             files_to_read = self.check_file_range_entries()
