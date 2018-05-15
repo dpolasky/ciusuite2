@@ -21,11 +21,11 @@ if TYPE_CHECKING:
 
 TRANS_COLOR_DICT = {6: 'white',
                     0: 'red',
-                    4: 'blue',
-                    3: 'green',
+                    5: 'blue',
+                    1: 'green',
                     2: 'yellow',
-                    1: 'orange',
-                    5: 'purple'}
+                    4: 'orange',
+                    3: 'purple'}
 
 
 def feature_detect_col_max(analysis_obj, params_obj):
@@ -195,7 +195,10 @@ def compute_transitions(analysis_obj, params_obj, adjusted_features):
             cv_indices.append(overall_index)
         # cv_indices = [list(analysis_obj.axes[1]).index(feature.cvs[i]) for i in feature.cvs]
         # dt_max_bins = analysis_obj.col_maxes[cv_indices[0]: cv_indices[len(cv_indices) - 1]]
-        dt_max_vals = analysis_obj.col_max_dts[cv_indices[0]: cv_indices[len(cv_indices) - 1]]
+        if len(feature.dt_max_vals) == 0:
+            dt_max_vals = analysis_obj.col_max_dts[cv_indices[0]: cv_indices[len(cv_indices) - 1]]
+        else:
+            dt_max_vals = feature.dt_max_vals
         feature.init_feature_data(cv_indices, dt_max_vals)
 
     # Fit sigmoids for transition calculations
