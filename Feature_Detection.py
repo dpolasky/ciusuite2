@@ -23,8 +23,8 @@ TRANS_COLOR_DICT = {6: 'white',
                     0: 'red',
                     5: 'blue',
                     1: 'green',
-                    2: 'yellow',
-                    4: 'orange',
+                    4: 'yellow',
+                    2: 'orange',
                     3: 'purple'}
 
 
@@ -565,8 +565,8 @@ def fit_logistic(x_axis, y_data, guess_center, guess_min, guess_max, steepness_g
         popt, pcov = scipy.optimize.curve_fit(logistic_func, x_axis, y_data, p0=p0,
                                               bounds=(fit_bounds_lower, fit_bounds_upper))
     except ValueError:
-        print('Error: fitting failed due to bad input values. Please try smoothing the input data more')
-        popt, pcov = [], []
+        print('Error: fitting failed due to bad input values. Please try additional smoothing and/or interpolating data')
+        popt, pcov = [0, 0, 0, 0], []
     # popt, pcov = scipy.optimize.curve_fit(logistic_func, x_axis, y_data, p0=p0, maxfev=5000)
     return popt, pcov
 
@@ -786,7 +786,7 @@ class Transition(object):
         steepness_guess = 2 * 1 / (self.feat_distance + 1)
         if steepness_guess < 0:
             steepness_guess = -1 * steepness_guess
-            print('Caution: negative slope transition observed in file {}. Data may require additional smoothing if this is unexpected'.format(self.filename))
+            print('Caution: negative slope transition observed in file {}. Data may require additional cropping or smoothing if this is unexpected'.format(self.filename))
 
         # for interpolation of transition modes - determine transition region to interpolate
         pad_cv = params_obj.ciu50_2_pad_transitions_cv
@@ -922,44 +922,6 @@ class Transition(object):
 
         # no CV found with column max within tolerance - return false
         return False
-
-
-# todo: deprecated
-# def ciu50_gaussians(analysis_obj, params_obj, outputdir):
-#     """
-#     CIU-50 method using Gaussian features instead of changepoint features. Requires that gaussian
-#     fitting and feature detection have previously been performed on the analysis_obj
-#     :param analysis_obj: CIUAnalysisObj with gaussians and feature data
-#     :type analysis_obj: CIUAnalysisObj
-#     :param params_obj: Parameters object with parameter information
-#     :type params_obj: Parameters
-#     :param outputdir: directory in which to save output
-#     :rtype: CIUAnalysisObj
-#     :return: analysis object
-#     """
-#     if analysis_obj.features_gaussian is None:
-#         feature_detect_gaussians(analysis_obj, params_obj)
-#
-#     # Adjust Features to avoid inclusion of any points without col maxes
-#     adj_features = adjust_gauss_features(analysis_obj, params_obj)
-#     # analysis_obj.features_gaussian = adj_features
-#
-#     # Catch bad inputs (not enough features to compute a transition)
-#     if len(adj_features) <= 1:
-#         filename = os.path.basename(analysis_obj.filename).rstrip('.ciu')
-#         print('Not enough features (<=1) in file {}. No transition analysis performed'.format(filename))
-#         return analysis_obj
-#
-#     # compute transitions and save output
-#     transitions_list = compute_transitions(analysis_obj, params_obj=params_obj, adjusted_features=adj_features)
-#     if len(transitions_list) == 0:
-#         print('No transitions found for file {}'.format(os.path.basename(analysis_obj.filename).rstrip('.ciu')))
-#     trans_num = 0
-#     for transition in transitions_list:
-#         transition.plot_transition(analysis_obj, params_obj, outputdir, trans_num)
-#         trans_num += 1
-#     plt.clf()
-#     return analysis_obj
 
 
 # testing

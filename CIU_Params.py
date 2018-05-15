@@ -130,8 +130,8 @@ class Parameters(object):
         self.smoothing_1_method = None
         self.smoothing_2_window = None
         self.smoothing_3_iterations = None
-        self.interp_1_method = None
-        self.interp_2_bins = None
+        self.interpolate_1_axis = None
+        self.interpolate_2_scaling = None
 
         # Plotting and saving output parameters
         self.ciuplot_cmap_override = None
@@ -149,27 +149,10 @@ class Parameters(object):
         self.plot_12_custom_title = None
         self.plot_13_font_size = None
 
-        # self.ciuplot_3_plot_title = None
-        # self.ciuplot_1_x_title = None
-        # self.ciuplot_2_y_title = None
-        # self.ciuplot_4_cmap = None
-        # self.ciuplot_5_figwidth = None
-        # self.ciuplot_6_figheight = None
-        # self.x_allplot_7_dpi = None
-        #
-        # self.x_allplot_1_extension = None
-        # self.x_allplot_2_cmap = None
-        # self.x_allplot_3_show_colorbar = None
-
-        # self.compare_plot_1_x_title = None
-        # self.compare_plot_2_y_title = None
-        # self.compare_plot_3_plot_title = None
-        # self.compare_plot_4_extension = None
         self.output_1_save_csv = None
         self.compare_batch_1_both_dirs = None
         self.compare_2_custom_blue = None
         self.compare_1_custom_red = None
-        # self.compare_0_show_colobar = None
 
         # Gaussian fitting
         self.gaussian_1_convergence = None

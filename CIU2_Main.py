@@ -73,6 +73,7 @@ class CIUSuite2(object):
             'on_button_oldavg_clicked': self.on_button_oldavg_clicked,
             'on_button_olddeltadt_clicked': self.on_button_olddeltadt_clicked,
             'on_button_crop_clicked': self.on_button_crop_clicked,
+            'on_button_interpolate_clicked': self.on_button_interpolate_clicked,
             'on_button_restore_clicked': self.on_button_restore_clicked,
             'on_button_gaussfit_clicked': self.on_button_gaussfit_clicked,
             'on_button_feature_detect_clicked': self.on_button_feature_detect_clicked,
@@ -347,7 +348,7 @@ class CIUSuite2(object):
         Update parameters object with new plot options for all methods
         :return: void
         """
-        plot_keys = [x for x in self.params_obj.params_dict.keys() if 'plot' in x]
+        plot_keys = [x for x in self.params_obj.params_dict.keys() if 'plot' in x and 'override' not in x]
         self.run_param_ui('Plot parameters', plot_keys)
         self.progress_done()
 
@@ -573,6 +574,50 @@ class CIUSuite2(object):
             self.display_analysis_files()
         else:
             messagebox.showwarning('No Files Selected', 'Please select files before performing cropping/interpolation')
+        self.progress_done()
+
+    def on_button_interpolate_clicked(self):
+        """
+        Perform interpolation of data onto new axes using user provided parameters. Overwrites
+        existing objects with new objects containing new data and axes to prevent unstable
+        behavior if old values (e.g. features) were used after interpolation.
+        :return: void
+        """
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'interpolate' in x]
+        if self.run_param_ui('Interpolation Parameters', param_keys):
+            # Determine if a file range has been specified
+            files_to_read = self.check_file_range_entries()
+            self.progress_started()
+
+            # determine which axis to interpolate
+            if self.params_obj.interpolate_1_axis == 'collision voltage':
+                interp_cv = True
+                interp_dt = False
+            elif self.params_obj.interpolate_1_axis == 'drift time':
+                interp_cv = False
+                interp_dt = True
+            else:
+                interp_cv = True
+                interp_dt = True
+
+            new_file_list = []
+            for file in files_to_read:
+                analysis_obj = load_analysis_obj(file)
+                # compute new axes
+                new_axes = Raw_Processing.compute_new_axes(old_axes=analysis_obj.axes,
+                                                           interpolation_scaling=self.params_obj.interpolate_2_scaling,
+                                                           interp_cv=interp_cv,
+                                                           interp_dt=interp_dt)
+                analysis_obj = Raw_Processing.interpolate_axes(analysis_obj, new_axes)
+
+                # create a new analysis object to prevent unstable behavior with new axes
+                new_obj = CIUAnalysisObj(analysis_obj.raw_obj, analysis_obj.ciu_data, analysis_obj.axes, self.params_obj)
+
+                filename = save_analysis_obj(new_obj, self.params_obj, outputdir=self.output_dir)
+                new_file_list.append(filename)
+                self.update_progress(files_to_read.index(file), len(files_to_read))
+
+            self.display_analysis_files()
         self.progress_done()
 
     def on_button_gaussfit_clicked(self):

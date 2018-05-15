@@ -319,6 +319,40 @@ def interpolate_axes(analysis_obj, new_axes):
     return analysis_obj
 
 
+def compute_new_axes(old_axes, interpolation_scaling, interp_cv=True, interp_dt=False):
+    """
+    Determine new (interpolated) axes based on the old axes and a scaling factor. Designed
+    to preserve the original axes values as much as possible (e.g. if axes scaled by 2,
+    all the original axis points will remain along with new points halfway in between).
+    New bin num calculation: axis length is one more than the number of steps, so subtract 1,
+    double the number of steps, then add 1 back to include the axis endpoint from linspace.
+    :param old_axes: [dt_axis, cv_axis] list of numpy arrays
+    :param interpolation_scaling: scaling factor to apply to the data. Equal to the new_num_bins / old_num_bins
+    :param interp_cv: whether to interpolate the CV axis
+    :param interp_dt: whether to interpolate the DT axis
+    :return: new axes [dt_axis, cv_axis] (list of numpy arrays)
+    """
+    # interpolate CV if requested
+    if interp_cv:
+        cv_start = old_axes[1][0]
+        cv_end = old_axes[1][-1]
+        new_num_bins = (len(old_axes[1]) - 1) * interpolation_scaling + 1
+        new_cv_axis = np.linspace(cv_start, cv_end, new_num_bins)
+    else:
+        new_cv_axis = old_axes[1]
+
+    # interpolate DT if requested
+    if interp_dt:
+        dt_start = old_axes[0][0]
+        dt_end = old_axes[0][-1]
+        new_num_bins = (len(old_axes[0]) - 1) * interpolation_scaling + 1
+        new_dt_axis = np.linspace(dt_start, dt_end, new_num_bins)
+    else:
+        new_dt_axis = old_axes[0]
+
+    return [new_dt_axis, new_cv_axis]
+
+
 def average_ciu(list_of_data_matrices):
     """
     Average CIU fingerprints and return the averaged and standard deviation matrices (SD only
