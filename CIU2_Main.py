@@ -764,9 +764,16 @@ class CIUSuite2(object):
                     self.output_dir = os.path.dirname(template_files[0])
 
                     for template_file in template_files:
+                        # load Gaussian information and generate a CIUAnalysisObj
                         gaussians_by_cv, axes = Gaussian_Fitting.parse_gaussian_list_from_file(template_file)
                         new_analysis_obj = Gaussian_Fitting.reconstruct_from_fits(gaussians_by_cv, axes, os.path.basename(template_file).rstrip('.csv'), self.params_obj)
                         filename = save_analysis_obj(new_analysis_obj, self.params_obj, outputdir=self.output_dir)
+
+                        # also save an _raw.csv file with the generated data
+                        Original_CIU.write_ciu_csv(os.path.join(self.output_dir, new_analysis_obj.short_filename + '_raw.csv'),
+                                                   new_analysis_obj.ciu_data,
+                                                   new_analysis_obj.axes)
+
                         new_file_list.append(filename)
                         self.update_progress(template_files.index(template_file), len(template_files))
 

@@ -12,6 +12,7 @@ import os
 import itertools
 import time
 from matplotlib.colors import ListedColormap
+from mpl_toolkits.mplot3d import Axes3D
 from sklearn.preprocessing import LabelEncoder
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.metrics import precision_score
@@ -831,17 +832,16 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
     :param filename:
     :return:
     """
-    if np.shape(class_scheme.transformed_test_data)[1] > 2:
-        # do not plot images with more than 2 dimensions
+    shape_lda = np.shape(class_scheme.transformed_test_data)
+    if shape_lda[1] > 3:
+        # do not plot images with more than 3 dimensions
         return
-
-    plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
+    fig = plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
 
     markers = ('s', 'x', 'o', '^', 'v', 'D', '<', '>', '4', '8', 'h', 'H', '1', '2', '3', '+', '*', 'p', 'P')
-    colors = ['fuchsia', 'deepskyblue', 'mediumspringgreen', 'lightgreen', 'gray', 'cyan', 'yellow', 'magenta']
+    colors = ['fuchsia', 'deepskyblue', 'mediumspringgreen', 'gray', 'cyan', 'lightgreen', 'magenta', 'yellow']
     cmap = ListedColormap(colors[:len(class_scheme.unique_labels)])
     # decide whether the data has 1d or nds
-    shape_lda = np.shape(class_scheme.transformed_test_data)
     ax = plt.subplot(111)
 
     # plot 1D or 2D decision regions
@@ -897,6 +897,39 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
             for ind, unknown_tup in enumerate(unknown_tups):
                 plt.scatter(x=unknown_tup[0][:, 0], y=unknown_tup[0][:, 1], marker=markers[ind], color='black', alpha=0.5, label=unknown_tup[1])
 
+    if shape_lda[1] == 3:
+        print('NOTE: 3D plots are not fully optimized. Labels and font sizes may not be perfect.')
+        ax = Axes3D(fig)
+        plot_data = class_scheme.transformed_test_data
+        y_values = class_scheme.numeric_labels
+        unique_labels = class_scheme.unique_labels
+
+        for label, marker, color in zip(range(0, len(unique_labels)), markers, colors):
+            ax.scatter(xs=plot_data[:, 0][y_values == label + 1],
+                       ys=plot_data[:, 1][y_values == label + 1],
+                       zs=plot_data[:, 2][y_values == label + 1],
+                       # marker=marker,
+                       c=color, s=40,
+                       label=np.unique(unique_labels)[label])
+
+        # if params_obj.plot_08_show_axes_titles:
+        #     ax.set_xlabel('LD1', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        #     ax.set_ylabel('LD2', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        #     ax.set_zlabel('LD3', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        # z_val_labels = np.linspace(np.min(plot_data[:, 2]), np.max(plot_data[:, 2]), 5)
+        # ax.set_zticklabels(z_val_labels, fontsize=params_obj.plot_13_font_size)
+
+        if unknown_tups is not None:
+            for ind, unknown_tup in enumerate(unknown_tups):
+                ax.scatter(xs=unknown_tup[0][:, 0],
+                           ys=unknown_tup[0][:, 1],
+                           zs=unknown_tup[0][:, 2],
+                           marker=markers[ind], c='black',
+                           s=40, alpha=0.9, label=unknown_tup[1])
+
+        # EDIT THIS IF YOU WANT TO CHANGE THE ANGLE OF THE PLOT
+        # ax.view_init(elev=20., azim=30.)
+
     # plot titles, labels, and legends
     if params_obj.plot_12_custom_title is not None:
         plot_title = params_obj.plot_12_custom_title
@@ -906,9 +939,10 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
         plot_title = 'From CVs: {}'.format(cv_string)
         plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
     if params_obj.plot_07_show_legend:
-        box = ax.get_position()
-        ax.set_position([box.x0, box.y0, box.width*0.8, box.height])
-        ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), fancybox=True, fontsize=params_obj.plot_13_font_size)
+        ax.legend(loc='best')
+        # box = ax.get_position()
+        # ax.set_position([box.x0, box.y0, box.width*0.8, box.height])
+        # ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), fancybox=True, fontsize=params_obj.plot_13_font_size)
     plt.xticks(fontsize=params_obj.plot_13_font_size)
     plt.yticks(fontsize=params_obj.plot_13_font_size)
 

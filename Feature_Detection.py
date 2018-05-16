@@ -348,7 +348,7 @@ def plot_features(analysis_obj, params_obj, outputdir):
     # save plot
     output_path = os.path.join(outputdir, analysis_obj.filename.rstrip('.ciu') + '_features' + params_obj.plot_02_extension)
     plt.savefig(output_path)
-    plt.clf()
+    plt.close()
 
 
 def print_features_list(feature_list, outputpath, mode):
@@ -499,6 +499,7 @@ def plot_transitions(transition_list, analysis_obj, params_obj, outputdir):
     filename = os.path.basename(analysis_obj.filename).rstrip('.ciu') + '_transition' + params_obj.plot_02_extension
     output_path = os.path.join(outputdir, filename)
     plt.savefig(output_path)
+    plt.close()
 
 
 def bin_to_dt(bin_val, min_dt, bin_spacing):
