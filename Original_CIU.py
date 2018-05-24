@@ -127,7 +127,7 @@ def rmsd_plot(difference_matrix, axes, contour_scale, tick_scale, rtext, outputd
     if params_obj.plot_06_show_colorbar:
         colorbar = plt.colorbar(ticks=tick_scale)
         if blue_label is not None and red_label is not None:
-            colorbar.ax.set_yticklabels([blue_label, 'Equal', red_label])
+            colorbar.ax.set_yticklabels([red_label, 'Equal', blue_label])
         colorbar.ax.tick_params(labelsize=params_obj.plot_13_font_size)
 
     if params_obj.plot_08_show_axes_titles:

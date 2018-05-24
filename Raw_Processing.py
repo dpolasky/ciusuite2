@@ -457,6 +457,7 @@ def equalize_obj(analysis_obj, final_axes):
             return analysis_obj, True
     except ValueError:
         # if axes are different shapes, allclose raises a ValueError. Adjust axes.
+        # todo: IF AXES HAVE NO OVERLAP AT ALL, this will crash with a value error. Catch it.
         analysis_obj = interpolate_axes(analysis_obj, final_axes)
         print('equalized axes to match in file {}'.format(analysis_obj.short_filename))
         return analysis_obj, True

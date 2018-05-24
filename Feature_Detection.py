@@ -451,6 +451,8 @@ def plot_transitions(transition_list, analysis_obj, params_obj, outputdir):
     :param outputdir: directory in which to save output
     :return: void
     """
+    # todo: check if this needs to be added to other methods, or if not needed after gaussian plotting cleanup
+    plt.clf()
     x_axis = analysis_obj.axes[1]
     y_data = analysis_obj.col_max_dts
     plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
