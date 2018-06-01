@@ -94,8 +94,32 @@ def check_data(file_list, accepted_endings):
 #     subprocess.run(args)
 
 
+# test for Agilent runner stuff
+def run_agilent_extractor(extractor_path):
+    """
+    Run the Agilent extractor program (GUI mode) and return the folder path(s) with generated CIU files to be
+    assembled and loaded.
+    ** this part is actually super easy - the key is figuring out how to get the output from the extractor into
+    CIUSuite 2 and/or get a list of files written from the extractor to open with CIUSuite 2. **
+    *** USE AGILENT_EXT_RUNNER.PY AS A BASE FOR THIS - it has things set up perfectly for running command line,
+    and would be a good basis for running the GUI. Even if the GUI is run, the output will still need to be
+    edited to put the CV header in (for now), so doing any fancier doesn't make sense until that's fixed.
+    :param extractor_path: Full system path to the extractor tool
+    :return:
+    """
+
+    completed_proc = subprocess.run(extractor_path)
+
+    if completed_proc.returncode == 0:
+        # process finished successfully
+        print('yay!')
+
+
 if __name__ == '__main__':
     # testing
     # raw_dialog = FileDialog()
     raw_file_dirs = get_data()
     print(raw_file_dirs)
+
+    #
+    mypath = r"C:\Users\Dan-7000\Desktop\AgilentCIU_memfixed\release\MIDAC_CIU_Extractor.exe"
