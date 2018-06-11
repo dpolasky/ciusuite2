@@ -636,7 +636,8 @@ class CIUSuite2(object):
             new_file_list = []
             for file in files_to_read:
                 analysis_obj = load_analysis_obj(file)
-                analysis_obj = Gaussian_Fitting.gaussian_fit_ciu(analysis_obj, self.params_obj)
+                # analysis_obj = Gaussian_Fitting.gaussian_fit_ciu(analysis_obj, self.params_obj)
+                analysis_obj = Gaussian_Fitting.gaussian_lmfit(analysis_obj, self.params_obj)
 
                 filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
                 new_file_list.append(filename)
@@ -1342,6 +1343,7 @@ def update_params_in_obj(analysis_obj, params_obj):
     return analysis_obj
 
 
+# todo: move to RawProcessing
 def average_ciu(analysis_obj_list, params_obj, outputdir):
     """
     Generate and save replicate object (a CIUAnalysisObj with averaged ciu_data and a list
@@ -1427,6 +1429,7 @@ def load_analysis_obj(analysis_filename):
     return analysis_obj
 
 
+# todo: move to its own file/module
 class CropUI(object):
     """
     Simple dialog with several fields build with Pygubu for inputting crop values

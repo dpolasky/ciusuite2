@@ -18,6 +18,8 @@ from tkinter import filedialog
 import scipy.signal
 import matplotlib.backends.backend_pdf
 import matplotlib.pyplot as plt
+import lmfit
+
 
 from CIU_raw import CIURaw
 from CIU_analysis_obj import CIUAnalysisObj
@@ -468,6 +470,74 @@ def check_peak_dists(popt_list, params_obj):
 
     # if no peaks are too close, return False and the original popt list
     return False, popt_list
+
+
+def gaussian_lmfit(analysis_obj, params_obj):
+    """
+    Alternative Gaussian fitting method using LMFit for composite modeling of peaks. Estimates initial peak
+    parameters using helper methods, then fits optimized Gaussian distributions and saves results. Intended
+    for direct call from buttons in GUI.
+    :param analysis_obj: analysis container
+    :type analysis_obj: CIUAnalysisObj
+    :param params_obj: parameter information container
+    :type params_obj: Parameters
+    :return: updated analysis object
+    :rtype: CIUAnalysisObj
+    """
+    # basic setup example
+    # single_model = lmfit.Model(gaussfunc)
+    # params = single_model.make_params(a=1, xc=10, w=1)
+    # # fitting example
+    # result = single_model.fit(y_data, params, x=x_data)
+
+    dt_axis = analysis_obj.axes[0]  # drift time (DT) - x axis for fitting, y axis for final CIU plot
+    cv_axis = analysis_obj.axes[1]
+    cv_col_data = np.swapaxes(analysis_obj.ciu_data, 0, 1)
+    outputpath = os.path.join(os.path.dirname(analysis_obj.filename), analysis_obj.short_filename)
+    if not os.path.isdir(outputpath):
+        os.makedirs(outputpath)
+
+    for cv_index, cv_col_intensities in enumerate(cv_col_data):
+
+        first_model = lmfit.models.GaussianModel(prefix='g1')   # use prefixes to prevent models from having same param names
+        models = first_model
+        gauss_index = 2
+        guess_params = first_model.guess(data=cv_col_intensities, x=dt_axis)
+
+        result = first_model.fit(cv_col_intensities, guess_params, x=dt_axis)
+        rsq = 1 - result.residual.var() / np.var(cv_col_intensities)
+        print(rsq)
+
+        while rsq < params_obj.gaussian_1_convergence:
+            models += lmfit.models.GaussianModel(prefix='g{}'.format(gauss_index))
+            guess_params += models.right.guess(data=cv_col_intensities, x=dt_axis)   # models.right is the Gaussian we just added, so we're using its 'guess' method
+            # this fails on second time - rsq is 0. Maybe a bad (or same) initial guess or something? should plot to understand what's happening
+            gauss_index += 1
+            result = models.fit(cv_col_intensities, guess_params, x=dt_axis)
+            rsq = 1 - result.residual.var() / np.var(cv_col_intensities)
+            print(rsq)
+
+        print(result.fit_report(min_correl=0.5))
+
+        plt.clf()
+        plt.plot(dt_axis, cv_col_intensities, 'b')
+        plt.plot(dt_axis, result.best_fit, 'r-')
+        outputname = os.path.join(outputpath, str(cv_index) + '.png')
+        plt.savefig(outputname)
+
+        """
+        Do some kind of iterating through various combinations of protein and non-protein components and compare
+        fit results and scores? How to implement custom objective function for composite models in lmfit?
+        ** use LMFit constraints to add scoring functions for various types **
+        Example:
+            pars = Parameters()
+            pars.add('frac_curve1', value=0.5, min=0, max=1)
+            pars.add('frac_curve2', expr='1-frac_curve1')
+            
+        When adding additional models, should constrain xc to be not near the original? 
+        """
+
+    return analysis_obj
 
 
 def gaussian_fit_ciu(analysis_obj, params_obj):
