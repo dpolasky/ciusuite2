@@ -637,7 +637,7 @@ class CIUSuite2(object):
             for file in files_to_read:
                 analysis_obj = load_analysis_obj(file)
                 # analysis_obj = Gaussian_Fitting.gaussian_fit_ciu(analysis_obj, self.params_obj)
-                analysis_obj = Gaussian_Fitting.gaussian_lmfit(analysis_obj, self.params_obj)
+                analysis_obj = Gaussian_Fitting.gaussian_lmfit_main(analysis_obj, self.params_obj)
 
                 filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
                 new_file_list.append(filename)

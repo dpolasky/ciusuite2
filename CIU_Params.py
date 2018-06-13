@@ -162,6 +162,7 @@ class Parameters(object):
         self.gaussian_5_width_fraction = None
         self.gaussian_6_min_peak_dist = None
         self.gaussian_7_mode = None
+        self.gaussian_8_fit_method = None
 
         self.reconstruct_1_mode = None
 

@@ -19,7 +19,7 @@ import scipy.signal
 import matplotlib.backends.backend_pdf
 import matplotlib.pyplot as plt
 import lmfit
-
+import time
 
 from CIU_raw import CIURaw
 from CIU_analysis_obj import CIUAnalysisObj
@@ -94,13 +94,6 @@ class FitDiagnostics(object):
 
         self.all_fits_lists = []    # list of (lists-by-CV) containing ALL fits performed at that CV (SingleFitStats)
 
-        # todo: MAKE TWO diagnostics objects (or however many), one for each round
-        # self.r2_num_peaks_list = []
-        # self.r2_popt_lists = []
-        # self.r2_gauss_lists = []
-        # self.r2_fit_stats_list = []
-        # self.r2_adjrsq_list = []
-
     def append_best_fit_info(self, fit_stats_obj):
         """
         Add the best result from a particular collision voltage to the primary lists stored
@@ -121,21 +114,30 @@ class SingleFitStats(object):
     Container for holding fit information for a single multi-Gaussian fitting (one collision voltage).
     Includes r2, fit data, error estimates, etc (all output of linregress)
     Intended to use called when initializing a fit.
+    *updated to include output from LMFit and original (curve_fit) in same container. Must have
+    one of popt OR lmfit_output, and will generate Gaussians and r2 from both for output
     """
-    def __init__(self, x_data, y_data, popt, cv):
+    def __init__(self, x_data, y_data, cv, popt=None, lmfit_output=None):
         """
         Initialize a new fit between the provided x/y data and optimized Gaussian parameters
         :param x_data: x (DT) raw data being fit by popt
         :param y_data: y (intensity) raw data being fit by popt
         :param popt: optimized parameters returned from curve_fit
         :param cv: collision voltage at which this fit occurred
+        :param lmfit_output: output container from LMFit (from model.fit(...))
+        :type lmfit_output:
         """
         self.x_data = x_data
         self.y_data = y_data
+
+        if lmfit_output is not None:
+            popt = get_popt_from_lmoutput(lmfit_output)
+
         self.y_fit = multi_gauss_func(x_data, *popt)
         self.slope, self.intercept, self.rvalue, self.pvalue, self.stderr = linregress(y_data, self.y_fit)
         self.adjrsq = adjrsquared(self.rvalue ** 2, len(y_data))
         self.gaussians = generate_gaussians_from_popt(popt, cv)
+        self.lmfit_output = lmfit_output
 
         # additional information that may be present
         self.p0 = None      # initial guess array used to generate this popt
@@ -239,14 +241,12 @@ def gaussfunc(x, a, xc, w):
     """
     Gaussian function with constraints applied for CIU data
     :param x: x
-    :param y0: baseline (set to 0)
     :param a: gaussian amplitude (constrained to be positive)
     :param xc: gaussian centroid
     :param w: gaussian width
     :return: y = f(x)
     """
     rxc = ((x-xc)**2)/(2*(w**2))
-    # y = y0 + a*(np.exp(-rxc))
     y = a * (np.exp(-rxc))
     # y = a/(np.sqrt(2*np.pi) * w) * (np.exp(-rxc))
     return y
@@ -472,7 +472,7 @@ def check_peak_dists(popt_list, params_obj):
     return False, popt_list
 
 
-def gaussian_lmfit(analysis_obj, params_obj):
+def gaussian_lmfit_main(analysis_obj, params_obj):
     """
     Alternative Gaussian fitting method using LMFit for composite modeling of peaks. Estimates initial peak
     parameters using helper methods, then fits optimized Gaussian distributions and saves results. Intended
@@ -484,60 +484,322 @@ def gaussian_lmfit(analysis_obj, params_obj):
     :return: updated analysis object
     :rtype: CIUAnalysisObj
     """
-    # basic setup example
-    # single_model = lmfit.Model(gaussfunc)
-    # params = single_model.make_params(a=1, xc=10, w=1)
-    # # fitting example
-    # result = single_model.fit(y_data, params, x=x_data)
+    start_time = time.time()
 
-    dt_axis = analysis_obj.axes[0]  # drift time (DT) - x axis for fitting, y axis for final CIU plot
-    cv_axis = analysis_obj.axes[1]
     cv_col_data = np.swapaxes(analysis_obj.ciu_data, 0, 1)
     outputpath = os.path.join(os.path.dirname(analysis_obj.filename), analysis_obj.short_filename)
     if not os.path.isdir(outputpath):
         os.makedirs(outputpath)
 
     for cv_index, cv_col_intensities in enumerate(cv_col_data):
+        # prepare initial guesses in the form of a list of Gaussian objects, sorted by amplitude
+        cv = analysis_obj.axes[1][cv_index]
+        gaussian_guess_list = guess_gauss_init(cv_col_intensities, analysis_obj.axes[0], params_obj.gaussian_5_width_fraction, cv, params_obj.gaussian_1_convergence)
 
-        first_model = lmfit.models.GaussianModel(prefix='g1')   # use prefixes to prevent models from having same param names
-        models = first_model
-        gauss_index = 2
-        guess_params = first_model.guess(data=cv_col_intensities, x=dt_axis)
+        # Run fitting and scoring across the provided range of peak options
+        best_result = iterate_lmfitting(analysis_obj.axes[0], cv_col_intensities, gaussian_guess_list, params_obj, outputpath)
 
-        result = first_model.fit(cv_col_intensities, guess_params, x=dt_axis)
-        rsq = 1 - result.residual.var() / np.var(cv_col_intensities)
-        print(rsq)
+    # output final results
+    print('fitting done in {:.2f}'.format(time.time() - start_time))
 
-        while rsq < params_obj.gaussian_1_convergence:
-            models += lmfit.models.GaussianModel(prefix='g{}'.format(gauss_index))
-            guess_params += models.right.guess(data=cv_col_intensities, x=dt_axis)   # models.right is the Gaussian we just added, so we're using its 'guess' method
-            # this fails on second time - rsq is 0. Maybe a bad (or same) initial guess or something? should plot to understand what's happening
-            gauss_index += 1
-            result = models.fit(cv_col_intensities, guess_params, x=dt_axis)
-            rsq = 1 - result.residual.var() / np.var(cv_col_intensities)
-            print(rsq)
+    #  OLD ##############################################################################
+    # basic setup example
+    # single_model = lmfit.Model(gaussfunc)
+    # params = single_model.make_params(a=1, xc=10, w=1)
+    # # fitting example
+    # result = single_model.fit(y_data, params, x=x_data)
 
-        print(result.fit_report(min_correl=0.5))
-
-        plt.clf()
-        plt.plot(dt_axis, cv_col_intensities, 'b')
-        plt.plot(dt_axis, result.best_fit, 'r-')
-        outputname = os.path.join(outputpath, str(cv_index) + '.png')
-        plt.savefig(outputname)
-
-        """
-        Do some kind of iterating through various combinations of protein and non-protein components and compare
-        fit results and scores? How to implement custom objective function for composite models in lmfit?
-        ** use LMFit constraints to add scoring functions for various types **
-        Example:
-            pars = Parameters()
-            pars.add('frac_curve1', value=0.5, min=0, max=1)
-            pars.add('frac_curve2', expr='1-frac_curve1')
-            
-        When adding additional models, should constrain xc to be not near the original? 
-        """
+    # dt_axis = analysis_obj.axes[0]  # drift time (DT) - x axis for fitting, y axis for final CIU plot
+    # cv_axis = analysis_obj.axes[1]
+    # cv_col_data = np.swapaxes(analysis_obj.ciu_data, 0, 1)
+    # outputpath = os.path.join(os.path.dirname(analysis_obj.filename), analysis_obj.short_filename)
+    # if not os.path.isdir(outputpath):
+    #     os.makedirs(outputpath)
+    #
+    # for cv_index, cv_col_intensities in enumerate(cv_col_data):
+    #
+    #     first_model = lmfit.models.GaussianModel(prefix='g1')   # use prefixes to prevent models from having same param names
+    #     models = first_model
+    #     gauss_index = 2
+    #     guess_params = first_model.guess(data=cv_col_intensities, x=dt_axis)
+    #
+    #     result = first_model.fit(cv_col_intensities, guess_params, x=dt_axis)
+    #     rsq = 1 - result.residual.var() / np.var(cv_col_intensities)
+    #     print(rsq)
+    #
+    #     while rsq < params_obj.gaussian_1_convergence:
+    #         models += lmfit.models.GaussianModel(prefix='g{}'.format(gauss_index))
+    #         guess_params += models.right.guess(data=cv_col_intensities, x=dt_axis)   # models.right is the Gaussian we just added, so we're using its 'guess' method
+    #         # this fails on second time - rsq is 0. Maybe a bad (or same) initial guess or something? should plot to understand what's happening
+    #         gauss_index += 1
+    #         result = models.fit(cv_col_intensities, guess_params, x=dt_axis)
+    #         rsq = 1 - result.residual.var() / np.var(cv_col_intensities)
+    #         print(rsq)
+    #
+    #     print(result.fit_report(min_correl=0.5))
+    #
+    #     plt.clf()
+    #     plt.plot(dt_axis, cv_col_intensities, 'b')
+    #     plt.plot(dt_axis, result.best_fit, 'r-')
+    #     outputname = os.path.join(outputpath, str(cv_index) + '.png')
+    #     plt.savefig(outputname)
 
     return analysis_obj
+
+
+def guess_gauss_init(ciu_col, dt_axis, width_frac, cv, rsq_cutoff):
+    """
+    Generate initial guesses for Gaussians. Currently using just the estimate_multi_params_all method
+    with output formatted as Gaussian objects, but will likely try to include initial first round of
+    fitting from curve_fit as well.
+    :param ciu_col:
+    :param dt_axis:
+    :param width_frac:
+    :param cv:
+    :return:
+    """
+    gaussians = []
+
+    # estimate a (rather inaccurate) list of possible peaks to use as guesses for fitting
+    guess_list = estimate_multi_params_all(ciu_col, dt_axis, width_frac)
+
+    # run the initial (first round) fitting with curve_fit to generate high quality guesses
+    popt, pcov, allfits = sequential_fit_rsq(guess_list, dt_axis, ciu_col, cv=cv, convergence_rsq=rsq_cutoff)
+
+    # convert all guesses to Gaussians and sort in decreasing quality order to provide for future rounds
+    gaussians.extend(generate_gaussians_from_popt(popt, cv, pcov))
+
+    # todo: skip peaks that are too close in starting location to the high quality first guesses?
+    for param_guess in guess_list:
+        # catch 0 amplitude and just make it very small
+        if abs(param_guess[0]) < 1e-5:
+            param_guess[0] = 1e-5
+        gaussians.extend(generate_gaussians_from_popt(param_guess))
+
+    return gaussians
+
+
+def sequential_fit_rsq(all_peak_guesses, dt_axis, cv_col_intensities, cv, convergence_rsq):
+    """
+    Gaussian fitting 1.0 method - adds peak components from a list of initial guesses (provided)
+    until r2 value reaches a user specified convergence criterion. Abstracted for use as a way to
+    provide high quality initial guesses for more advanced methods, but can also be used in isolation.
+    **This method is for a single CV value** and returns the final popt, pcov, and a list of fits from all rounds.
+    :param all_peak_guesses: list of lists of initial guess values for parameters. Typically from estimate_multi_params_all
+    :param dt_axis: x-axis for fitting (DT axis values)
+    :param cv_col_intensities: y-data for fitting (intensity data along the DT axis)
+    :param cv: the collision voltage (CV) at which this fitting takes place
+    :param convergence_rsq: the minimum rsq at which to stop adding peak components
+    :return: popt, pcov, list of SingleFitStats containers for each round of fitting.
+    """
+    param_guesses_multiple = []
+    all_fit_rounds = []
+    popt, pcov = [], []
+
+    # set bounds for fitting: keep baseline and centroid on DT axis, amplitude 0 to 1.5, width 0 to len(dt_axis)
+    max_dt = dt_axis[len(dt_axis) - 1]
+    min_dt = dt_axis[0]
+    fit_bounds_lower, fit_bounds_upper = [], []
+    fit_bounds_lower_append = [0, min_dt, 0]
+    fit_bounds_upper_append = [1, max_dt, len(dt_axis)]
+
+    i = 0
+    iterate_gaussian_flag = True
+    # Iterate through peak detection until convergence criterion is met, adding one additional peak each iteration
+    while iterate_gaussian_flag:
+        # Set up initial guesses
+        try:
+            param_guesses_multiple.extend(all_peak_guesses[i])
+            # ensure bounds arrays maintain same shape as parameter guesses
+            fit_bounds_lower.extend(fit_bounds_lower_append)
+            fit_bounds_upper.extend(fit_bounds_upper_append)
+        except IndexError:
+            # No converge with all estimated peaks. Continue with final estimate
+            print('Included all {} peaks found, but r^2 still less than convergence criterion. '
+                  'Poor fitting possible'.format(i + 1))
+            break
+
+        # Run fitting (round 1)
+        try:
+            popt, pcov = curve_fit(multi_gauss_func, dt_axis, cv_col_intensities, method='trf',
+                                   p0=param_guesses_multiple,
+                                   bounds=(fit_bounds_lower, fit_bounds_upper))
+            # perr = np.sqrt(np.diag(pcov))
+        except (RuntimeError, ValueError):
+            popt, pcov = [], []
+
+        current_fit = SingleFitStats(dt_axis, cv_col_intensities, popt=popt, cv=cv)
+        all_fit_rounds.append(current_fit)
+
+        # stop iterating once convergence criteria have been reached
+        if not current_fit.adjrsq < convergence_rsq:
+            iterate_gaussian_flag = False
+        i += 1
+
+    return popt, pcov, all_fit_rounds
+
+
+def iterate_lmfitting(x_data, y_data, guesses_list, params_obj, outputpath):
+    """
+    Primary fitting method. Iterates over combinations of protein and non-protein peaks using
+    models generated with LMFit based on the initial peak guesses in the guesses_list. Fits are
+    evaulated with r2 and scoring functions to determine which number of components gave the
+    best fit, which is returned as a MinimizerResult/ModelFitResult from LMFit
+    :param x_data: x_axis data for fitting (DT axis)
+    :param y_data: y data to fit (intensity values along the DT axis)
+    :param guesses_list: list of Gaussian objects in decreasing amplitude order for initial guesses
+    :type guesses_list: list[Gaussian]
+    :param params_obj: Parameters container with various parameter information
+    :type params_obj: Parameters
+    :param outputpath: directory in which to save outputs
+    :return: best fit result as a MinimizerResult/ModelFitResult from LMFit
+    """
+    # todo: add check for mass-selected vs not and only allow non-protein peaks if not selected
+    max_num_prot_pks = 3  # params_obj.gaussian_max_prot_pks or something
+    max_num_nonprot_pks = 0  # params_obj/advanced?
+
+    cv = guesses_list[0].cv
+
+    output_fits = []
+    # iterate over all peak combinations
+    for num_prot_pks in range(1, max_num_prot_pks + 1):
+        for num_nonprot_pks in range(0, max_num_nonprot_pks + 1):
+            fit_params = lmfit.Parameters()
+
+            # assemble models for this number of peaks
+            guess_index = 0
+            models_list = []
+
+            # take the widest peak (not including the most intense peak) as the initial non-protein peak
+            if num_nonprot_pks > 1:
+                print('More than 1 nonprotein peak is not currently supported!')
+            if num_nonprot_pks == 1:
+                width_sorted = sorted(guesses_list, key=lambda x: x.width, reverse=True)
+                widest_guess = width_sorted[0]
+                model, params = make_nonprotein_model(prefix='npg{}'.format(guess_index + 1),
+                                                      guess_gaussian=widest_guess,
+                                                      params_obj=params_obj,
+                                                      dt_axis=x_data)
+                models_list.append(model)
+                fit_params.update(params)
+
+            # assemble protein models
+            for prot_pk_index in range(0, num_prot_pks):
+                # todo: add check for out of guesses (maybe just use default make_params in that case?)
+                model, params = make_protein_model(prefix='g{}'.format(guess_index + 1),
+                                                   guess_gaussian=guesses_list[guess_index],
+                                                   params_obj=params_obj,
+                                                   dt_axis=x_data)
+                models_list.append(model)
+                fit_params.update(params)
+                guess_index += 1
+
+            # combine all model parameters and perform the actual fitting
+            final_model = models_list[0]
+            for model in models_list[1:]:
+                final_model += model
+
+            output = final_model.fit(y_data, fit_params, x=x_data, method=params_obj.gaussian_8_fit_method, nan_policy='omit')
+            print(output.fit_report())
+            print(cv)
+            output_fits.append(output)
+
+            plt.clf()
+            model_components = output.eval_components(x=x_data)
+            output.plot_fit()
+            for component_name, comp_value in model_components.items():
+                plt.plot(x_data, comp_value, '--', label=component_name)
+            plt.legend(loc='best')
+            if not output.success:
+                plt.title('{}V, fitting failed'.format(cv))
+            else:
+                plt.title('{}V'.format(cv))
+            outputname = os.path.join(outputpath, '{}_p{}_np{}_fits.png'.format(cv, num_prot_pks, num_nonprot_pks))
+            plt.savefig(outputname)
+
+            # compute fits and score
+            current_fit = SingleFitStats(x_data, y_data, cv=cv, lmfit_output=output)
+            penalty_scaling = 1
+            score, peak_penalties = compute_fit_score(current_fit.gaussians, current_fit.adjrsq, x_data, penalty_scaling)
+
+    # todo: assess final scores/penalties on final output
+    sorted_output = sorted(output_fits, key=lambda x: x.chisqr, reverse=True)
+    return sorted_output[0]
+
+
+def make_protein_model(prefix, guess_gaussian, params_obj, dt_axis):
+    """
+    Generate an LMFit model object from initial parameters in the guess_gaussian container and
+    parameters.
+    :param prefix: string prefix for this model to prevent params from having same names
+    :param guess_gaussian: Gaussian object with initial guess parameters
+    :type guess_gaussian: Gaussian
+    :param params_obj: parameters container
+    :type params_obj: Parameters
+    :param dt_axis: dt_axis information for determining boundaries
+    :return: LMFit model object with initialized parameters, bounds, and constraints
+    """
+    max_dt = dt_axis[-1]
+    min_dt = dt_axis[0]
+
+    model = lmfit.models.GaussianModel(prefix=prefix)
+    # model = lmfit.models.VoigtModel(prefix=prefix)
+
+    model_params = model.make_params()
+    # model_params[prefix + 'gamma'].set(value=0.7, vary=True)
+
+    # set initial guesses and boundaries
+    model_params[prefix + 'center'].set(guess_gaussian.centroid, min=min_dt, max=max_dt)
+    model_params[prefix + 'sigma'].set(guess_gaussian.width, min=0.15, max=0.65)
+    model_params[prefix + 'amplitude'].set(guess_gaussian.amplitude, min=0, max=1)
+
+    # todo: apply constraints - ** might actually need to be out in the main body IF doing any relative to other peaks. If just width, can be in here
+
+    # return the model
+    return model, model_params
+
+
+def make_nonprotein_model(prefix, guess_gaussian, params_obj, dt_axis):
+    """
+    Generate an LMFit model object from initial parameters in the guess_gaussian container and
+    parameters.
+    :param prefix: string prefix for this model to prevent params from having same names
+    :param guess_gaussian: Gaussian object with initial guess parameters
+    :type guess_gaussian: Gaussian
+    :param params_obj: parameters container
+    :type params_obj: Parameters
+    :param dt_axis: dt_axis information for determining boundaries
+    :return: LMFit model object with initialized parameters, bounds, and constraints
+    """
+    max_dt = dt_axis[-1]
+    min_dt = dt_axis[0]
+
+    model = lmfit.models.GaussianModel(prefix=prefix)
+    model_params = model.make_params()
+
+    # set initial guesses and boundaries
+    model_params[prefix + 'center'].set(guess_gaussian.centroid, min=min_dt, max=max_dt)
+    model_params[prefix + 'sigma'].set(guess_gaussian.width, min=0, max=max_dt)
+    model_params[prefix + 'amplitude'].set(guess_gaussian.amplitude, min=0, max=1)
+
+    # todo: apply constraints - ** might actually need to be out in the main body IF doing any relative to other peaks. If just width, can be in here
+
+    # return the model
+    return model, model_params
+
+
+def get_popt_from_lmoutput(modelresult):
+    """
+    Generate a list of parameters in the same format as curve_fit (popt) for easy conversion
+    to old plotting and result saving methods.
+    :param modelresult: ModelResult object from LMFit (returned from model.fit())
+    :return: list of Gaussian parameters [amp1, cent1, sigma1, amp2, cent2, sigma2, ... ]
+    """
+    # convert dictionary of key/value parameters into a single list of values
+    keys = sorted(modelresult.best_values.keys())
+    output_popt = [modelresult.best_values[key] for key in keys]
+
+    return output_popt
 
 
 def gaussian_fit_ciu(analysis_obj, params_obj):
@@ -615,7 +877,7 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
             except (RuntimeError, ValueError):
                 popt, pcov = [], []
 
-            current_fit = SingleFitStats(dt_axis, cv_col_intensities, popt, cv_axis[cv_index])
+            current_fit = SingleFitStats(dt_axis, cv_col_intensities, popt=popt, cv=cv_axis[cv_index])
             all_fit_rounds.append(current_fit)
 
             # stop iterating once convergence criteria have been reached
@@ -681,7 +943,7 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
                     popt, pcov = [], []
 
                 # compute fits and score
-                current_fit = SingleFitStats(dt_axis, cv_col_intensities, popt, cv_axis[cv_index])
+                current_fit = SingleFitStats(dt_axis, cv_col_intensities, popt=popt, cv=cv_axis[cv_index])
                 penalty_scaling = 1
 
                 current_fit.score, current_fit.peak_penalties = compute_fit_score(current_fit.gaussians, current_fit.adjrsq, dt_axis, penalty_scaling)
@@ -708,7 +970,7 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
                     for gaussian in updated_gaussians:
                         new_popt.extend(gaussian.return_popt())
 
-                    updated_fit = SingleFitStats(dt_axis, cv_col_intensities, new_popt, cv_axis[cv_index])
+                    updated_fit = SingleFitStats(dt_axis, cv_col_intensities, popt=new_popt, cv=cv_axis[cv_index])
                     updated_fit.score, updated_fit.peak_penalties = compute_fit_score(updated_fit.gaussians, updated_fit.adjrsq, dt_axis, penalty_scaling)
                     print('old score: {:.3f} {} peaks, new score: {:.3f} {} peaks'.format(current_fit.score, len(current_fit.gaussians), updated_fit.score, len(updated_fit.gaussians)))
 
@@ -808,21 +1070,13 @@ def compute_fit_score(gaussian_list, rsq, dt_axis, penalty_scaling):
     for gaussian in gaussian_list:
         current_penalty = 0
         # antibody settings: exp=0.45, tol=0.2, steep=1
-        current_penalty = compute_width_penalty(gaussian.width, expected_width=0.45, tolerance=0.4, steepness=0.2)
+        # membrane settings: exp=0.45, tol=0.4, steep=0.2
+        current_penalty = compute_width_penalty(gaussian.width, expected_width=0.45, tolerance=0.2, steepness=1)
         if len(gaussian_list) > 1:
             current_penalty += compute_area_penalty(gaussian, gaussian_list, dt_axis)
         peak_penalties.append(current_penalty)
 
     total_penalty = np.sum(peak_penalties)
-
-    # todo: deprecated (total, rather than peak-by-peak, penalties)
-    # width penalty function (some tolerance for allowed width)
-    # total_penalty = 0
-    # for width in widths:
-    #     total_penalty += compute_width_penalty(width, expected_width=0.45, tolerance=0.2, steepness=1)
-    #
-    # # shared area penalty function
-    # total_penalty += compute_area_penalty(gaussian_list, dt_axis)
 
     scaled_penalty = total_penalty * penalty_scaling
     score = rsq - scaled_penalty
@@ -990,11 +1244,11 @@ def plot_centroids(analysis_obj, outputpath, y_bounds=None):
     for x, y in zip(analysis_obj.axes[1], filt_centroids):
         plt.scatter([x] * len(y), y)
     # plt.scatter(self.axes[1], self.gauss_centroids)
-    plt.xlabel('Trap CV')
-    plt.ylabel('ATD_centroid')
+    plt.xlabel('Collision Voltage (V)')
+    plt.ylabel('ATD Centroid (ms)')
     if y_bounds is not None:
         plt.ylim(y_bounds)
-    plt.title('Centroids filtered by peak width')
+    # plt.title('Centroids filtered by peak width')
     plt.grid('on')
     output_name = os.path.basename(analysis_obj.filename).rstrip('.ciu') + '_centroids.png'
     plt.savefig(os.path.join(outputpath, output_name), dpi=500)
