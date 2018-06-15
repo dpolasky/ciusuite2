@@ -8,6 +8,10 @@ from PyQt5 import QtWidgets
 import sys
 import subprocess
 import os
+import numpy as np
+import tkinter
+from tkinter import simpledialog
+from tkinter import messagebox
 
 
 # File chooser for raw data, created after extensive searching on stack overflow
@@ -95,24 +99,99 @@ def check_data(file_list, accepted_endings):
 
 
 # test for Agilent runner stuff
-def run_agilent_extractor(extractor_path):
-    """
-    Run the Agilent extractor program (GUI mode) and return the folder path(s) with generated CIU files to be
-    assembled and loaded.
-    ** this part is actually super easy - the key is figuring out how to get the output from the extractor into
-    CIUSuite 2 and/or get a list of files written from the extractor to open with CIUSuite 2. **
-    *** USE AGILENT_EXT_RUNNER.PY AS A BASE FOR THIS - it has things set up perfectly for running command line,
-    and would be a good basis for running the GUI. Even if the GUI is run, the output will still need to be
-    edited to put the CV header in (for now), so doing any fancier doesn't make sense until that's fixed.
-    :param extractor_path: Full system path to the extractor tool
-    :return:
-    """
+# def run_agilent_extractor(extractor_path):
+#     """
+#     Run the Agilent extractor program (GUI mode) and return the folder path(s) with generated CIU files to be
+#     assembled and loaded.
+#     ** this part is actually super easy - the key is figuring out how to get the output from the extractor into
+#     CIUSuite 2 and/or get a list of files written from the extractor to open with CIUSuite 2. **
+#     *** USE AGILENT_EXT_RUNNER.PY AS A BASE FOR THIS - it has things set up perfectly for running command line,
+#     and would be a good basis for running the GUI. Even if the GUI is run, the output will still need to be
+#     edited to put the CV header in (for now), so doing any fancier doesn't make sense until that's fixed.
+#     :param extractor_path: Full system path to the extractor tool
+#     :return:
+#     """
+#
+#     completed_proc = subprocess.run(extractor_path)
+#
+#     if completed_proc.returncode == 0:
+#         # process finished successfully
+#         print('yay!')
 
-    completed_proc = subprocess.run(extractor_path)
 
-    if completed_proc.returncode == 0:
-        # process finished successfully
-        print('yay!')
+def read_agilent_and_correct(filename, cv_axis_to_use, overwrite=True):
+    """
+    Parse through the file and edit as needed. Saves a copy in the same directory as the input file,
+    unless overwrite is True, in which case it replaces the input file with an updated one.
+    :param filename: full path to file to edit
+    :param cv_axis_to_use: list of collision voltage (or other activation values) to use. Must be same
+    length as number of columns in the input file.
+    :param overwrite: whether to overwrite the original file or save a copy with '_edit' appended
+    :return: void
+    """
+    edited_lines = []
+
+    # check how many 0 lines to remove
+    rawdata = np.genfromtxt(filename, missing_values=[""], filling_values=[0], delimiter=",")
+    dt_axis = rawdata[1:, 0]
+    num_zeros = np.count_nonzero(dt_axis == 0)
+    zeros_skipped_so_far = 0
+
+    with open(filename) as original_file:
+        # read through the file, saving all lines (except those we're skipping)
+        for index, line in enumerate(original_file):
+            splits = line.rstrip('\n').split(',')
+            if index == 0:
+                # save header information
+                if not len(splits) - 1 == len(cv_axis_to_use):
+                    print('CV axis provided is NOT the same length as the CV axis in file {}, skipping file'.format(os.path.basename(filename)))
+                    return
+                new_header_info = ','.join([str(x) for x in cv_axis_to_use])
+                new_header = splits[0] + ',' + new_header_info + '\n'
+                edited_lines.append(new_header)
+
+            else:
+                # all other lines: skip zeros if needed, otherwise, save
+                if zeros_skipped_so_far < num_zeros - 1:
+                    zeros_skipped_so_far += 1
+                else:
+                    # save this line
+                    edited_lines.append(line)
+
+    # save a copy of the file with the edited information
+    if overwrite:
+        new_filename = filename
+    else:
+        new_filename = filename.rstrip('_raw.csv') + '_edit_raw.csv'
+    with open(new_filename, 'w') as new_file:
+        for line in edited_lines:
+            new_file.write(line)
+
+
+def ask_input_cv_data():
+    """
+    Method to prompt the user to enter the CV axis data for an Agilent file into a simple dialog
+    with values separated by commas. Returns parsed values as a list
+    :return: list of CV values, success boolean
+    """
+    root = tkinter.Tk()
+    root.withdraw()
+
+    input_string = simpledialog.askstring('Enter Collision Voltage Data (comma separated)',
+                                          """Please enter the collision voltage/activation values used for the CIU fingerprints extracted, separated by commas.
+                                          For example: 10, 20, 30, 40, 50. Please do NOT include anything other than numbers and commas (periods for decimals OK)""")
+
+    output_cvs = []
+    splits = input_string.split(',')
+    for split in splits:
+        try:
+            cv = float(split.trim())
+            output_cvs.append(cv)
+        except ValueError:
+            messagebox.showerror('Error Parsing Value', 'Value {} could not be parsed to a number. Please remove any non-number characters and try again')
+            return [], False
+
+    return output_cvs, True
 
 
 if __name__ == '__main__':

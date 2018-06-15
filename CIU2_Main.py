@@ -25,6 +25,7 @@ import Original_CIU
 import Gaussian_Fitting
 import Feature_Detection
 import Classification
+import Raw_Data_Import
 
 from matplotlib import rcParams
 rcParams.update({'figure.autolayout': True})
@@ -65,6 +66,7 @@ class CIUSuite2(object):
         callbacks = {
             'on_button_rawfile_clicked': self.on_button_rawfile_clicked,
             'on_button_analysisfile_clicked': self.on_button_analysisfile_clicked,
+            'on_button_vendor_raw_clicked': self.on_button_vendor_raw_clicked,
             'on_button_printparams_clicked': self.on_button_printparams_clicked,
             'on_button_update_param_defaults_clicked': self.on_button_update_param_defaults_clicked,
             'on_button_changedir_clicked': self.on_button_changedir_clicked,
@@ -1179,60 +1181,76 @@ class CIUSuite2(object):
         self.mainwindow.deiconify()
         return files
 
-    def on_button_agilent_raw_clicked(self):
+    def on_button_vendor_raw_clicked(self):
         """
         Open the Agilent CIU extractor app with a specified output directory. The extractor app will generate _raw.csv
         files into the specified directory. Then runs Agilent data converter script to handle duplicate DTs and
         edit the CV header to be the correct values. Finally, loads data into CIUSuite 2 using the standard load
         raw files method.
-        todo: not yet tested
-
         :return: void
         """
-        # Call Agilent extractor
-        dir_for_agilent = filedialog.askdirectory(title='Choose directory in which to save _raw.csv files from Agilent data')
-        agilent_args = hard_agilent_ext_path + ' ' + dir_for_agilent
-        completed_proc = subprocess.run(agilent_args)
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'vendor' in x]
+        if self.run_param_ui('Which Vendor Raw Data Type to Extract?', param_keys):
+            vendor_type = self.params_obj.vendor_1_type
 
-        if not completed_proc.returncode == 0:
-            messagebox.showerror('Data Extraction Error', 'Error: Agilent Data Extraction Failed. Returning.')
-            return
+            if vendor_type == 'agilent':
+                # Call Agilent extractor using the directory chosen by the user for output
+                raw_dir = filedialog.askdirectory(title='Choose directory in which to save _raw.csv files from Agilent data')
+                agilent_args = hard_agilent_ext_path + ' ' + raw_dir
+                completed_proc = subprocess.run(agilent_args)
 
-        # todo: run combinator script on outputs - add 'ruwan_ciu_convert.py' to project to use (or take from there)
+                if not completed_proc.returncode == 0:
+                    messagebox.showerror('Data Extraction Error', 'Error: Agilent Data Extraction Failed. Returning.')
+                    return
 
+                # first, edit file CV headers since we can't get that information from the Agilent raw library
+                cv_headers, parsing_success = [], False
+                while not parsing_success:
+                    cv_headers, parsing_success = Raw_Data_Import.ask_input_cv_data()
 
-        # load raw files
-        # clear analysis list
-        self.analysis_file_list = []
-        raw_files = [x for x in os.listdir(dir_for_agilent) if x.endswith('_raw.csv')]
-        if len(raw_files) > 0:
-            # Ask user for smoothing input
-            plot_keys = [x for x in self.params_obj.params_dict.keys() if 'smoothing' in x]
-            if self.run_param_ui('Initial Smoothing Parameters', plot_keys):
-                self.progress_started()
-
-                # run raw processing
+                raw_files = [x for x in os.listdir(raw_dir) if x.endswith('_raw.csv')]
                 for raw_file in raw_files:
-                    try:
-                        raw_obj = generate_raw_obj(raw_file)
-                    except ValueError as err:
-                        messagebox.showerror('Data Import Error',
-                                             message='{}{}. Problem: {}. Press OK to continue'.format(*err.args))
-                        continue
-                    analysis_obj = process_raw_obj(raw_obj, self.params_obj)
-                    analysis_filename = save_analysis_obj(analysis_obj, self.params_obj,
-                                                          os.path.dirname(raw_obj.filepath))
-                    self.analysis_file_list.append(analysis_filename)
-                    self.update_progress(raw_files.index(raw_file), len(raw_files))
+                    Raw_Data_Import.read_agilent_and_correct(raw_file, cv_headers)
 
-                # update the list of analysis files to display
-                self.display_analysis_files()
+            elif vendor_type == 'waters':
+                # todo: implement?
+                raw_dir = ''
 
-                # update directory to match the loaded files
-                if not self.output_dir_override:
-                    self.output_dir = os.path.dirname(self.analysis_file_list[0])
-                    self.update_dir_entry()
-            self.progress_done()
+            else:
+                print('invalid vendor')
+                return
+
+            # clear analysis list
+            self.analysis_file_list = []
+            raw_files = [x for x in os.listdir(raw_dir) if x.endswith('_raw.csv')]
+            if len(raw_files) > 0:
+                # Ask user for smoothing input
+                plot_keys = [x for x in self.params_obj.params_dict.keys() if 'smoothing' in x]
+                if self.run_param_ui('Initial Smoothing Parameters', plot_keys):
+                    self.progress_started()
+
+                    # run raw processing
+                    for raw_file in raw_files:
+                        try:
+                            raw_obj = generate_raw_obj(raw_file)
+                        except ValueError as err:
+                            messagebox.showerror('Data Import Error',
+                                                 message='{}{}. Problem: {}. Press OK to continue'.format(*err.args))
+                            continue
+                        analysis_obj = process_raw_obj(raw_obj, self.params_obj)
+                        analysis_filename = save_analysis_obj(analysis_obj, self.params_obj,
+                                                              os.path.dirname(raw_obj.filepath))
+                        self.analysis_file_list.append(analysis_filename)
+                        self.update_progress(raw_files.index(raw_file), len(raw_files))
+
+                    # update the list of analysis files to display
+                    self.display_analysis_files()
+
+                    # update directory to match the loaded files
+                    if not self.output_dir_override:
+                        self.output_dir = os.path.dirname(self.analysis_file_list[0])
+                        self.update_dir_entry()
+                self.progress_done()
 
 
 # ****** CIU Main I/O methods ******

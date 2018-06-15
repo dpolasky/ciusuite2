@@ -186,6 +186,9 @@ class Parameters(object):
         self.classif_5_auto_featselect = None
         self.silent_clf_4_num_gauss = None
 
+        # Raw data import parameters
+        self.vendor_1_type = None
+
     def set_params(self, params_dict):
         """
         Set a series of parameters given a dictionary of (parameter name, value) pairs

@@ -133,11 +133,23 @@ class SingleFitStats(object):
         if lmfit_output is not None:
             popt = get_popt_from_lmoutput(lmfit_output)
 
+            if cv == 45.0:
+                lmfit_output.plot()
+                plt.show()
+
         self.y_fit = multi_gauss_func(x_data, *popt)
-        self.slope, self.intercept, self.rvalue, self.pvalue, self.stderr = linregress(y_data, self.y_fit)
+        yfit2 = multi_gauss_func(x_data, *popt)
+        s, i, r, p, ste = linregress(y_data, yfit2)
+        self.slope, self.intercept, self.rvalue, self.pvalue, self.stderr = linregress(self.y_data, self.y_fit)
         self.adjrsq = adjrsquared(self.rvalue ** 2, len(y_data))
         self.gaussians = generate_gaussians_from_popt(popt, cv)
         self.lmfit_output = lmfit_output
+
+        residuals = self.y_fit - self.y_data
+        y_mean = np.mean(self.y_data)
+        total_sum_sqrs = np.sum([(yi - y_mean)**2 for yi in self.y_data])
+        resid_sum_sqrs = np.sum(residuals**2)
+        rsq2 = 1 - resid_sum_sqrs / total_sum_sqrs
 
         # additional information that may be present
         self.p0 = None      # initial guess array used to generate this popt
@@ -237,18 +249,18 @@ def estimate_multi_params_all(ciu_col, dt_axis, width_frac):
     return params_lists
 
 
-def gaussfunc(x, a, xc, w):
+def gaussfunc(x, amplitude, centroid, sigma):
     """
     Gaussian function with constraints applied for CIU data
     :param x: x
-    :param a: gaussian amplitude (constrained to be positive)
-    :param xc: gaussian centroid
-    :param w: gaussian width
+    :param amplitude: gaussian amplitude (constrained to be positive)
+    :param centroid: gaussian centroid
+    :param sigma: gaussian width
     :return: y = f(x)
     """
-    rxc = ((x-xc)**2)/(2*(w**2))
-    y = a * (np.exp(-rxc))
-    # y = a/(np.sqrt(2*np.pi) * w) * (np.exp(-rxc))
+    exponent = ((x - centroid)**2) / (2 * (sigma**2))
+    y = amplitude * (np.exp(-exponent))         # using this function since our data is always normalized
+    # y = a/(np.sqrt(2*np.pi) * w) * (np.exp(-rxc))     # use this for non-normalized data
     return y
 
 
@@ -491,16 +503,38 @@ def gaussian_lmfit_main(analysis_obj, params_obj):
     if not os.path.isdir(outputpath):
         os.makedirs(outputpath)
 
+    best_fits_by_cv = []
+    scores_by_cv = []
     for cv_index, cv_col_intensities in enumerate(cv_col_data):
         # prepare initial guesses in the form of a list of Gaussian objects, sorted by amplitude
         cv = analysis_obj.axes[1][cv_index]
         gaussian_guess_list = guess_gauss_init(cv_col_intensities, analysis_obj.axes[0], params_obj.gaussian_5_width_fraction, cv, params_obj.gaussian_1_convergence)
 
         # Run fitting and scoring across the provided range of peak options
-        best_result = iterate_lmfitting(analysis_obj.axes[0], cv_col_intensities, gaussian_guess_list, params_obj, outputpath)
+        all_fits = iterate_lmfitting(analysis_obj.axes[0], cv_col_intensities, gaussian_guess_list, params_obj, outputpath)
+
+        # save the fit with the highest score out of all fits collected
+        best_fit = max(all_fits, key=lambda x: x.score)
+        best_fits_by_cv.append(best_fit)
+        scores_by_cv.append([fit.score for fit in all_fits])
 
     # output final results
-    print('fitting done in {:.2f}'.format(time.time() - start_time))
+    fit_time = time.time() - start_time
+    print('fitting done in {:.2f}'.format(fit_time))
+
+    # save output
+    print(scores_by_cv)
+    best_gaussians = [fit.gaussians for fit in best_fits_by_cv]
+    rsqs = [fit.adjrsq for fit in best_fits_by_cv]
+    save_gaussfits_pdf(analysis_obj, best_gaussians, outputpath, rsq_list=rsqs, filename_append='lmfit')
+
+    best_centroids = []
+    for gauss_list in best_gaussians:
+        best_centroids.append([x.centroid] for x in gauss_list)
+    plot_centroids(best_centroids, analysis_obj, outputpath)
+
+    print('plotting done in {:.2f}'.format(time.time() - fit_time))
+
 
     #  OLD ##############################################################################
     # basic setup example
@@ -702,7 +736,6 @@ def iterate_lmfitting(x_data, y_data, guesses_list, params_obj, outputpath):
             output = final_model.fit(y_data, fit_params, x=x_data, method=params_obj.gaussian_8_fit_method, nan_policy='omit')
             print(output.fit_report())
             print(cv)
-            output_fits.append(output)
 
             plt.clf()
             model_components = output.eval_components(x=x_data)
@@ -718,13 +751,14 @@ def iterate_lmfitting(x_data, y_data, guesses_list, params_obj, outputpath):
             plt.savefig(outputname)
 
             # compute fits and score
-            current_fit = SingleFitStats(x_data, y_data, cv=cv, lmfit_output=output)
+            current_fit = SingleFitStats(x_data=x_data, y_data=y_data, cv=cv, popt=None, lmfit_output=output)
             penalty_scaling = 1
-            score, peak_penalties = compute_fit_score(current_fit.gaussians, current_fit.adjrsq, x_data, penalty_scaling)
+            current_fit.score, current_fit.peak_penalties = compute_fit_score(current_fit.gaussians, current_fit.adjrsq, x_data, penalty_scaling)
+            output_fits.append(current_fit)
 
     # todo: assess final scores/penalties on final output
-    sorted_output = sorted(output_fits, key=lambda x: x.chisqr, reverse=True)
-    return sorted_output[0]
+    # sorted_output = sorted(output_fits, key=lambda x: x.chisqr, reverse=True)
+    return output_fits
 
 
 def make_protein_model(prefix, guess_gaussian, params_obj, dt_axis):
@@ -742,14 +776,15 @@ def make_protein_model(prefix, guess_gaussian, params_obj, dt_axis):
     max_dt = dt_axis[-1]
     min_dt = dt_axis[0]
 
-    model = lmfit.models.GaussianModel(prefix=prefix)
+    # model = lmfit.models.GaussianModel(prefix=prefix)
     # model = lmfit.models.VoigtModel(prefix=prefix)
+    model = lmfit.Model(gaussfunc, prefix=prefix)
 
     model_params = model.make_params()
     # model_params[prefix + 'gamma'].set(value=0.7, vary=True)
 
     # set initial guesses and boundaries
-    model_params[prefix + 'center'].set(guess_gaussian.centroid, min=min_dt, max=max_dt)
+    model_params[prefix + 'centroid'].set(guess_gaussian.centroid, min=min_dt, max=max_dt)
     model_params[prefix + 'sigma'].set(guess_gaussian.width, min=0.15, max=0.65)
     model_params[prefix + 'amplitude'].set(guess_gaussian.amplitude, min=0, max=1)
 
@@ -774,11 +809,13 @@ def make_nonprotein_model(prefix, guess_gaussian, params_obj, dt_axis):
     max_dt = dt_axis[-1]
     min_dt = dt_axis[0]
 
-    model = lmfit.models.GaussianModel(prefix=prefix)
+    # model = lmfit.models.GaussianModel(prefix=prefix)
+    model = lmfit.Model(gaussfunc, prefix=prefix)
+
     model_params = model.make_params()
 
     # set initial guesses and boundaries
-    model_params[prefix + 'center'].set(guess_gaussian.centroid, min=min_dt, max=max_dt)
+    model_params[prefix + 'centroid'].set(guess_gaussian.centroid, min=min_dt, max=max_dt)
     model_params[prefix + 'sigma'].set(guess_gaussian.width, min=0, max=max_dt)
     model_params[prefix + 'amplitude'].set(guess_gaussian.amplitude, min=0, max=1)
 
@@ -1019,7 +1056,9 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
         save_gaussfits_pdf(analysis_obj, round1_diagnostics_container.gauss_lists, outputpath, filename_append='_r1')
         if len(round2_diagnostics_container.gauss_lists) > 0:
             save_gaussfits_pdf(analysis_obj, round2_diagnostics_container.gauss_lists, outputpath, filename_append='_r2')
-        plot_centroids(analysis_obj, outputpath)
+
+        filt_centroids = analysis_obj.get_attribute_by_cv('centroid', filtered=True)
+        plot_centroids(filt_centroids, analysis_obj, outputpath)
         plot_fwhms(analysis_obj, outputpath)
         save_gauss_params(analysis_obj, outputpath)
 
@@ -1182,7 +1221,7 @@ def generate_gaussians_from_popt(opt_params_list, cv=None, pcov=None):
     return gaussian_list
 
 
-def save_gaussfits_pdf(analysis_obj, gaussian_list, outputpath, filename_append=''):
+def save_gaussfits_pdf(analysis_obj, gaussian_list, outputpath, filename_append='', rsq_list=None):
     """
     Save a pdf containing an image of the data and gaussian fit for each column to pdf in outputpath.
     :param analysis_obj: container with gaussian fits to save
@@ -1190,17 +1229,12 @@ def save_gaussfits_pdf(analysis_obj, gaussian_list, outputpath, filename_append=
     :param gaussian_list: list of gaussians to plot
     :type gaussian_list: list[list[Gaussian]]
     :param outputpath: directory in which to save output
+    :param rsq_list: list of adjusted r2 values by CV for captioning (optional)
     :param filename_append: (optional) string to add to filename
     :return: void
     """
     # TODO: make all plot parameters accessible
 
-    # ensure gaussian data has been initialized
-    if analysis_obj.gauss_fits is None:
-        print('No gaussian fit data in this object yet, returning')
-        return
-
-    # print('Saving Gausfitdata_' + str(analysis_obj.raw_obj.filename) + '_.pdf .....')
     gauss_name = analysis_obj.short_filename + filename_append + '_gaussFit.pdf'
     pdf_fig = matplotlib.backends.backend_pdf.PdfPages(os.path.join(outputpath, gauss_name))
 
@@ -1209,28 +1243,32 @@ def save_gaussfits_pdf(analysis_obj, gaussian_list, outputpath, filename_append=
         plt.figure()
         # plot the original raw data as a scatter plot
         plt.scatter(analysis_obj.axes[0], intarray[cv_index])
-        # plot the fit data as a black dashed line
-        # todo: make the fit data flexible/accessible as well
-        plt.plot(analysis_obj.axes[0], analysis_obj.gauss_fits[cv_index], ls='--', color='black')
 
         # plot each fitted gaussian and centroid
-        # for gaussian in analysis_obj.filtered_gaussians[cv_index]:
+        sum_fit = np.zeros(len(analysis_obj.axes[0]))
         for gaussian in gaussian_list[cv_index]:
             fit = gaussfunc(analysis_obj.axes[0], gaussian.amplitude, gaussian.centroid, gaussian.width)
+            sum_fit += fit
             plt.plot(analysis_obj.axes[0], fit)
             plt.plot(gaussian.centroid, abs(gaussian.amplitude), '+', color='red')
-        # plt.title('CV: {}, R2: {:.3f}'.format(analysis_obj.axes[1][cv_index], analysis_obj.gauss_r2s[cv_index]))
-        plt.title('CV: {}'.format(analysis_obj.axes[1][cv_index]))
+
+        # also plot the sum of all Gaussian fits for reference
+        plt.plot(analysis_obj.axes[0], sum_fit, ls='--', color='black')
+
+        if rsq_list is not None:
+            plt.title('CV: {}, R2: {:.3f}'.format(analysis_obj.axes[1][cv_index], rsq_list[cv_index]))
+        else:
+            plt.title('CV: {}'.format(analysis_obj.axes[1][cv_index]))
 
         pdf_fig.savefig()
         plt.close()
     pdf_fig.close()
-    # print('Saving Gausfitdata_' + str(analysis_obj.raw_obj.filename) + '.pdf')
 
 
-def plot_centroids(analysis_obj, outputpath, y_bounds=None):
+def plot_centroids(centroid_lists_by_cv, analysis_obj, outputpath, y_bounds=None):
     """
-    Save a png image of the centroid DTs fit by gaussians. USES FILTERED peak data
+    Save a png image of the centroid DTs fit by gaussians
+    :param centroid_lists_by_cv: list of [list of centroids]s at each collision voltage
     :param analysis_obj: container with gaussian fits to save
     :type analysis_obj: CIUAnalysisObj
     :param outputpath: directory in which to save output
@@ -1238,10 +1276,9 @@ def plot_centroids(analysis_obj, outputpath, y_bounds=None):
     :return: void
     """
     # TODO: make all plot parameters accessible
-    # Get a list of centroids, sorted by collision voltage
-    filt_centroids = analysis_obj.get_attribute_by_cv('centroid', True)
+    plt.clf()
 
-    for x, y in zip(analysis_obj.axes[1], filt_centroids):
+    for x, y in zip(analysis_obj.axes[1], centroid_lists_by_cv):
         plt.scatter([x] * len(y), y)
     # plt.scatter(self.axes[1], self.gauss_centroids)
     plt.xlabel('Collision Voltage (V)')
