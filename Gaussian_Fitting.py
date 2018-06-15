@@ -117,12 +117,13 @@ class SingleFitStats(object):
     *updated to include output from LMFit and original (curve_fit) in same container. Must have
     one of popt OR lmfit_output, and will generate Gaussians and r2 from both for output
     """
-    def __init__(self, x_data, y_data, cv, popt=None, lmfit_output=None):
+    def __init__(self, x_data, y_data, cv, amp_cutoff, popt=None, lmfit_output=None):
         """
         Initialize a new fit between the provided x/y data and optimized Gaussian parameters
         :param x_data: x (DT) raw data being fit by popt
         :param y_data: y (intensity) raw data being fit by popt
         :param popt: optimized parameters returned from curve_fit
+        :param amp_cutoff: minimum amplitude for peak to be allowed
         :param cv: collision voltage at which this fit occurred
         :param lmfit_output: output container from LMFit (from model.fit(...))
         :type lmfit_output:
@@ -131,25 +132,13 @@ class SingleFitStats(object):
         self.y_data = y_data
 
         if lmfit_output is not None:
-            popt = get_popt_from_lmoutput(lmfit_output)
-
-            if cv == 45.0:
-                lmfit_output.plot()
-                plt.show()
+            popt = get_popt_from_lmoutput(lmfit_output, amp_cutoff)
 
         self.y_fit = multi_gauss_func(x_data, *popt)
-        yfit2 = multi_gauss_func(x_data, *popt)
-        s, i, r, p, ste = linregress(y_data, yfit2)
         self.slope, self.intercept, self.rvalue, self.pvalue, self.stderr = linregress(self.y_data, self.y_fit)
         self.adjrsq = adjrsquared(self.rvalue ** 2, len(y_data))
         self.gaussians = generate_gaussians_from_popt(popt, cv)
         self.lmfit_output = lmfit_output
-
-        residuals = self.y_fit - self.y_data
-        y_mean = np.mean(self.y_data)
-        total_sum_sqrs = np.sum([(yi - y_mean)**2 for yi in self.y_data])
-        resid_sum_sqrs = np.sum(residuals**2)
-        rsq2 = 1 - resid_sum_sqrs / total_sum_sqrs
 
         # additional information that may be present
         self.p0 = None      # initial guess array used to generate this popt
@@ -508,7 +497,7 @@ def gaussian_lmfit_main(analysis_obj, params_obj):
     for cv_index, cv_col_intensities in enumerate(cv_col_data):
         # prepare initial guesses in the form of a list of Gaussian objects, sorted by amplitude
         cv = analysis_obj.axes[1][cv_index]
-        gaussian_guess_list = guess_gauss_init(cv_col_intensities, analysis_obj.axes[0], params_obj.gaussian_5_width_fraction, cv, params_obj.gaussian_1_convergence)
+        gaussian_guess_list = guess_gauss_init(cv_col_intensities, analysis_obj.axes[0], params_obj.gaussian_5_width_fraction, cv, params_obj.gaussian_1_convergence, amp_cutoff=params_obj.gaussian_2_int_threshold)
 
         # Run fitting and scoring across the provided range of peak options
         all_fits = iterate_lmfitting(analysis_obj.axes[0], cv_col_intensities, gaussian_guess_list, params_obj, outputpath)
@@ -530,10 +519,11 @@ def gaussian_lmfit_main(analysis_obj, params_obj):
 
     best_centroids = []
     for gauss_list in best_gaussians:
-        best_centroids.append([x.centroid] for x in gauss_list)
+        best_centroids.append([x.centroid for x in gauss_list])
     plot_centroids(best_centroids, analysis_obj, outputpath)
 
-    print('plotting done in {:.2f}'.format(time.time() - fit_time))
+    plot_time = time.time() - start_time - fit_time
+    print('plotting done in {:.2f}'.format(plot_time))
 
 
     #  OLD ##############################################################################
@@ -581,7 +571,7 @@ def gaussian_lmfit_main(analysis_obj, params_obj):
     return analysis_obj
 
 
-def guess_gauss_init(ciu_col, dt_axis, width_frac, cv, rsq_cutoff):
+def guess_gauss_init(ciu_col, dt_axis, width_frac, cv, rsq_cutoff, amp_cutoff):
     """
     Generate initial guesses for Gaussians. Currently using just the estimate_multi_params_all method
     with output formatted as Gaussian objects, but will likely try to include initial first round of
@@ -590,6 +580,7 @@ def guess_gauss_init(ciu_col, dt_axis, width_frac, cv, rsq_cutoff):
     :param dt_axis:
     :param width_frac:
     :param cv:
+    :param amp_cutoff: minimum amplitude for peak to be allowed
     :return:
     """
     gaussians = []
@@ -598,7 +589,7 @@ def guess_gauss_init(ciu_col, dt_axis, width_frac, cv, rsq_cutoff):
     guess_list = estimate_multi_params_all(ciu_col, dt_axis, width_frac)
 
     # run the initial (first round) fitting with curve_fit to generate high quality guesses
-    popt, pcov, allfits = sequential_fit_rsq(guess_list, dt_axis, ciu_col, cv=cv, convergence_rsq=rsq_cutoff)
+    popt, pcov, allfits = sequential_fit_rsq(guess_list, dt_axis, ciu_col, cv=cv, convergence_rsq=rsq_cutoff, amp_cutoff=amp_cutoff)
 
     # convert all guesses to Gaussians and sort in decreasing quality order to provide for future rounds
     gaussians.extend(generate_gaussians_from_popt(popt, cv, pcov))
@@ -613,7 +604,7 @@ def guess_gauss_init(ciu_col, dt_axis, width_frac, cv, rsq_cutoff):
     return gaussians
 
 
-def sequential_fit_rsq(all_peak_guesses, dt_axis, cv_col_intensities, cv, convergence_rsq):
+def sequential_fit_rsq(all_peak_guesses, dt_axis, cv_col_intensities, cv, convergence_rsq, amp_cutoff):
     """
     Gaussian fitting 1.0 method - adds peak components from a list of initial guesses (provided)
     until r2 value reaches a user specified convergence criterion. Abstracted for use as a way to
@@ -624,6 +615,7 @@ def sequential_fit_rsq(all_peak_guesses, dt_axis, cv_col_intensities, cv, conver
     :param cv_col_intensities: y-data for fitting (intensity data along the DT axis)
     :param cv: the collision voltage (CV) at which this fitting takes place
     :param convergence_rsq: the minimum rsq at which to stop adding peak components
+    :param amp_cutoff: minimum amplitude for peak to be allowed
     :return: popt, pcov, list of SingleFitStats containers for each round of fitting.
     """
     param_guesses_multiple = []
@@ -662,7 +654,7 @@ def sequential_fit_rsq(all_peak_guesses, dt_axis, cv_col_intensities, cv, conver
         except (RuntimeError, ValueError):
             popt, pcov = [], []
 
-        current_fit = SingleFitStats(dt_axis, cv_col_intensities, popt=popt, cv=cv)
+        current_fit = SingleFitStats(dt_axis, cv_col_intensities, amp_cutoff=amp_cutoff, popt=popt, cv=cv)
         all_fit_rounds.append(current_fit)
 
         # stop iterating once convergence criteria have been reached
@@ -689,7 +681,7 @@ def iterate_lmfitting(x_data, y_data, guesses_list, params_obj, outputpath):
     :return: best fit result as a MinimizerResult/ModelFitResult from LMFit
     """
     # todo: add check for mass-selected vs not and only allow non-protein peaks if not selected
-    max_num_prot_pks = 3  # params_obj.gaussian_max_prot_pks or something
+    max_num_prot_pks = 4  # params_obj.gaussian_max_prot_pks or something
     max_num_nonprot_pks = 0  # params_obj/advanced?
 
     cv = guesses_list[0].cv
@@ -733,9 +725,10 @@ def iterate_lmfitting(x_data, y_data, guesses_list, params_obj, outputpath):
             for model in models_list[1:]:
                 final_model += model
 
-            output = final_model.fit(y_data, fit_params, x=x_data, method=params_obj.gaussian_8_fit_method, nan_policy='omit')
-            print(output.fit_report())
-            print(cv)
+            output = final_model.fit(y_data, fit_params, x=x_data, method=params_obj.gaussian_8_fit_method, nan_policy='omit',
+                                     scale_covar=False)
+            # print(output.fit_report())
+            print('done with CV {}'.format(cv))
 
             plt.clf()
             model_components = output.eval_components(x=x_data)
@@ -750,14 +743,15 @@ def iterate_lmfitting(x_data, y_data, guesses_list, params_obj, outputpath):
             outputname = os.path.join(outputpath, '{}_p{}_np{}_fits.png'.format(cv, num_prot_pks, num_nonprot_pks))
             plt.savefig(outputname)
 
+            # remove low amplitude peaks (< intensity cutoff)
+
+
             # compute fits and score
-            current_fit = SingleFitStats(x_data=x_data, y_data=y_data, cv=cv, popt=None, lmfit_output=output)
+            current_fit = SingleFitStats(x_data=x_data, y_data=y_data, cv=cv, popt=None, lmfit_output=output, amp_cutoff=params_obj.gaussian_2_int_threshold)
             penalty_scaling = 1
             current_fit.score, current_fit.peak_penalties = compute_fit_score(current_fit.gaussians, current_fit.adjrsq, x_data, penalty_scaling)
             output_fits.append(current_fit)
 
-    # todo: assess final scores/penalties on final output
-    # sorted_output = sorted(output_fits, key=lambda x: x.chisqr, reverse=True)
     return output_fits
 
 
@@ -786,7 +780,7 @@ def make_protein_model(prefix, guess_gaussian, params_obj, dt_axis):
     # set initial guesses and boundaries
     model_params[prefix + 'centroid'].set(guess_gaussian.centroid, min=min_dt, max=max_dt)
     model_params[prefix + 'sigma'].set(guess_gaussian.width, min=0.15, max=0.65)
-    model_params[prefix + 'amplitude'].set(guess_gaussian.amplitude, min=0, max=1)
+    model_params[prefix + 'amplitude'].set(guess_gaussian.amplitude, min=0, max=1.2)
 
     # todo: apply constraints - ** might actually need to be out in the main body IF doing any relative to other peaks. If just width, can be in here
 
@@ -825,16 +819,27 @@ def make_nonprotein_model(prefix, guess_gaussian, params_obj, dt_axis):
     return model, model_params
 
 
-def get_popt_from_lmoutput(modelresult):
+def get_popt_from_lmoutput(modelresult, amp_cutoff):
     """
     Generate a list of parameters in the same format as curve_fit (popt) for easy conversion
     to old plotting and result saving methods.
     :param modelresult: ModelResult object from LMFit (returned from model.fit())
+    :param amp_cutoff: minimum amplitude for a peak to be included
     :return: list of Gaussian parameters [amp1, cent1, sigma1, amp2, cent2, sigma2, ... ]
     """
     # convert dictionary of key/value parameters into a single list of values
     keys = sorted(modelresult.best_values.keys())
     output_popt = [modelresult.best_values[key] for key in keys]
+
+    # remove low amplitude peaks
+    values_to_remove = []
+    for index, value in enumerate(output_popt):
+        if index % 3 == 0:
+            current_amplitude = value
+            if current_amplitude < amp_cutoff:
+                values_to_remove.extend([output_popt[index], output_popt[index + 1], output_popt[index + 2]])
+    for value in values_to_remove:
+        output_popt.remove(value)
 
     return output_popt
 
@@ -914,7 +919,7 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
             except (RuntimeError, ValueError):
                 popt, pcov = [], []
 
-            current_fit = SingleFitStats(dt_axis, cv_col_intensities, popt=popt, cv=cv_axis[cv_index])
+            current_fit = SingleFitStats(dt_axis, cv_col_intensities, popt=popt, cv=cv_axis[cv_index], amp_cutoff=params_obj.gaussian_2_int_threshold)
             all_fit_rounds.append(current_fit)
 
             # stop iterating once convergence criteria have been reached
@@ -980,7 +985,7 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
                     popt, pcov = [], []
 
                 # compute fits and score
-                current_fit = SingleFitStats(dt_axis, cv_col_intensities, popt=popt, cv=cv_axis[cv_index])
+                current_fit = SingleFitStats(dt_axis, cv_col_intensities, popt=popt, cv=cv_axis[cv_index], amp_cutoff=params_obj.gaussian_2_int_threshold)
                 penalty_scaling = 1
 
                 current_fit.score, current_fit.peak_penalties = compute_fit_score(current_fit.gaussians, current_fit.adjrsq, dt_axis, penalty_scaling)
@@ -1007,7 +1012,7 @@ def gaussian_fit_ciu(analysis_obj, params_obj):
                     for gaussian in updated_gaussians:
                         new_popt.extend(gaussian.return_popt())
 
-                    updated_fit = SingleFitStats(dt_axis, cv_col_intensities, popt=new_popt, cv=cv_axis[cv_index])
+                    updated_fit = SingleFitStats(dt_axis, cv_col_intensities, popt=new_popt, cv=cv_axis[cv_index], amp_cutoff=params_obj.gaussian_2_int_threshold)
                     updated_fit.score, updated_fit.peak_penalties = compute_fit_score(updated_fit.gaussians, updated_fit.adjrsq, dt_axis, penalty_scaling)
                     print('old score: {:.3f} {} peaks, new score: {:.3f} {} peaks'.format(current_fit.score, len(current_fit.gaussians), updated_fit.score, len(updated_fit.gaussians)))
 
@@ -1113,6 +1118,9 @@ def compute_fit_score(gaussian_list, rsq, dt_axis, penalty_scaling):
         current_penalty = compute_width_penalty(gaussian.width, expected_width=0.45, tolerance=0.2, steepness=1)
         if len(gaussian_list) > 1:
             current_penalty += compute_area_penalty(gaussian, gaussian_list, dt_axis)
+
+        # add penalty for low amplitude peaks
+        # current_penalty += compute_low_amp_penalty(gaussian)
         peak_penalties.append(current_penalty)
 
     total_penalty = np.sum(peak_penalties)
@@ -1137,6 +1145,23 @@ def compute_width_penalty(input_width, expected_width, tolerance, steepness):
     else:
         penalized_width = abs(diff - tolerance)
         return steepness * penalized_width
+
+
+def compute_low_amp_penalty(gaussian):
+    """
+    Additional penalty for Gaussians with amplitude below cutoff value. Iterative fitting requires
+    allowing these peaks to be fit in cases where there are fewer peaks than proposed, but they
+    should be filtered after to prevent bad fits.
+
+    Penalty = e ^ (- (scaling) * x) gives a max penalty of 1 (amp = 0), increasing exponentially with
+    values becoming noticeable below amplitude = 1/scaling
+
+    :param gaussian: Gaussian container with fit information
+    :type gaussian: Gaussian
+    :return: penalty value (float)
+    """
+    amp_scale = 100
+    return np.exp(-1 * amp_scale * gaussian.amplitude)
 
 
 def compute_area_penalty(gaussian, list_of_gaussians, dt_axis):
