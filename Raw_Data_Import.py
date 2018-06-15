@@ -12,6 +12,7 @@ import numpy as np
 import tkinter
 from tkinter import simpledialog
 from tkinter import messagebox
+from tkinter import ttk
 
 
 # File chooser for raw data, created after extensive searching on stack overflow
@@ -168,30 +169,150 @@ def read_agilent_and_correct(filename, cv_axis_to_use, overwrite=True):
             new_file.write(line)
 
 
-def ask_input_cv_data():
+def ask_input_cv_data(original_header):
     """
-    Method to prompt the user to enter the CV axis data for an Agilent file into a simple dialog
-    with values separated by commas. Returns parsed values as a list
+    Method to prompt the user to enter the CV axis data for an Agilent file into a dialog.
+    Displays the original header values in a table for the user to fill out with appropriate CV values
+    for each. Returns parsed values as a list.
+    :param original_header: list of strings parsed from the original file header line.
     :return: list of CV values, success boolean
     """
-    root = tkinter.Tk()
-    root.withdraw()
+    # root = tkinter.Tk()
+    # root.withdraw()
 
-    input_string = simpledialog.askstring('Enter Collision Voltage Data (comma separated)',
-                                          """Please enter the collision voltage/activation values used for the CIU fingerprints extracted, separated by commas.
-                                          For example: 10, 20, 30, 40, 50. Please do NOT include anything other than numbers and commas (periods for decimals OK)""")
+    output_cvs = run_header_ui(original_header)
+    if output_cvs is not None:
+        return output_cvs, True
+    else:
+        return [], False
 
-    output_cvs = []
-    splits = input_string.split(',')
-    for split in splits:
-        try:
-            cv = float(split.trim())
-            output_cvs.append(cv)
-        except ValueError:
-            messagebox.showerror('Error Parsing Value', 'Value {} could not be parsed to a number. Please remove any non-number characters and try again')
-            return [], False
+    # splits = input_string.split(',')
+    # for split in splits:
+    #     try:
+    #         cv = float(split.strip())
+    #         output_cvs.append(cv)
+    #     except ValueError:
+    #         messagebox.showerror('Error Parsing Value', 'Value {} could not be parsed to a number. Please remove any non-number characters and try again')
+    #         return [], False
+    #
+    # return output_cvs, True
 
-    return output_cvs, True
+
+def get_header(filename):
+    """
+    Return the header of a _raw.csv file. SKIPS FIRST ENTRY, as that isn't part of the header for _raw.csv files
+    :param filename: full path to file
+    :return: list of strings parsed from the first line of the file
+    """
+    with open(filename, 'r') as myfile:
+        line = myfile.readline()
+        splits = line.rstrip('\n').split(',')
+        return splits[1:]
+
+
+def run_header_ui(original_header_list):
+    """
+    Run the HeaderUI graphical menu
+    :param original_header_list: list of strings containing original header information
+    :return: list of floats - return values from the HeaderUI, or None if the user canceled or something failed
+    """
+    header_ui = HeaderUI(original_header_list)
+
+    # prevent users from hitting multiple windows simultaneously
+    header_ui.grab_set()
+    header_ui.wait_window()
+    header_ui.grab_release()
+
+    # Only update parameters if the user clicked 'okay' (didn't click cancel or close the window)
+    if header_ui.return_code == 0:
+        return header_ui.return_vals
+    else:
+        return None
+
+
+class HeaderUI(tkinter.Toplevel):
+    """
+    Graphical menu for editing Agilent headers
+    """
+
+    def __init__(self, original_header_list):
+        """
+        Initialize the graphical menu with one line for each value in the original header
+        :param original_header_list: list of strings containing original header information
+        """
+        tkinter.Toplevel.__init__(self)
+        self.title('Enter the Activation Values')
+        self.return_code = -2
+
+        # return values = list of header values
+        self.return_vals = []
+        self.entry_vars = []
+        self.labels = []
+
+        # display a label (name) and entry (value) for each part of the original header
+        row = 1
+        labels_frame = ttk.Frame(self, relief='raised', padding='2 2 2 2')
+        labels_frame.grid(column=0, row=0)
+        ttk.Label(labels_frame, text='Enter the correct activation values for each file/segment in the CIU dataset').grid(row=0, column=0, sticky='e', columnspan=2)
+        for header_string in original_header_list:
+            entry_var = tkinter.StringVar()
+            self.labels.append(header_string)
+            # display the original header and an entry box for the new value
+            ttk.Label(labels_frame, text=header_string).grid(row=row, column=0, sticky='e')
+            ttk.Entry(labels_frame, textvariable=entry_var, width=25).grid(row=row, column=1)
+
+            self.entry_vars.append(entry_var)
+            row += 1
+
+        # Finally, add 'okay' and 'cancel' buttons to the bottom of the dialog
+        button_frame = ttk.Frame(self, padding='5 5 5 5')
+        button_frame.grid(column=0, row=1)
+        ttk.Button(button_frame, text='Cancel', command=self.cancel_button_click).grid(row=0, column=0, sticky='w')
+        ttk.Label(button_frame, text='                           ').grid(row=0, column=1)
+        ttk.Button(button_frame, text='OK', command=self.ok_button_click).grid(row=0, column=2, sticky='e')
+
+    def ok_button_click(self):
+        """
+        When the user clicks 'OK', confirm that all values are valid and if so, close the window.
+        If not, prompt for corrective action.
+        All values are saved into self.return_vals to be retrieved in the run_header_ui method
+        :return: void
+        """
+        fail_vals = []
+        for index, entry_var in enumerate(self.entry_vars):
+            entry_string = entry_var.get()
+            try:
+                self.return_vals.append(float(entry_string))
+            except ValueError:
+                fail_vals.append((self.labels[index], entry_string))
+
+        if len(fail_vals) == 0:
+            # no params failed, so close window and update parameter values
+            self.return_code = 0
+            self.on_close_window()
+        else:
+            # some parameters failed. Tell the user which ones and keep the window open
+            error_string = 'The following entry(s) have inappropriate (non-number) values:\n'
+            for fail_tup in fail_vals:
+                error_string += 'entry {}: {}\n'.format(fail_tup[0], fail_tup[1])
+            messagebox.showwarning(title='Entry Error', message=error_string)
+            return
+
+    def cancel_button_click(self):
+        """
+        Close the window and return without updating any parameter values
+        :return: void
+        """
+        self.return_code = -1
+        self.on_close_window()
+
+    def on_close_window(self):
+        """
+        Close the window
+        :return: void
+        """
+        self.quit()
+        self.destroy()
 
 
 if __name__ == '__main__':

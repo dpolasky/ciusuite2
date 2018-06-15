@@ -38,7 +38,7 @@ hard_params_file = CIU_Params.hard_descripts_file
 hard_output_default = r"C:\Users\dpolasky\Desktop\test"
 hard_params_ui = r"C:\CIUSuite2\Param_editor.ui"
 hard_crop_ui = r"C:\CIUSuite2\Crop_vals.ui"
-hard_agilent_ext_path = r"C:\Users\Dan-7000\Desktop\AgilentCIU_memfixed\release\MIDAC_CIU_Extractor.exe"
+hard_agilent_ext_path = r"C:\Users\dpolasky\Desktop\Data Tools and Src Code\_Agilent CIU Extractor\_SIMPLE_versionForDistribution\release\MIDAC_CIU_Extractor.exe"
 
 
 class CIUSuite2(object):
@@ -1204,11 +1204,12 @@ class CIUSuite2(object):
                     return
 
                 # first, edit file CV headers since we can't get that information from the Agilent raw library
+                raw_files = [os.path.join(raw_dir, x) for x in os.listdir(raw_dir) if x.endswith('_raw.csv')]
                 cv_headers, parsing_success = [], False
+                original_header = Raw_Data_Import.get_header(raw_files[0])
                 while not parsing_success:
-                    cv_headers, parsing_success = Raw_Data_Import.ask_input_cv_data()
+                    cv_headers, parsing_success = Raw_Data_Import.ask_input_cv_data(original_header)
 
-                raw_files = [x for x in os.listdir(raw_dir) if x.endswith('_raw.csv')]
                 for raw_file in raw_files:
                     Raw_Data_Import.read_agilent_and_correct(raw_file, cv_headers)
 
@@ -1222,7 +1223,7 @@ class CIUSuite2(object):
 
             # clear analysis list
             self.analysis_file_list = []
-            raw_files = [x for x in os.listdir(raw_dir) if x.endswith('_raw.csv')]
+            raw_files = [os.path.join(raw_dir, x) for x in os.listdir(raw_dir) if x.endswith('_raw.csv')]
             if len(raw_files) > 0:
                 # Ask user for smoothing input
                 plot_keys = [x for x in self.params_obj.params_dict.keys() if 'smoothing' in x]
@@ -1250,7 +1251,7 @@ class CIUSuite2(object):
                     if not self.output_dir_override:
                         self.output_dir = os.path.dirname(self.analysis_file_list[0])
                         self.update_dir_entry()
-                self.progress_done()
+        self.progress_done()
 
 
 # ****** CIU Main I/O methods ******
