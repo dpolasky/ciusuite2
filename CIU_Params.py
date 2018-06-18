@@ -157,12 +157,15 @@ class Parameters(object):
         # Gaussian fitting
         self.gaussian_1_convergence = None
         self.gaussian_2_int_threshold = None
-        self.gaussian_3_width_max = None
+        self.gaussian_3_mode = None
         self.gaussian_4_save_diagnostics = None
         self.gaussian_5_width_fraction = None
-        self.gaussian_6_min_peak_dist = None
-        self.gaussian_7_mode = None
-        self.gaussian_8_fit_method = None
+        self.gaussian_6_fit_method = None
+        self.gaussian_7_max_num_components = None
+
+        # self.gaussian_6_min_peak_dist = None
+        # self.gaussian_3_width_max = None
+
 
         self.reconstruct_1_mode = None
 
