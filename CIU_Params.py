@@ -161,11 +161,16 @@ class Parameters(object):
         self.gaussian_4_save_diagnostics = None
         self.gaussian_5_width_fraction = None
         self.gaussian_6_fit_method = None
-        self.gaussian_7_max_num_components = None
+        self.gaussian_71_max_prot_components = None
+        self.gaussian_72_prot_peak_width = None
+        self.gaussian_73_prot_width_tol = None
+        self.gaussian_81_min_nonprot_comps = None
+        self.gaussian_82_max_nonprot_comps = None
+        self.gaussian_83_nonprot_width_min = None
+        self.gaussian_9_min_protein_amp = None
 
         # self.gaussian_6_min_peak_dist = None
         # self.gaussian_3_width_max = None
-
 
         self.reconstruct_1_mode = None
 

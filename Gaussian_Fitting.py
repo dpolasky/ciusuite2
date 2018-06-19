@@ -158,7 +158,7 @@ class SingleFitStats(object):
         self.score = None   # score from second round fitting (r2 - penalties)
         self.peak_penalties = None      # list of penalties for each peak in the Gaussian list
 
-    def compute_fit_score(self, penalty_scaling):
+    def compute_fit_score(self, params_obj, penalty_scaling):
         """
         Uses a penalty function to attempt to regularize the fitting and score peak fits optimally.
         Penalty function is designed to penalize:
@@ -166,6 +166,8 @@ class SingleFitStats(object):
             - large numbers of peaks
             - peaks that are too close together
             - large movement compared to previous CV
+        :param params_obj: parameter container
+        :type params_obj: Parameters
         :param penalty_scaling: how much to scale penalty (to reduce contribution relative to rsq)
         :return: score (float between 0, 1), penalties by individual peaks
         """
@@ -175,15 +177,15 @@ class SingleFitStats(object):
         for gaussian in self.gaussians_protein:
             # antibody settings: exp=0.45, tol=0.2, steep=1
             # membrane settings: exp=0.45, tol=0.4, steep=0.2
-            current_penalty = compute_width_penalty(gaussian.width, expected_width=0.45, tolerance=0.2, steepness=1)
+            current_penalty = compute_width_penalty(gaussian.width, expected_width=params_obj.gaussian_72_prot_peak_width, tolerance=params_obj.gaussian_73_prot_width_tol, steepness=1)
             if len(self.gaussians_protein) > 1:
                 current_penalty += compute_area_penalty(gaussian, self.gaussians_protein, self.x_data)
 
             # add penalty for low amplitude protein peak - max protein peak shouldn't be too low
             if len(self.gaussians_nonprotein) > 0:
                 max_protein_amp = max([x.amplitude for x in self.gaussians_protein])
-                if max_protein_amp < 0.2:
-                    current_penalty += 0.1
+                if max_protein_amp < params_obj.gaussian_9_min_protein_amp:
+                    current_penalty += (params_obj.gaussian_9_min_protein_amp - max_protein_amp)
 
             peak_penalties.append(current_penalty)
 
@@ -662,7 +664,8 @@ def guess_gauss_init(ciu_col, dt_axis, width_frac, cv, rsq_cutoff, amp_cutoff):
     popt, pcov, allfits = sequential_fit_rsq(guess_list, dt_axis, ciu_col, cv=cv, convergence_rsq=rsq_cutoff, amp_cutoff=amp_cutoff)
 
     # convert all guesses to Gaussians and sort in decreasing quality order to provide for future rounds
-    gaussians.extend(generate_gaussians_from_popt(popt, cv, pcov))
+    r1_guesses = generate_gaussians_from_popt(popt, cv, pcov)
+    gaussians.extend(sorted(r1_guesses, key=lambda x: x.amplitude, reverse=True))
 
     # todo: skip peaks that are too close in starting location to the high quality first guesses?
     for param_guess in guess_list:
@@ -752,9 +755,9 @@ def iterate_lmfitting(x_data, y_data, guesses_list, params_obj, outputpath):
     :return: best fit result as a MinimizerResult/ModelFitResult from LMFit
     """
     # determine the number of components over which to iterate fitting
-    max_num_prot_pks = params_obj.gaussian_7_max_num_components
+    max_num_prot_pks = params_obj.gaussian_71_max_prot_components
     if params_obj.gaussian_3_mode == 'No Selection':
-        max_num_nonprot_pks = 1  # params_obj/advanced for more options?
+        max_num_nonprot_pks = params_obj.gaussian_82_max_nonprot_comps  # params_obj/advanced for more options?
     else:
         max_num_nonprot_pks = 0
 
@@ -762,36 +765,9 @@ def iterate_lmfitting(x_data, y_data, guesses_list, params_obj, outputpath):
     output_fits = []
     # iterate over all peak combinations
     for num_prot_pks in range(1, max_num_prot_pks + 1):
-        for num_nonprot_pks in range(0, max_num_nonprot_pks + 1):
-            fit_params = lmfit.Parameters()
-
-            # assemble models for this number of peaks
-            guess_index = 0
-            models_list = []
-
-            # take the widest peak (not including the most intense peak) as the initial non-protein peak
-            if num_nonprot_pks > 1:
-                print('More than 1 nonprotein peak is not currently supported!')
-            if num_nonprot_pks == 1:
-                width_sorted = sorted(guesses_list, key=lambda x: x.width, reverse=True)
-                widest_guess = width_sorted[0]
-                model, params = make_nonprotein_model(prefix='{}{}'.format(nonprotein_prefix, guess_index + 1),
-                                                      guess_gaussian=widest_guess,
-                                                      params_obj=params_obj,
-                                                      dt_axis=x_data)
-                models_list.append(model)
-                fit_params.update(params)
-
-            # assemble protein models
-            for prot_pk_index in range(0, num_prot_pks):
-                # todo: add check for out of guesses (maybe just use default make_params in that case?)
-                model, params = make_protein_model(prefix='{}{}'.format(protein_prefix, guess_index + 1),
-                                                   guess_gaussian=guesses_list[guess_index],
-                                                   params_obj=params_obj,
-                                                   dt_axis=x_data)
-                models_list.append(model)
-                fit_params.update(params)
-                guess_index += 1
+        for num_nonprot_pks in range(params_obj.gaussian_81_min_nonprot_comps, max_num_nonprot_pks + 1):
+            # assemble the models and fit parameters for this number of protein/non-protein peaks
+            models_list, fit_params = assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, dt_axis=x_data)
 
             # combine all model parameters and perform the actual fitting
             final_model = models_list[0]
@@ -805,7 +781,7 @@ def iterate_lmfitting(x_data, y_data, guesses_list, params_obj, outputpath):
             # compute fits and score
             current_fit = SingleFitStats(x_data=x_data, y_data=y_data, cv=cv, lmfit_output=output, amp_cutoff=params_obj.gaussian_2_int_threshold)
             # only score protein peaks, as non-protein peaks can overlap and have differing widths (may add different score func eventually if needed)
-            current_fit.compute_fit_score(penalty_scaling=1)
+            current_fit.compute_fit_score(params_obj, penalty_scaling=1)
             output_fits.append(current_fit)
 
             plt.clf()
@@ -823,6 +799,98 @@ def iterate_lmfitting(x_data, y_data, guesses_list, params_obj, outputpath):
             plt.savefig(outputname)
 
     return output_fits
+
+
+def assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, dt_axis):
+    """
+    Assign the peaks in the list of guesses to protein and non-protein components of the final model.
+    Guess list is assumed to be in decreasing order of amplitude. Guesses are assigned to non-protein peaks
+    if their width is larger than the expected protein width, and to protein peaks otherwise.
+    :param num_prot_pks: number of protein components to be fit in this iteration
+    :param num_nonprot_pks: number of nonprotein components to be fit in this iteration
+    :param params_obj: parameter container
+    :type params_obj: Parameters
+    :param guesses_list: list of Gaussian objects containing guess information, in descending order of amplitude
+    :param dt_axis: x-axis for the fitting
+    :return: list of LMFit Models, LMFit Parameters() dictionary
+    """
+    fit_params = lmfit.Parameters()
+
+    # assemble models for this number of peaks
+    guess_index = 0
+    total_num_components = num_nonprot_pks + num_prot_pks
+    models_list = []
+    # counters for numbers of each peak type left to be fitted
+    nonprots_remaining = num_nonprot_pks
+    prots_remaining = num_prot_pks
+
+    # todo: add check for out of guesses (maybe just use default make_params in that case?)
+
+    if num_nonprot_pks > 0:
+        # non-protein peak(s) present, assign peaks wider than width max for protein to them
+        for comp_index in range(0, total_num_components):
+            next_guess = guesses_list[guess_index]
+
+            # todo: add FWHM conversion
+            if next_guess.width > (params_obj.gaussian_72_prot_peak_width + params_obj.gaussian_73_prot_width_tol):
+                # the width of this guess is wider than protein - try fitting a nonprotein peak here
+                if nonprots_remaining > 0:
+                    model, params = make_nonprotein_model(
+                        prefix='{}{}'.format(nonprotein_prefix, guess_index + 1),
+                        guess_gaussian=next_guess,
+                        params_obj=params_obj,
+                        dt_axis=dt_axis)
+                    models_list.append(model)
+                    fit_params.update(params)
+
+                    guess_index += 1
+                    nonprots_remaining -= 1
+                else:
+                    # no more non-protein peaks left, so add a protein peak
+                    model, params = make_protein_model(prefix='{}{}'.format(protein_prefix, guess_index + 1),
+                                                       guess_gaussian=next_guess,
+                                                       params_obj=params_obj,
+                                                       dt_axis=dt_axis)
+                    models_list.append(model)
+                    fit_params.update(params)
+                    guess_index += 1
+                    prots_remaining -= 1
+            else:
+                # guess peak width is narrow enough to be protein - guess it first
+                if prots_remaining > 0:
+                    model, params = make_protein_model(prefix='{}{}'.format(protein_prefix, guess_index + 1),
+                                                       guess_gaussian=next_guess,
+                                                       params_obj=params_obj,
+                                                       dt_axis=dt_axis)
+                    models_list.append(model)
+                    fit_params.update(params)
+                    guess_index += 1
+                    prots_remaining -= 1
+                else:
+                    # no protein peaks left, so guess non-protein
+                    model, params = make_nonprotein_model(
+                        prefix='{}{}'.format(nonprotein_prefix, guess_index + 1),
+                        guess_gaussian=next_guess,
+                        params_obj=params_obj,
+                        dt_axis=dt_axis)
+                    models_list.append(model)
+                    fit_params.update(params)
+
+                    guess_index += 1
+                    nonprots_remaining -= 1
+
+    else:
+        # protein peaks only - simply go through the guess list (descending order of amplitude)
+        for prot_pk_index in range(0, num_prot_pks):
+            model, params = make_protein_model(prefix='{}{}'.format(protein_prefix, guess_index + 1),
+                                               guess_gaussian=guesses_list[guess_index],
+                                               params_obj=params_obj,
+                                               dt_axis=dt_axis)
+            models_list.append(model)
+            fit_params.update(params)
+            guess_index += 1
+
+    return models_list, fit_params
 
 
 def make_protein_model(prefix, guess_gaussian, params_obj, dt_axis):
@@ -847,9 +915,13 @@ def make_protein_model(prefix, guess_gaussian, params_obj, dt_axis):
     model_params = model.make_params()
     # model_params[prefix + 'gamma'].set(value=0.7, vary=True)
 
+    # todo: convert from FWHM
+    min_width = params_obj.gaussian_72_prot_peak_width - params_obj.gaussian_73_prot_width_tol
+    max_width = params_obj.gaussian_72_prot_peak_width + params_obj.gaussian_73_prot_width_tol
+
     # set initial guesses and boundaries
     model_params[prefix + 'centroid'].set(guess_gaussian.centroid, min=min_dt, max=max_dt)
-    model_params[prefix + 'sigma'].set(guess_gaussian.width, min=0.15, max=0.65)
+    model_params[prefix + 'sigma'].set(guess_gaussian.width, min=min_width, max=max_width)
     model_params[prefix + 'amplitude'].set(guess_gaussian.amplitude, min=0, max=1.5)
 
     # todo: apply constraints - ** might actually need to be out in the main body IF doing any relative to other peaks. If just width, can be in here
@@ -879,8 +951,11 @@ def make_nonprotein_model(prefix, guess_gaussian, params_obj, dt_axis):
     model_params = model.make_params()
 
     # set initial guesses and boundaries
+    # todo: change to FWHM instead of sigma (add conversion)
+    min_width = params_obj.gaussian_83_nonprot_width_min
+    # min_width = params_obj.gaussian_72_prot_peak_width + 3 * params_obj.gaussian_73_prot_width_tol
     model_params[prefix + 'centroid'].set(guess_gaussian.centroid, min=min_dt, max=max_dt)
-    model_params[prefix + 'sigma'].set(guess_gaussian.width, min=0.65, max=max_dt)
+    model_params[prefix + 'sigma'].set(guess_gaussian.width, min=min_width, max=max_dt)
     model_params[prefix + 'amplitude'].set(guess_gaussian.amplitude, min=0, max=1.5)
 
     # todo: apply constraints - ** might actually need to be out in the main body IF doing any relative to other peaks. If just width, can be in here
