@@ -36,7 +36,16 @@ class Gaussian(object):
     """
     Container for fitted gaussian information. Holds fit parameters and any associated metadata
     """
-    def __init__(self, amplitude, centroid, width, collision_voltage, pcov):
+    def __init__(self, amplitude, centroid, width, collision_voltage, pcov, protein_bool):
+        """
+        Initialize a new Gaussian container
+        :param amplitude: peak amplitude
+        :param centroid: peak centroid
+        :param width: peak width
+        :param collision_voltage: Activation axis value at which this Gaussian was generated
+        :param pcov: (optional, set to None if not needed) covariance matrix from curve fitting
+        :param protein_bool: True if this is a protein (signal) peak, False if a non-protein (noise) peak
+        """
         self.amplitude = amplitude
         self.centroid = centroid
         self.width = width
@@ -44,6 +53,7 @@ class Gaussian(object):
         self.fwhm = 2*(math.sqrt(2*math.log(2)))*self.width
         self.resolution = self.centroid/self.fwhm
         self.fit_covariances = pcov
+        self.is_protein = protein_bool
         if pcov is not None:
             self.fit_errors = np.sqrt(np.diag(pcov))
 
@@ -70,45 +80,45 @@ class Gaussian(object):
         """
         return [self.amplitude, self.centroid, self.width]
 
-
-class FitDiagnostics(object):
-    """
-    Container for diagnostics and information from Gaussian fitting. Intended to enable rapid diagnostics
-    and hold information from multi-round fitting and ease plotting/saving various outputs.
-    Organization: A single FitDiagnostics object for a CIUAnalysis object containing all diagnostic
-    information in lists organized by collision voltage.
-    """
-
-    def __init__(self, cv_axis):
-        """
-        Initialize an empty diagnostics object over the collision voltages of a CIU fingerprint
-        :param cv_axis: collision voltage axis of the associated CIU analysis
-        """
-        self.cvs = cv_axis
-
-        # First round fitting diagnostics
-        self.num_peaks_list = []
-        self.popt_lists = []
-        self.gauss_lists = []
-        self.filt_gauss_lists = []
-        self.fit_stats_list = []
-        self.adjrsq_list = []
-
-        self.all_fits_lists = []    # list of (lists-by-CV) containing ALL fits performed at that CV (SingleFitStats)
-
-    def append_best_fit_info(self, fit_stats_obj):
-        """
-        Add the best result from a particular collision voltage to the primary lists stored
-        in this object
-        :param fit_stats_obj: container with *best* fit information (out of all fits at this voltage)
-        :type fit_stats_obj: SingleFitStats
-        :return: void
-        """
-        self.fit_stats_list.append(fit_stats_obj)
-        self.popt_lists.append(fit_stats_obj.get_popt())
-        self.gauss_lists.append(fit_stats_obj.gaussians)
-        self.adjrsq_list.append(fit_stats_obj.adjrsq)
-        self.num_peaks_list.append(len(fit_stats_obj.gaussians))
+# todo: deprecated
+# class FitDiagnostics(object):
+#     """
+#     Container for diagnostics and information from Gaussian fitting. Intended to enable rapid diagnostics
+#     and hold information from multi-round fitting and ease plotting/saving various outputs.
+#     Organization: A single FitDiagnostics object for a CIUAnalysis object containing all diagnostic
+#     information in lists organized by collision voltage.
+#     """
+#
+#     def __init__(self, cv_axis):
+#         """
+#         Initialize an empty diagnostics object over the collision voltages of a CIU fingerprint
+#         :param cv_axis: collision voltage axis of the associated CIU analysis
+#         """
+#         self.cvs = cv_axis
+#
+#         # First round fitting diagnostics
+#         self.num_peaks_list = []
+#         self.popt_lists = []
+#         self.gauss_lists = []
+#         self.filt_gauss_lists = []
+#         self.fit_stats_list = []
+#         self.adjrsq_list = []
+#
+#         self.all_fits_lists = []    # list of (lists-by-CV) containing ALL fits performed at that CV (SingleFitStats)
+#
+#     def append_best_fit_info(self, fit_stats_obj):
+#         """
+#         Add the best result from a particular collision voltage to the primary lists stored
+#         in this object
+#         :param fit_stats_obj: container with *best* fit information (out of all fits at this voltage)
+#         :type fit_stats_obj: SingleFitStats
+#         :return: void
+#         """
+#         self.fit_stats_list.append(fit_stats_obj)
+#         self.popt_lists.append(fit_stats_obj.get_popt())
+#         self.gauss_lists.append(fit_stats_obj.gaussians)
+#         self.adjrsq_list.append(fit_stats_obj.adjrsq)
+#         self.num_peaks_list.append(len(fit_stats_obj.gaussians))
 
 
 class SingleFitStats(object):
@@ -144,12 +154,15 @@ class SingleFitStats(object):
         self.y_fit = multi_gauss_func(x_data, *popt)
         self.slope, self.intercept, self.rvalue, self.pvalue, self.stderr = linregress(self.y_data, self.y_fit)
         self.adjrsq = adjrsquared(self.rvalue ** 2, len(y_data))
-        self.gaussians = generate_gaussians_from_popt(popt, cv)
-        self.lmfit_output = lmfit_output
+        # can't save LMFit output because it contains temp classes that are not pickle-able
+        # self.lmfit_output = lmfit_output
 
         # Gaussian lists specific to protein and non-protein components fitted by LMFit
-        self.gaussians_protein = generate_gaussians_from_popt(protein_popt)
-        self.gaussians_nonprotein = generate_gaussians_from_popt(nonprotein_popt)
+        self.gaussians_protein = generate_gaussians_from_popt(protein_popt, protein_bool=True, cv=cv, pcov=None)
+        self.gaussians_nonprotein = generate_gaussians_from_popt(nonprotein_popt, protein_bool=False, cv=cv, pcov=None)
+
+        self.gaussians = [x for x in self.gaussians_protein]
+        self.gaussians.extend(self.gaussians_nonprotein)
 
         # additional information that may be present
         self.p0 = None      # initial guess array used to generate this popt
@@ -180,17 +193,19 @@ class SingleFitStats(object):
             current_penalty = compute_width_penalty(gaussian.width, expected_width=params_obj.gaussian_72_prot_peak_width, tolerance=params_obj.gaussian_73_prot_width_tol, steepness=1)
             if len(self.gaussians_protein) > 1:
                 current_penalty += compute_area_penalty(gaussian, self.gaussians_protein, self.x_data)
-
-            # add penalty for low amplitude protein peak - max protein peak shouldn't be too low
-            if len(self.gaussians_nonprotein) > 0:
-                max_protein_amp = max([x.amplitude for x in self.gaussians_protein])
-                if max_protein_amp < params_obj.gaussian_9_min_protein_amp:
-                    current_penalty += (params_obj.gaussian_9_min_protein_amp - max_protein_amp)
-
             peak_penalties.append(current_penalty)
 
         # add up penalties and subtract from the fit adjusted r2 to obtain final score
         total_penalty = np.sum(peak_penalties)
+
+        # add penalty for low amplitude protein peak - max protein peak shouldn't be too low
+        if len(self.gaussians_nonprotein) > 0:
+            if len(self.gaussians_protein) > 0:
+                max_protein_amp = max([x.amplitude for x in self.gaussians_protein])
+            else:
+                max_protein_amp = 0
+            if max_protein_amp < params_obj.gaussian_9_min_protein_amp:
+                total_penalty += (params_obj.gaussian_9_min_protein_amp - max_protein_amp)
 
         scaled_penalty = total_penalty * penalty_scaling
         score = self.adjrsq - scaled_penalty
@@ -459,7 +474,7 @@ def parse_gaussian_list_from_file(filepath):
                     amp = float(splits[index + 1])
                     cent = float(splits[index + 2])
                     width = float(splits[index + 3])
-                    gaussians.append(Gaussian(amp, cent, width, cv, pcov=None))
+                    gaussians.append(Gaussian(amp, cent, width, cv, pcov=None, protein_bool=True))
                 except (IndexError, ValueError):
                     print('Invalid values for Gaussian. Values were: {}. Gaussian could not be parsed and was skipped'.format(splits[index:index + 3]))
                 index += 4
@@ -582,6 +597,7 @@ def gaussian_lmfit_main(analysis_obj, params_obj):
     print(scores_by_cv)
     prot_gaussians = [fit.gaussians_protein for fit in best_fits_by_cv]
     nonprot_gaussians = [fit.gaussians_nonprotein for fit in best_fits_by_cv]
+    all_gaussians = [fit.gaussians for fit in best_fits_by_cv]
     # rsqs = [fit.adjrsq for fit in best_fits_by_cv]
     # save_gaussfits_pdf(analysis_obj, prot_gaussians, outputpath, rsq_list=rsqs, filename_append='lmfit')
     save_fits_pdf_new(analysis_obj, best_fits_by_cv, outputpath)
@@ -597,6 +613,11 @@ def gaussian_lmfit_main(analysis_obj, params_obj):
     plot_time = time.time() - start_time - fit_time
     print('plotting done in {:.2f}'.format(plot_time))
 
+    # save results to analysis obj
+    analysis_obj.gaussians = all_gaussians
+    analysis_obj.protein_gaussians = prot_gaussians
+    analysis_obj.nonprotein_gaussians = nonprot_gaussians
+    analysis_obj.gauss_fits_by_cv = best_fits_by_cv
 
     #  OLD ##############################################################################
     # basic setup example
@@ -664,7 +685,7 @@ def guess_gauss_init(ciu_col, dt_axis, width_frac, cv, rsq_cutoff, amp_cutoff):
     popt, pcov, allfits = sequential_fit_rsq(guess_list, dt_axis, ciu_col, cv=cv, convergence_rsq=rsq_cutoff, amp_cutoff=amp_cutoff)
 
     # convert all guesses to Gaussians and sort in decreasing quality order to provide for future rounds
-    r1_guesses = generate_gaussians_from_popt(popt, cv, pcov)
+    r1_guesses = generate_gaussians_from_popt(opt_params_list=popt, protein_bool=True, cv=cv, pcov=pcov)
     gaussians.extend(sorted(r1_guesses, key=lambda x: x.amplitude, reverse=True))
 
     # todo: skip peaks that are too close in starting location to the high quality first guesses?
@@ -672,7 +693,7 @@ def guess_gauss_init(ciu_col, dt_axis, width_frac, cv, rsq_cutoff, amp_cutoff):
         # catch 0 amplitude and just make it very small
         if abs(param_guess[0]) < 1e-5:
             param_guess[0] = 1e-5
-        gaussians.extend(generate_gaussians_from_popt(param_guess))
+        gaussians.extend(generate_gaussians_from_popt(param_guess, protein_bool=True, cv=cv, pcov=None))
 
     return gaussians
 
@@ -776,7 +797,6 @@ def iterate_lmfitting(x_data, y_data, guesses_list, params_obj, outputpath):
 
             output = final_model.fit(y_data, fit_params, x=x_data, method=params_obj.gaussian_6_fit_method, nan_policy='omit',
                                      scale_covar=False)
-            print('done with CV {}'.format(cv))
 
             # compute fits and score
             current_fit = SingleFitStats(x_data=x_data, y_data=y_data, cv=cv, lmfit_output=output, amp_cutoff=params_obj.gaussian_2_int_threshold)
@@ -1292,7 +1312,6 @@ def compute_area_penalty(gaussian, list_of_gaussians, dt_axis):
     :param dt_axis: x axis array over which to compute overlap
     :return: penalty (float)
     """
-
     # for this gaussian, compute how much area it shares with the rest of the list
     total_penalty = 0
     # for gaussian in list_of_gaussians:
@@ -1309,6 +1328,7 @@ def compute_area_penalty(gaussian, list_of_gaussians, dt_axis):
     if shared_area_ratio > 0.25:
         # antibody settings: 1.5 - 1.8 * shared area ratio
         my_penalty = (1.25 * shared_area_ratio - 0.25) ** 4
+
         # scale penalty by area, so smaller peaks don't get overly penalized (areas often < 1)
         # my_penalty *= (my_area * 5)
         total_penalty += my_penalty
@@ -1336,20 +1356,17 @@ def shared_area_gauss(x_axis, gauss1_params, gauss2_params):
             shared_area_arr.append(gauss2[index])
         else:
             shared_area_arr.append(gauss1[index])
-        # elif gauss1[index] < gauss2[index]:
-        #     shared_area_arr.append(gauss1[index])
-        # elif gauss1[index] == gauss2[index]:
-        #     shared_area_arr.append(0)
 
     # return the integrated area over the provided axis
     return scipy.integrate.trapz(shared_area_arr, x_axis)
 
 
-def generate_gaussians_from_popt(opt_params_list, cv=None, pcov=None):
+def generate_gaussians_from_popt(opt_params_list, protein_bool, cv=None, pcov=None):
     """
     Convert a list of parameters to a list of Gaussian objects. Initializes Gaussians with a collision voltage
     and covariance matrix if provided.
     :param opt_params_list: list of parameters [amp, centroid, width, amp2, cent2, width2, ... ]
+    :param protein_bool: protein Gaussians (True) or non-protein (False)
     :param cv: (optional) collision voltage to associate with all Gaussians
     :param pcov: (optional) covariance matrix from fitting to associate with all Gaussians
     :return: list of Gaussian objects from params list
@@ -1358,11 +1375,12 @@ def generate_gaussians_from_popt(opt_params_list, cv=None, pcov=None):
     index = 0
     gaussian_list = []
     while index < len(opt_params_list):
-        gaussian_list.append(Gaussian(opt_params_list[index],
-                                      opt_params_list[index + 1],
-                                      opt_params_list[index + 2],
-                                      cv,
-                                      pcov))
+        gaussian_list.append(Gaussian(amplitude=opt_params_list[index],
+                                      centroid=opt_params_list[index + 1],
+                                      width=opt_params_list[index + 2],
+                                      collision_voltage=cv,
+                                      pcov=pcov,
+                                      protein_bool=protein_bool))
         index += 3
     return gaussian_list
 
@@ -1381,17 +1399,26 @@ def save_fits_pdf_new(analysis_obj, best_fit_list, outputpath):
     intarray = np.swapaxes(analysis_obj.ciu_data, 0, 1)
     for cv_index in range(len(analysis_obj.axes[1])):
         plt.figure()
-
         best_fit = best_fit_list[cv_index]
-        model_components = best_fit.lmfit_output.eval_components(x=analysis_obj.axes[0])
-        # best_fit.plot_fit()     # todo: fix
 
         # plot the original raw data as a scatter plot
         plt.scatter(analysis_obj.axes[0], intarray[cv_index])
 
-        # plot each component separately
-        for component_name, comp_value in model_components.items():
-            plt.plot(analysis_obj.axes[0], comp_value, '--', label=component_name)
+        # plot the combined 'best fit' data
+        plt.plot(best_fit.x_data, best_fit.y_fit, color='black')
+
+        # plot each component individually
+        prot_index = 1
+        for prot_gauss in best_fit.gaussians_protein:
+            gauss_fit = gaussfunc(best_fit.x_data, prot_gauss.amplitude, prot_gauss.centroid, prot_gauss.width)
+            plt.plot(best_fit.x_data, gauss_fit, ls='--', label='Protein {}'.format(prot_index))
+            prot_index += 1
+        nonprot_index = 1
+        for nonprot_gauss in best_fit.gaussians_nonprotein:
+            gauss_fit = gaussfunc(best_fit.x_data, nonprot_gauss.amplitude, nonprot_gauss.centroid, nonprot_gauss.width)
+            plt.plot(best_fit.x_data, gauss_fit, ls='--', label='Non-Protein{}'.format(nonprot_index))
+            nonprot_index += 1
+
         plt.legend(loc='best')
 
         penalty_string = ['{:.2f}'.format(x) for x in best_fit.peak_penalties]
@@ -1528,7 +1555,7 @@ def save_gauss_params(analysis_obj, outputpath):
         index = 0
         while index < len(analysis_obj.axes[1]):
             # outputline = '{},'.format(self.axes[1][index])
-            outputline = ','.join([gaussian.print_info() for gaussian in analysis_obj.filtered_gaussians[index]])
+            outputline = ','.join([gaussian.print_info() for gaussian in analysis_obj.protein_gaussians[index]])
             # outputline += ','.join(['{:.2f}'.format(x) for x in self.gauss_filt_params[index]])
             output.write(outputline + '\n')
             index += 1

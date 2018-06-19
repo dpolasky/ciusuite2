@@ -104,7 +104,7 @@ def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_overrid
             else:
                 gaussian_list_by_cv = analysis_obj.classif_gaussfeats
         else:
-            gaussian_list_by_cv = analysis_obj.filtered_gaussians
+            gaussian_list_by_cv = analysis_obj.protein_gaussians
 
         if not ufs_mode:
             # assemble matrix of gaussian data
@@ -184,7 +184,7 @@ def prep_gaussfeats_for_classif(features_list, analysis_obj):
     for cv_index, cv in enumerate(analysis_obj.axes[1]):
         if len(final_gaussian_lists[cv_index]) == 0:
             # no Gaussians have been added here yet. Include highest amplitude one from filtered_gaussians
-            cv_gaussians_from_obj = analysis_obj.filtered_gaussians[cv_index]
+            cv_gaussians_from_obj = analysis_obj.protein_gaussians[cv_index]
             sorted_by_amp = sorted(cv_gaussians_from_obj, key=lambda x: x.amplitude)
             try:
                 final_gaussian_lists[cv_index].append(sorted_by_amp[0])

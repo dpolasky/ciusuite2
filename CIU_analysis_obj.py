@@ -50,12 +50,16 @@ class CIUAnalysisObj(object):
 
         # Gaussian fitting parameters - not always initialized with the object
         self.gaussians = None
-        self.filtered_gaussians = None
-        self.gauss_adj_r2s = None
-        self.gauss_fits = None
-        self.gauss_covariances = None
-        self.gauss_r2s = None
-        self.gauss_fit_stats = None
+        # self.filtered_gaussians = None
+        self.protein_gaussians = None
+        self.nonprotein_gaussians = None
+        self.gauss_fits_by_cv = None
+
+        # self.gauss_adj_r2s = None
+        # self.gauss_fits = None
+        # self.gauss_covariances = None
+        # self.gauss_r2s = None
+        # self.gauss_fit_stats = None
 
         # classification (unknown) outputs
         self.classif_predicted_label = None
@@ -96,7 +100,7 @@ class CIUAnalysisObj(object):
         """
         attribute_list = []
         if filtered:
-            for cv_sublist in self.filtered_gaussians:
+            for cv_sublist in self.protein_gaussians:
                 attribute_list.append([getattr(gaussian, attribute) for gaussian in cv_sublist])
         else:
             for cv_sublist in self.gaussians:
@@ -113,7 +117,7 @@ class CIUAnalysisObj(object):
         :return: list of attribute values
         """
         if filtered_bool:
-            return [getattr(gaussian, attribute) for cv_sublist in self.filtered_gaussians for gaussian in cv_sublist]
+            return [getattr(gaussian, attribute) for cv_sublist in self.protein_gaussians for gaussian in cv_sublist]
         else:
             return [getattr(gaussian, attribute) for cv_sublist in self.gaussians for gaussian in cv_sublist]
 

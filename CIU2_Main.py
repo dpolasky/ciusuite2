@@ -788,12 +788,12 @@ class CIUSuite2(object):
                     analysis_obj = load_analysis_obj(file)
 
                     # check to make sure the analysis_obj has Gaussian data fitted
-                    if analysis_obj.filtered_gaussians is None:
+                    if analysis_obj.protein_gaussians is None:
                         messagebox.showerror('Gaussian feature detection required', 'Data in file {} does not have Gaussian feature detection performed. Please run Gaussian feature detection, then try again.')
                         break
 
                     # If gaussian data exists, perform the analysis
-                    new_obj = Gaussian_Fitting.reconstruct_from_fits(analysis_obj.filtered_gaussians, analysis_obj.axes, analysis_obj.short_filename, self.params_obj)
+                    new_obj = Gaussian_Fitting.reconstruct_from_fits(analysis_obj.protein_gaussians, analysis_obj.axes, analysis_obj.short_filename, self.params_obj)
                     filename = save_analysis_obj(new_obj, self.params_obj, outputdir=self.output_dir)
                     new_file_list.append(filename)
                     self.update_progress(files_to_read.index(file), len(files_to_read))
@@ -826,7 +826,11 @@ class CIUSuite2(object):
                         break
 
                     # Detect features in the appropriate mode
-                    analysis_obj = Feature_Detection.feature_detect_gaussians(analysis_obj, self.params_obj)
+                    try:
+                        analysis_obj = Feature_Detection.feature_detect_gaussians(analysis_obj, self.params_obj)
+                    except ValueError:
+                        messagebox.showerror('Uneven CV Axis', 'Error: Activation axis in file {} was not evenly spaced. Please use the "Interpolate Data" button to generate an evenly spaced axis. If using Gaussian fitting mode, Gaussian fitting MUST be redone after interpolation.')
+                        continue
                     features_list = analysis_obj.features_gaussian
                     filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
                     new_file_list.append(filename)
