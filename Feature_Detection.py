@@ -80,7 +80,7 @@ def feature_detect_col_max(analysis_obj, params_obj):
             features.append(new_feature)
 
     # filter features to remove 'loners' without a sufficient number of points
-    filtered_features = filter_features(features, params_obj.feature_2_min_length)
+    filtered_features = filter_features(features, params_obj.feature_2_min_length, mode='changept')
 
     analysis_obj.features_changept = filtered_features
     return analysis_obj
@@ -107,10 +107,10 @@ def feature_detect_gaussians(analysis_obj, params_obj):
         # uneven CV spacing - tell user to interpolate axes and re-do gaussian fitting
         raise ValueError
 
-    # compute width tolerance in DT units
+    # compute width tolerance in DT units and gap tolerance in CV units
     width_tol_dt = params_obj.feature_3_width_tol  # * analysis_obj.bin_spacing
-    gap_tol_cv = params_obj.feature_4_gap_tol  # * analysis_obj.cv_spacing
     cv_spacing = analysis_obj.axes[1][1] - analysis_obj.axes[1][0]
+    gap_tol_cv = params_obj.feature_4_gap_tol * cv_spacing
 
     # Search each protein gaussian for features it matches (based on centroid)
     for cv_index, protein_gauss_list in enumerate(analysis_obj.protein_gaussians):
@@ -131,34 +131,36 @@ def feature_detect_gaussians(analysis_obj, params_obj):
                 features.append(new_feature)
 
         # After protein features are done, check if any nonprotein peaks match any features that don't already have a protein peak at this CV
-        for nonprot_gaussian in analysis_obj.nonprotein_gaussians[cv_index]:
-            current_cv = nonprot_gaussian.cv
-            for feature in features:
-                protein_cvs = [x.cv for x in feature.gaussians]
-                if current_cv not in protein_cvs:
-                    # this feature does not currently have any entries at this CV value, making it available to add a non-prot peak
-                    if feature.accept_centroid(nonprot_gaussian.centroid, width_tol_dt, current_cv, gap_tol_cv, cv_spacing):
-                        # Change this "non-protein" Gaussian to a protein - likely misassigned
-                        nonprot_gaussian.is_protein = True
-                        feature.gaussians.append(nonprot_gaussian)
-
-    # perform a second pass to add to features that were created after the CV at which these non-protein peaks were considered
-    for cv_index, protein_gauss_list in reversed(list(enumerate(analysis_obj.protein_gaussians))):
-        for nonprot_gaussian in analysis_obj.nonprotein_gaussians[cv_index]:
-            current_cv = nonprot_gaussian.cv
-            for feature in features:
-                protein_cvs = [x.cv for x in feature.gaussians]
-                if current_cv not in protein_cvs:
-                    # this feature does not currently have any entries at this CV value, making it available to add a non-prot peak
-                    if feature.accept_centroid(nonprot_gaussian.centroid, width_tol_dt, current_cv, gap_tol_cv, cv_spacing):
-                        # Change this "non-protein" Gaussian to a protein - likely misassigned
-                        if nonprot_gaussian not in feature.gaussians:
-                            # make sure this protein isn't already in this feature
+        if analysis_obj.nonprotein_gaussians is not None:
+            for nonprot_gaussian in analysis_obj.nonprotein_gaussians[cv_index]:
+                current_cv = nonprot_gaussian.cv
+                for feature in features:
+                    protein_cvs = [x.cv for x in feature.gaussians]
+                    if current_cv not in protein_cvs:
+                        # this feature does not currently have any entries at this CV value, making it available to add a non-prot peak
+                        if feature.accept_centroid(nonprot_gaussian.centroid, width_tol_dt, current_cv, gap_tol_cv, cv_spacing):
+                            # Change this "non-protein" Gaussian to a protein - likely misassigned
                             nonprot_gaussian.is_protein = True
                             feature.gaussians.append(nonprot_gaussian)
 
+    # perform a second pass to add to features that were created after the CV at which these non-protein peaks were considered
+    if analysis_obj.nonprotein_gaussians is not None:
+        for cv_index, protein_gauss_list in reversed(list(enumerate(analysis_obj.protein_gaussians))):
+            for nonprot_gaussian in analysis_obj.nonprotein_gaussians[cv_index]:
+                current_cv = nonprot_gaussian.cv
+                for feature in features:
+                    protein_cvs = [x.cv for x in feature.gaussians]
+                    if current_cv not in protein_cvs:
+                        # this feature does not currently have any entries at this CV value, making it available to add a non-prot peak
+                        if feature.accept_centroid(nonprot_gaussian.centroid, width_tol_dt, current_cv, gap_tol_cv, cv_spacing):
+                            # Change this "non-protein" Gaussian to a protein - likely misassigned
+                            if nonprot_gaussian not in feature.gaussians:
+                                # make sure this protein isn't already in this feature
+                                nonprot_gaussian.is_protein = True
+                                feature.gaussians.append(nonprot_gaussian)
+
     # filter features to remove 'loners' without a sufficient number of points
-    filtered_features = filter_features(features, params_obj.feature_2_min_length)
+    filtered_features = filter_features(features, params_obj.feature_2_min_length, mode='gaussian')
     analysis_obj.features_gaussian = filtered_features
     return analysis_obj
 
@@ -253,18 +255,25 @@ def compute_transitions(analysis_obj, params_obj, adjusted_features):
     return transition_list
 
 
-def filter_features(features, min_feature_length):
+def filter_features(features, min_feature_length, mode):
     """
     Remove any features below the specified minimum feature length from the feature list
     :param features: list of Features
     :type features: list[Feature]
     :param min_feature_length: minimum length (number of gaussians) to be included in a feature
+    :param mode: gaussian or changepoint: whether features are from gaussian fitting or changept detection
     :return: filtered feature list with too-small features removed
     """
     filtered_list = []
     for feature in features:
-        if len(feature.gaussians) >= min_feature_length:
-            filtered_list.append(feature)
+        if mode == 'gaussian':
+            if len(feature.gaussians) >= min_feature_length:
+                filtered_list.append(feature)
+        elif mode == 'changept':
+            if len(feature.cvs) >= min_feature_length:
+                filtered_list.append(feature)
+        else:
+            print('invalid mode')
     return filtered_list
 
 

@@ -21,6 +21,7 @@ import lmfit
 import time
 
 from CIU_raw import CIURaw
+from Raw_Processing import normalize_by_col
 from CIU_analysis_obj import CIUAnalysisObj
 
 # imports for type checking
@@ -394,7 +395,7 @@ def reconstruct_from_fits(gaussian_lists_by_cv, axes, new_filename, params_obj):
     """
     Construct a new analysis object using the filtered Gaussian fits of the provided analysis object
     as the raw data. Must have previously performed Gaussian feature detection on the provided analysis_obj
-    :param gaussian_lists_by_cv:
+    :param gaussian_lists_by_cv: list of lists of Gaussian objects at each CV
     :param axes: [DT_axis, CV_axis]: two numpy arrays with drift and CV axes to use
     :param new_filename:
     :param params_obj: Parameters container with parameters to save into the new CIUAnalsis obj
@@ -415,13 +416,17 @@ def reconstruct_from_fits(gaussian_lists_by_cv, axes, new_filename, params_obj):
 
         ciu_data_by_cols.append(intensities)
 
-    # finally, transpose the CIU data to match the typical format and return the object
+    # todo: normalize intensities
+
+    # finally, transpose the CIU data to match the typical format, normalize, and return the object
     final_data = np.asarray(ciu_data_by_cols).T
+    final_data = normalize_by_col(final_data)
+
     raw_obj = CIURaw(final_data, dt_axis, axes[1], new_filename)
     new_analysis_obj = CIUAnalysisObj(raw_obj, final_data, axes, params_obj)
     new_analysis_obj.short_filename = new_analysis_obj.short_filename + '_gauss-recon'
 
-    new_analysis_obj.filtered_gaussians = gaussian_lists_by_cv
+    new_analysis_obj.protein_gaussians = gaussian_lists_by_cv
     new_analysis_obj.gaussians = gaussian_lists_by_cv
     return new_analysis_obj
 
