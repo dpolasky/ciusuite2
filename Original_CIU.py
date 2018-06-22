@@ -188,32 +188,62 @@ def std_dev_plot(analysis_obj, std_dev_matrix, params_obj, output_dir):
     plt.close()
 
 
-# todo: deprecate (?)
-def compare_by_cv(norm_data_1, norm_data_2, axes, smooth_window=None, crop_vals=None):
+def average_ciu(analysis_obj_list, params_obj, outputdir):
     """
-    Generate an RMSD comparison at EACH collision energy and plot RMSD vs CV.
-    NOTE: files must have same number of collision energies (columns) (or be cropped to be so)
-    :param norm_data_1: preprocessed data to be subtracted from (2D ndarray, DT=axis 0, CV=axis 1)
-    :param norm_data_2: preprocessed data to be subtracted
-    :param axes: axis labels for [DT axis, CV axis]. Can be from either file (must be same for both to compare)
-    # :param outputdir: directory in which to save output
-    :param smooth_window: (optional) smoothing to apply PRIOR to analysis
-    :param crop_vals: (optional) cropping to apply PRIOR to analysis
-    :return: Dictionary of {CV : RMSD}
+    Generate and save replicate object (a CIUAnalysisObj with averaged ciu_data and a list
+    of raw_objs) that can be used for further analysis
+    :param analysis_obj_list: list of CIUAnalysisObj's to average
+    :type analysis_obj_list: list[CIUAnalysisObj]
+    :param params_obj: Parameters object with param info
+    :type params_obj: Parameters
+    :param outputdir: directory in which to save output .ciu file
+    :rtype: CIUAnalysisObj
+    :return: averaged analysis object
     """
-    # swap axes for column by column comparison
-    swapped_1 = norm_data_1.swapaxes(0, 1)
-    swapped_2 = norm_data_2.swapaxes(0, 1)
+    raw_obj_list = []
+    ciu_data_list = []
+    for analysis_obj in analysis_obj_list:
+        raw_obj_list.append(analysis_obj.raw_obj)
+        ciu_data_list.append(analysis_obj.ciu_data)
 
-    # compare by column
-    index = 0
-    rmsd_dict = {}
-    while index < len(swapped_1):
-        cv = axes[0][index]
-        dif, rmsd = rmsd_difference(swapped_1[index], swapped_2[index])
-        rmsd_dict[cv] = rmsd
-        index += 1
-    return rmsd_dict
+    # generate the average object
+    avg_data = np.mean(ciu_data_list, axis=0)
+    std_data = np.std(ciu_data_list, axis=0)
+    averaged_obj = CIUAnalysisObj(raw_obj_list[0], avg_data, analysis_obj_list[0].axes, analysis_obj_list[0].params)
+    averaged_obj.raw_obj_list = raw_obj_list
+
+    # plot averaged object and standard deviation
+    ciu_plot(averaged_obj, params_obj, outputdir)
+    std_dev_plot(averaged_obj, std_data, params_obj, outputdir)
+
+    return averaged_obj
+
+# todo: deprecate (?)
+# def compare_by_cv(norm_data_1, norm_data_2, axes, smooth_window=None, crop_vals=None):
+#     """
+#     Generate an RMSD comparison at EACH collision energy and plot RMSD vs CV.
+#     NOTE: files must have same number of collision energies (columns) (or be cropped to be so)
+#     :param norm_data_1: preprocessed data to be subtracted from (2D ndarray, DT=axis 0, CV=axis 1)
+#     :param norm_data_2: preprocessed data to be subtracted
+#     :param axes: axis labels for [DT axis, CV axis]. Can be from either file (must be same for both to compare)
+#     # :param outputdir: directory in which to save output
+#     :param smooth_window: (optional) smoothing to apply PRIOR to analysis
+#     :param crop_vals: (optional) cropping to apply PRIOR to analysis
+#     :return: Dictionary of {CV : RMSD}
+#     """
+#     # swap axes for column by column comparison
+#     swapped_1 = norm_data_1.swapaxes(0, 1)
+#     swapped_2 = norm_data_2.swapaxes(0, 1)
+#
+#     # compare by column
+#     index = 0
+#     rmsd_dict = {}
+#     while index < len(swapped_1):
+#         cv = axes[0][index]
+#         dif, rmsd = rmsd_difference(swapped_1[index], swapped_2[index])
+#         rmsd_dict[cv] = rmsd
+#         index += 1
+#     return rmsd_dict
 
 
 def interpolate_axes(axis1, axis2, num_bins):

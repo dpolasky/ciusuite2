@@ -7,45 +7,6 @@ import numpy as np
 from tkinter import messagebox
 from tkinter import ttk
 
-# Dictionary containing descriptions of all parameters for display in menus/etc
-hard_descripts_file = r"C:\CIUSuite2\CIU2_param_info.csv"
-
-# PARAM_DESCRIPTIONS = {'smoothing_1_method': 'Method with which to smooth data. Savitsky-Golay or None',
-#                       'smoothing_2_window': 'Size of the filter for the applied smoothing method. Default is 5',
-#                       'smoothing_3_iterations': 'the number of times to apply the smoothing. Default is 1',
-#
-#                       'ciuplot_1_x_title': 'title to display on x - axis of CIU plot',
-#                       'interpolation_bins': 'If provided, the data will be interpolated along the collision voltage axis to have the specified number of bins',
-#                       'ciuplot_2_y_title': 'title to display on y - axis of CIU plot',
-#                       'x_allplot_1_extension': 'file format in which to save CIU plot(acceptable values are .png, .pdf, .jpg)',
-#                       'save_output_csv': 'Whether to write an _raw.csv output file with the processed data (True or False)',
-#                       'ciuplot_3_plot_title': 'Optional title for the plot. If provided, will label the plot with the title.',
-#
-#                       'min_feature_length': 'The minimum number of points (collision voltages) across which a feature must be present to be counted as a real feature. Default = 3. Decrease to catch small features (if real) present at only a few collision voltages (e.g. quick transitions and/or large voltage steps).',
-#                       'flat_width_tolerance': 'tolerance (in drift bins) around the most common apex drift bin for a CV column to allow for inclusion into a feature. Default = 4. Higher values allow more slanted features to be detected/allowed, but may result in poor fitting. Lower values result in strict filtering to very flat features only.',
-#                       'combine_output_file': '',
-#                       'cv_gap_tolerance': '',
-#                       'ciu50_mode': '',
-#
-#                       'gaussian_int_threshold': 'Minimum intensity to allow a peak to be fit. Default: 0.1 (10%)',
-#                       'gaussian_width_max': 'An optional filter to remove noise peaks from future analysis steps and plotting. Removes any peak from analysis with a width greater than the parameter. Default: 4',
-#                       'gaussian_centroid_bound_filter': 'Optional filter to remove peaks from plotting and analysis outside provided DT bounds. format: [DT_lower_bound, DT_upper_bound]',
-#                       'gaussian_centroid_bounds': 'Optional DT-axis bounds for displaying centroids in plot (only in plot, no change to analysis) format: [DT_lower_bound, DT_upper_bound]',
-#                       'gaussian_width_fraction': 'Parameter describing approximate width ratio of peaks prior to fit. Default 0.01 (typically doesnt need to be adjusted by user)',
-#                       'gaussian_convergence_r2': 'The minimum r squared value for the multi-peak fitting to accept. The program will attempt to fit a single peak to the data, and will add peaks until the convergence fit is reached. If overfitting is occurring (too many peaks), reduce this value. In underfitting is occurring, increase it.'
-#                       }
-#
-# # Dictionary containing value requirements for all parameters as tuples of (type, value range/list])
-# PARAM_REQS = {'smoothing_1_method': ('string', ['Savitsky-Golay', 'None']),
-#               'smoothing_2_window': ('int', [0, np.inf]),
-#               'smoothing_3_iterations': ('int', [0, np.inf]),
-#               'ciuplot_1_x_title': ('anystring', []),
-#               'ciuplot_2_y_title': ('anystring', []),
-#               'x_allplot_1_extension': ('string', ['.png', '.pdf', '.jpg']),
-#               'save_output_csv': ('bool', ['true', 'false']),
-#               'ciuplot_3_plot_title': ('anystring', [])
-#               }
-
 
 def parse_param_descriptions(param_file):
     """
@@ -111,9 +72,6 @@ def parse_param_descriptions(param_file):
     return names, descriptions, reqs
 
 
-PAR_NAMES, PAR_DESCRIPTS, PAR_REQS = parse_param_descriptions(hard_descripts_file)
-
-
 class Parameters(object):
     """
     Object to hold all parameters used in generation of a CIU_analysis object. Starts with
@@ -168,6 +126,7 @@ class Parameters(object):
         self.gaussian_82_max_nonprot_comps = None
         self.gaussian_83_nonprot_width_min = None
         self.gaussian_9_min_protein_amp = None
+        self.gaussian_61_num_cores = None
 
         # self.gaussian_6_min_peak_dist = None
         # self.gaussian_3_width_max = None
@@ -363,16 +322,7 @@ def parse_params_file(params_file):
                             param_dict[splits[0].strip()] = False
                         else:
                             param_dict[splits[0].strip()] = splits[1].strip()
-        # parse crop_values into list
-        # if param_dict['cropping_window_values'] is not None:
-        #     # parse the list
-        #     string_val = param_dict['cropping_window_values'].replace('[', '')
-        #     string_val = string_val.replace(']', '')
-        #     try:
-        #         crop_list = [float(x) for x in string_val.split(',')]
-        #         param_dict['cropping_window_values'] = crop_list
-        #     except ValueError:
-        #         print('Invalid cropping values: must be in form [float,float,float,float]')
+
         return param_dict
     except FileNotFoundError:
         print('params file not found!')
@@ -408,14 +358,18 @@ class ParamUI(tkinter.Toplevel):
     Modular parameter editing UI popup class. Designed to take a list of parameters of arbitrary
     length and provide their names, current values, and definitions into a dialog for editing.
     """
-    def __init__(self, section_name, params_obj, key_list):
+    def __init__(self, section_name, params_obj, key_list, param_descripts_file):
         """
         Initialize a graphical menu with the parameters listed by key in the 'key_list' input.
         :param params_obj: Parameters object with parameter value information
         :type params_obj: Parameters
         :param key_list: list of keys (corresponding to keys in params.obj.params_dict and also the
         PARAM_DESCRIPTIONS dict) to display in the menu.
+        :param param_descripts_file: full path to the parameter descriptions file ('CIU2_param_info.csv')
         """
+        # load parameter descriptions from file
+        self.par_names, self.par_descripts, self.par_reqs = parse_param_descriptions(param_descripts_file)
+
         tkinter.Toplevel.__init__(self)
         self.title(section_name)
         self.return_code = -2
@@ -446,22 +400,22 @@ class ParamUI(tkinter.Toplevel):
                 entry_var.set('None')
 
             # display the parameter name, value, and description
-            ttk.Label(labels_frame, text=PAR_NAMES[param_key]).grid(row=row, column=0, sticky='e')
+            ttk.Label(labels_frame, text=self.par_names[param_key]).grid(row=row, column=0, sticky='e')
 
             # display values the user can enter (int/float, strings) as an entry field
-            param_type = PAR_REQS[param_key][0]
+            param_type = self.par_reqs[param_key][0]
             if param_type == 'int' or param_type == 'float' or param_type == 'anystring':
                 ttk.Entry(labels_frame, textvariable=entry_var, width=25).grid(row=row, column=1)
             else:
                 # for fields where the user must choose, display a dropdown menu instead
-                option_vals = [x for x in PAR_REQS[param_key][1]]
+                option_vals = [x for x in self.par_reqs[param_key][1]]
                 # prevent the first option from not appearing in menu. Not sure why this duplication is necessary...
                 option_vals.insert(0, entry_var.get())
                 menu = ttk.OptionMenu(labels_frame, entry_var, *option_vals)
                 menu.grid(row=row, column=1)
                 menu['menu'].config(background='white')
 
-            ttk.Label(labels_frame, text=PAR_DESCRIPTS[param_key], wraplength=500).grid(row=row, column=2, sticky='w')
+            ttk.Label(labels_frame, text=self.par_descripts[param_key], wraplength=500).grid(row=row, column=2, sticky='w')
 
             self.entry_vars[param_key] = entry_var
             row += 1
@@ -492,16 +446,16 @@ class ParamUI(tkinter.Toplevel):
             # some parameters failed. Tell the user which ones and keep the window open
             param_string = 'The following parameter(s) have inappropriate values:\n'
             for param in fail_params:
-                if PAR_REQS[param][0] == 'string' or PAR_REQS[param][0] == 'bool':
+                if self.par_reqs[param][0] == 'string' or self.par_reqs[param][0] == 'bool':
                     # print acceptable values list for string/bool
-                    vals_string = ', '.join(PAR_REQS[param][1])
-                    param_string += '{}: value must be one of ({})\n'.format(PAR_NAMES[param], vals_string)
+                    vals_string = ', '.join(self.par_reqs[param][1])
+                    param_string += '{}: value must be one of ({})\n'.format(self.par_names[param], vals_string)
                 else:
                     # print type and bounds for float/int
-                    lower_bound = PAR_REQS[param][1][0]
-                    upper_bound = PAR_REQS[param][1][1]
-                    param_string += '{}:\n\t Value Type must be: {}\n\t Value must be within bounds: {} - {}\n'.format(PAR_NAMES[param],
-                                                                                                                       PAR_REQS[param][0],
+                    lower_bound = self.par_reqs[param][1][0]
+                    upper_bound = self.par_reqs[param][1][1]
+                    param_string += '{}:\n\t Value Type must be: {}\n\t Value must be within bounds: {} - {}\n'.format(self.par_names[param],
+                                                                                                                       self.par_reqs[param][0],
                                                                                                                        lower_bound,
                                                                                                                        upper_bound)
             messagebox.showwarning(title='Parameter Error', message=param_string)
@@ -513,8 +467,8 @@ class ParamUI(tkinter.Toplevel):
         :param param_key: key to parameter dictionary to be checked
         :return: True if the current value of the corresponding entry is valid, False if not
         """
-        param_type = PAR_REQS[param_key][0]
-        param_val_list = PAR_REQS[param_key][1]
+        param_type = self.par_reqs[param_key][0]
+        param_val_list = self.par_reqs[param_key][1]
         if param_type == 'int':
             # If the param is an int, the value must be within the values specified in the requirement tuple
             try:
@@ -579,13 +533,15 @@ class ParamUI(tkinter.Toplevel):
 
 
 def test_param_ui():
-    # testing
+    """
+    for testing
+    """
     myparams = Parameters()
     mydict = parse_params_file(r"C:\CIUSuite2\CIU_params.txt")
     myparams.set_params(mydict)
     key_list = ['smoothing_1_method', 'smoothing_2_window', 'smoothing_3_iterations']
 
-    param_ui = ParamUI('test section', myparams, key_list)
+    param_ui = ParamUI('test section', myparams, key_list, r"C:\CIUSuite2\CIU2_param_info.csv")
     test_top = tkinter.Toplevel()
     test_top.title('test top')
     param_ui.wait_window()

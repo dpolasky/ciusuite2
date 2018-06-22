@@ -19,6 +19,7 @@ import matplotlib.backends.backend_pdf
 import matplotlib.pyplot as plt
 import lmfit
 import time
+import multiprocessing
 
 from CIU_raw import CIURaw
 from Raw_Processing import normalize_by_col
@@ -580,13 +581,24 @@ def gaussian_lmfit_main(analysis_obj, params_obj):
 
     best_fits_by_cv = []
     scores_by_cv = []
+
+    pool = multiprocessing.Pool(processes=params_obj.gaussian_61_num_cores)
+    results = []
+
     for cv_index, cv_col_intensities in enumerate(cv_col_data):
         # prepare initial guesses in the form of a list of Gaussian objects, sorted by amplitude
         cv = analysis_obj.axes[1][cv_index]
         gaussian_guess_list = guess_gauss_init(cv_col_intensities, analysis_obj.axes[0], params_obj.gaussian_5_width_fraction, cv, params_obj.gaussian_1_convergence, amp_cutoff=params_obj.gaussian_2_int_threshold)
 
         # Run fitting and scoring across the provided range of peak options
-        all_fits = iterate_lmfitting(analysis_obj.axes[0], cv_col_intensities, gaussian_guess_list, params_obj, outputpath)
+        # all_fits = iterate_lmfitting(analysis_obj.axes[0], cv_col_intensities, gaussian_guess_list, params_obj, outputpath)
+
+        argslist = [analysis_obj.axes[0], cv_col_intensities, gaussian_guess_list, params_obj, outputpath]
+        pool_result = pool.apply_async(iterate_lmfitting, args=argslist)
+        results.append(pool_result)
+
+    for cv_index, cv_results in enumerate(results):
+        all_fits = cv_results.get()
 
         # save the fit with the highest score out of all fits collected
         # todo: add handling for nonprotein peaks (include in fit, but filter for outputs?)
@@ -854,7 +866,12 @@ def assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, dt_
     if num_nonprot_pks > 0:
         # non-protein peak(s) present, assign peaks wider than width max for protein to them
         for comp_index in range(0, total_num_components):
-            next_guess = guesses_list[guess_index]
+            try:
+                next_guess = guesses_list[guess_index]
+            except IndexError:
+                # out of guesses - make a generic non-protein guess (50% amplitude, centered in the middle of the dt axis, non-protein minimum width)
+                dt_middle = (dt_axis[-1] - dt_axis[0]) / 2.0
+                next_guess = Gaussian(amplitude=0.5, centroid=dt_middle, width=params_obj.gaussian_83_nonprot_width_min, collision_voltage=None, pcov=None, protein_bool=False)
 
             # todo: add FWHM conversion
             if next_guess.width > (params_obj.gaussian_72_prot_peak_width + params_obj.gaussian_73_prot_width_tol):
@@ -907,8 +924,15 @@ def assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, dt_
     else:
         # protein peaks only - simply go through the guess list (descending order of amplitude)
         for prot_pk_index in range(0, num_prot_pks):
+            try:
+                next_guess = guesses_list[guess_index]
+            except IndexError:
+                # out of guesses - make a generic protein guess (50% amplitude, centered in the middle of the dt axis, estimated protein width)
+                dt_middle = (dt_axis[-1] - dt_axis[0]) / 2.0
+                next_guess = Gaussian(amplitude=0.5, centroid=dt_middle, width=params_obj.gaussian_72_prot_peak_width, collision_voltage=None, pcov=None, protein_bool=True)
+
             model, params = make_protein_model(prefix='{}{}'.format(protein_prefix, guess_index + 1),
-                                               guess_gaussian=guesses_list[guess_index],
+                                               guess_gaussian=next_guess,
                                                params_obj=params_obj,
                                                dt_axis=dt_axis)
             models_list.append(model)

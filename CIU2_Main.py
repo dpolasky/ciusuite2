@@ -14,7 +14,6 @@ from tkinter import messagebox
 import os
 import subprocess
 import pickle
-import numpy as np
 
 import Raw_Processing
 from CIU_raw import CIURaw
@@ -30,15 +29,14 @@ import Raw_Data_Import
 from matplotlib import rcParams
 rcParams.update({'figure.autolayout': True})
 
-# hard_file_path_ui = r"C:\CIUSuite2\CIUSuite2_2.ui"
-hard_file_path_ui = r"C:\CIUSuite2\CIUSuite2.ui"
 
-# hard_params_file = r"C:\CIUSuite2\CIU_params.txt"
-hard_params_file = CIU_Params.hard_descripts_file
-hard_output_default = r"C:\Users\dpolasky\Desktop\test"
-hard_params_ui = r"C:\CIUSuite2\Param_editor.ui"
-hard_crop_ui = r"C:\CIUSuite2\Crop_vals.ui"
-hard_agilent_ext_path = r"C:\Users\dpolasky\Desktop\Data Tools and Src Code\_Agilent CIU Extractor\_SIMPLE_versionForDistribution\release\MIDAC_CIU_Extractor.exe"
+root_dir = r"C:\CIUSuite2"
+
+hard_file_path_ui = os.path.join(root_dir, 'CIUSuite2.ui')
+hard_params_file = os.path.join(root_dir, 'CIU2_param_info.csv')
+hard_params_ui = os.path.join(root_dir, 'Param_editor.ui')
+hard_crop_ui = os.path.join(root_dir, 'Crop_vals.ui')
+hard_agilent_ext_path = os.path.join(root_dir, os.path.join('Agilent_RawExtractor', 'MIDAC_CIU_Extractor.exe'))
 
 
 class CIUSuite2(object):
@@ -57,10 +55,9 @@ class CIUSuite2(object):
 
         # load the UI file
         builder.add_from_file(hard_file_path_ui)
-        # create widget using provided root (Tk) window
-        # self.mainwindow = builder.get_object('CIU_app_top', master_window)
-        self.mainwindow = builder.get_object('CIU_app_top')
 
+        # create widget using provided root (Tk) window
+        self.mainwindow = builder.get_object('CIU_app_top')
         self.mainwindow.protocol('WM_DELETE_WINDOW', self.on_close_window)
 
         callbacks = {
@@ -94,15 +91,11 @@ class CIUSuite2(object):
         self.params_obj.set_params(CIU_Params.parse_params_file(hard_params_file))
         self.param_file = hard_params_file
 
-        # params_text = self.builder.get_object('Text_params')
-        # params_text.delete(1.0, tk.END)
-        # params_text.insert(tk.INSERT, 'Parameters loaded from hard file')
-
         # holder for feature information in between user assessment - plan to replace with better solution eventually
         self.temp_feature_holder = None
 
         self.analysis_file_list = []
-        self.output_dir = hard_output_default
+        self.output_dir = root_dir
         self.output_dir_override = False
 
     def run(self):
@@ -333,7 +326,8 @@ class CIUSuite2(object):
         list_of_param_keys = sorted(list_of_param_keys)     # keep parameter keys in alphabetical order
         param_ui = CIU_Params.ParamUI(section_name=section_title,
                                       params_obj=self.params_obj,
-                                      key_list=list_of_param_keys)
+                                      key_list=list_of_param_keys,
+                                      param_descripts_file=hard_params_file)
         param_ui.grab_set()     # prevent users from hitting multiple windows simultaneously
         param_ui.wait_window()
         param_ui.grab_release()
@@ -502,7 +496,11 @@ class CIUSuite2(object):
 
         analysis_obj_list = [load_analysis_obj(x) for x in files_to_read]
         analysis_obj_list = check_axes_and_warn(analysis_obj_list)
-        averaged_obj = average_ciu(analysis_obj_list, self.params_obj, self.output_dir)
+        averaged_obj = Original_CIU.average_ciu(analysis_obj_list, self.params_obj, self.output_dir)
+        averaged_obj.filename = save_analysis_obj(averaged_obj, analysis_obj_list[0].params, self.output_dir,
+                                                  filename_append='_Avg')
+        averaged_obj.short_filename = os.path.basename(averaged_obj.filename).rstrip('.ciu')
+
         self.analysis_file_list = [averaged_obj.filename]
         self.display_analysis_files()
         self.progress_done()
@@ -1002,7 +1000,6 @@ class CIUSuite2(object):
         # load files from table
         files_to_read = self.check_file_range_entries()
         self.progress_started()
-        new_file_list = []
         analysis_obj_list = []
         for file in files_to_read:
             # load file
@@ -1208,7 +1205,8 @@ class CIUSuite2(object):
                     return
 
                 # first, edit file CV headers since we can't get that information from the Agilent raw library
-                raw_files = [os.path.join(raw_dir, x) for x in os.listdir(raw_dir) if x.endswith('_raw.csv')]
+                # raw_files = [os.path.join(raw_dir, x) for x in os.listdir(raw_dir) if x.endswith('_raw.csv')]
+                raw_files = filedialog.askopenfilenames(title='Choose the extracted files to analyze', initialdir=raw_dir, filetypes=[('_raw.csv', '_raw.csv')])
                 cv_headers, parsing_success = [], False
                 original_header = Raw_Data_Import.get_header(raw_files[0])
                 while not parsing_success:
@@ -1219,7 +1217,8 @@ class CIUSuite2(object):
 
             elif vendor_type == 'waters':
                 # todo: implement?
-                raw_dir = ''
+                # raw_dir = ''
+                raw_files = []
 
             else:
                 print('invalid vendor')
@@ -1227,7 +1226,7 @@ class CIUSuite2(object):
 
             # clear analysis list
             self.analysis_file_list = []
-            raw_files = [os.path.join(raw_dir, x) for x in os.listdir(raw_dir) if x.endswith('_raw.csv')]
+            # raw_files = [os.path.join(raw_dir, x) for x in os.listdir(raw_dir) if x.endswith('_raw.csv')]
             if len(raw_files) > 0:
                 # Ask user for smoothing input
                 plot_keys = [x for x in self.params_obj.params_dict.keys() if 'smoothing' in x]
@@ -1297,10 +1296,6 @@ def process_raw_obj(raw_obj, params_obj):
     norm_data = Raw_Processing.normalize_by_col(raw_obj.rawdata)
     axes = (raw_obj.dt_axis, raw_obj.cv_axis)
 
-    # interpolate data if desired TODO: move to own button/remove from here
-    # if params_obj.interp_1_method:
-    #     norm_data, axes = Raw_Processing.interpolate_cv(norm_data, axes, params_obj.interp_2_bins)
-
     # save a CIUAnalysisObj with the information above
     analysis_obj = CIUAnalysisObj(raw_obj, norm_data, axes, params_obj)
     analysis_obj = Raw_Processing.smooth_main(analysis_obj, params_obj)
@@ -1364,41 +1359,6 @@ def update_params_in_obj(analysis_obj, params_obj):
     """
     analysis_obj.params = params_obj
     return analysis_obj
-
-
-# todo: move to RawProcessing
-def average_ciu(analysis_obj_list, params_obj, outputdir):
-    """
-    Generate and save replicate object (a CIUAnalysisObj with averaged ciu_data and a list
-    of raw_objs) that can be used for further analysis
-    :param analysis_obj_list: list of CIUAnalysisObj's to average
-    :type analysis_obj_list: list[CIUAnalysisObj]
-    :param params_obj: Parameters object with param info
-    :type params_obj: Parameters
-    :param outputdir: directory in which to save output .ciu file
-    :rtype: CIUAnalysisObj
-    :return: averaged analysis object
-    """
-    raw_obj_list = []
-    ciu_data_list = []
-    for analysis_obj in analysis_obj_list:
-        raw_obj_list.append(analysis_obj.raw_obj)
-        ciu_data_list.append(analysis_obj.ciu_data)
-
-    # generate the average object
-    avg_data = np.mean(ciu_data_list, axis=0)
-    std_data = np.std(ciu_data_list, axis=0)
-    averaged_obj = CIUAnalysisObj(raw_obj_list[0], avg_data, analysis_obj_list[0].axes, analysis_obj_list[0].params)
-    averaged_obj.raw_obj_list = raw_obj_list
-
-    # plot averaged object and standard deviation
-    averaged_obj.filename = save_analysis_obj(averaged_obj, analysis_obj_list[0].params, outputdir, filename_append='_Avg')
-    averaged_obj.short_filename = os.path.basename(averaged_obj.filename).rstrip('.ciu')
-
-    Original_CIU.ciu_plot(averaged_obj, params_obj, outputdir)
-    Original_CIU.std_dev_plot(averaged_obj, std_data, params_obj, outputdir)
-
-    return averaged_obj
 
 
 def save_analysis_obj(analysis_obj, params_obj, outputdir, filename_append=''):
