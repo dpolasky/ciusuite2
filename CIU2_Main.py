@@ -162,7 +162,7 @@ class CIUSuite2(object):
                 # run raw processing
                 for raw_file in raw_files:
                     try:
-                        raw_obj = generate_raw_obj(raw_file)
+                        raw_obj = Raw_Processing.get_data(raw_file)
                     except ValueError as err:
                         messagebox.showerror('Data Import Error', message='{}{}. Problem: {}. Press OK to continue'.format(*err.args))
                         continue
@@ -1236,7 +1236,7 @@ class CIUSuite2(object):
                     # run raw processing
                     for raw_file in raw_files:
                         try:
-                            raw_obj = generate_raw_obj(raw_file)
+                            raw_obj = Raw_Processing.get_data(raw_file)
                         except ValueError as err:
                             messagebox.showerror('Data Import Error',
                                                  message='{}{}. Problem: {}. Press OK to continue'.format(*err.args))
@@ -1267,17 +1267,6 @@ def save_existing_output_string(full_output_path, string_to_save):
     """
     with open(full_output_path, 'w') as outfile:
         outfile.write(string_to_save)
-
-
-def generate_raw_obj(raw_file):
-    """
-    Open an _raw.csv file and read its data into a CIURaw object to return
-    :param raw_file: (string) filename of the _raw.csv file to read
-    :rtype: CIURaw
-    :return: CIURaw object with raw data, filename, and axes
-    """
-    raw_obj = Raw_Processing.get_data(raw_file)
-    return raw_obj
 
 
 def process_raw_obj(raw_obj, params_obj):
