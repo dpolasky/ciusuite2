@@ -104,7 +104,7 @@ def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_overrid
             else:
                 gaussian_list_by_cv = analysis_obj.classif_gaussfeats
         else:
-            gaussian_list_by_cv = analysis_obj.protein_gaussians
+            gaussian_list_by_cv = analysis_obj.raw_protein_gaussians
 
         if not ufs_mode:
             # assemble matrix of gaussian data
@@ -160,6 +160,7 @@ def prep_gaussfeats_for_classif(features_list, analysis_obj):
     features_list = close_feature_gaps(features_list, analysis_obj.axes[1])
 
     # iterate over features, filling any gaps within the feature and entering Gaussians into the final list
+    # todo: fix? This SHOULD no longer be necessary with the new protein gaussian feature methods, but should double check
     for feature in features_list:
         # determine if the feature contains gaps
         gaussian_cvs = [gaussian.cv for gaussian in feature.gaussians]
@@ -176,15 +177,16 @@ def prep_gaussfeats_for_classif(features_list, analysis_obj):
                                         centroid=feature.gauss_median_centroid,
                                         width=np.median([x.width for x in feature.gaussians]),
                                         collision_voltage=cv,
-                                        pcov=None)
-                # todo: fix?
+                                        pcov=None,
+                                        protein_bool=True)
                 final_gaussian_lists[cv_index].append(new_gaussian)
 
     # Finally, check if all CVs have been covered by features. If not, add highest amplitude Gaussian from non-feature list
     for cv_index, cv in enumerate(analysis_obj.axes[1]):
         if len(final_gaussian_lists[cv_index]) == 0:
+            # todo: fix - this doesn't work for new storage method
             # no Gaussians have been added here yet. Include highest amplitude one from filtered_gaussians
-            cv_gaussians_from_obj = analysis_obj.protein_gaussians[cv_index]
+            cv_gaussians_from_obj = analysis_obj.feat_protein_gaussians[cv_index]
             sorted_by_amp = sorted(cv_gaussians_from_obj, key=lambda x: x.amplitude)
             try:
                 final_gaussian_lists[cv_index].append(sorted_by_amp[0])

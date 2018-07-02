@@ -5,14 +5,14 @@ Date: 10/10/2017
 """
 
 import numpy as np
-import pickle
 import matplotlib.pyplot as plt
 import scipy.stats
 import scipy.optimize
 import scipy.interpolate
 import os
-import CIU_Params
 import Raw_Processing
+# import pickle
+# import CIU_Params
 
 # imports for type checking
 from typing import TYPE_CHECKING
@@ -113,7 +113,7 @@ def feature_detect_gaussians(analysis_obj, params_obj):
     gap_tol_cv = params_obj.feature_4_gap_tol * cv_spacing
 
     # Search each protein gaussian for features it matches (based on centroid)
-    for cv_index, protein_gauss_list in enumerate(analysis_obj.protein_gaussians):
+    for cv_index, protein_gauss_list in enumerate(analysis_obj.raw_protein_gaussians):
         # First, assign protein Gaussians to features
         for gaussian in protein_gauss_list:
             # check if any current features will accept the Gaussian
@@ -131,28 +131,34 @@ def feature_detect_gaussians(analysis_obj, params_obj):
                 features.append(new_feature)
 
         # After protein features are done, check if any nonprotein peaks match any features that don't already have a protein peak at this CV
-        if analysis_obj.nonprotein_gaussians is not None:
-            for nonprot_gaussian in analysis_obj.nonprotein_gaussians[cv_index]:
+        if analysis_obj.raw_nonprotein_gaussians is not None:
+            for nonprot_gaussian in analysis_obj.raw_nonprotein_gaussians[cv_index]:
                 current_cv = nonprot_gaussian.cv
                 for feature in features:
                     protein_cvs = [x.cv for x in feature.gaussians]
                     if current_cv not in protein_cvs:
+                        # use 2x feature standard deviation as width tolerance for non-protein peaks (95% conf lvl analogy)
+                        nonprot_width_tol = feature.get_std_dev() * 2
+
                         # this feature does not currently have any entries at this CV value, making it available to add a non-prot peak
-                        if feature.accept_centroid(nonprot_gaussian.centroid, width_tol_dt, current_cv, gap_tol_cv, cv_spacing):
+                        if feature.accept_centroid(nonprot_gaussian.centroid, nonprot_width_tol, current_cv, gap_tol_cv, cv_spacing):
                             # Change this "non-protein" Gaussian to a protein - likely misassigned
                             nonprot_gaussian.is_protein = True
                             feature.gaussians.append(nonprot_gaussian)
 
     # perform a second pass to add to features that were created after the CV at which these non-protein peaks were considered
-    if analysis_obj.nonprotein_gaussians is not None:
-        for cv_index, protein_gauss_list in reversed(list(enumerate(analysis_obj.protein_gaussians))):
-            for nonprot_gaussian in analysis_obj.nonprotein_gaussians[cv_index]:
+    if analysis_obj.raw_nonprotein_gaussians is not None:
+        for cv_index, protein_gauss_list in reversed(list(enumerate(analysis_obj.raw_protein_gaussians))):
+            for nonprot_gaussian in analysis_obj.raw_nonprotein_gaussians[cv_index]:
                 current_cv = nonprot_gaussian.cv
                 for feature in features:
                     protein_cvs = [x.cv for x in feature.gaussians]
                     if current_cv not in protein_cvs:
+                        # use 2x feature standard deviation as width tolerance for non-protein peaks (95% conf lvl analogy)
+                        nonprot_width_tol = feature.get_std_dev() * 2
+
                         # this feature does not currently have any entries at this CV value, making it available to add a non-prot peak
-                        if feature.accept_centroid(nonprot_gaussian.centroid, width_tol_dt, current_cv, gap_tol_cv, cv_spacing):
+                        if feature.accept_centroid(nonprot_gaussian.centroid, nonprot_width_tol, current_cv, gap_tol_cv, cv_spacing):
                             # Change this "non-protein" Gaussian to a protein - likely misassigned
                             if nonprot_gaussian not in feature.gaussians:
                                 # make sure this protein isn't already in this feature
@@ -162,7 +168,31 @@ def feature_detect_gaussians(analysis_obj, params_obj):
     # filter features to remove 'loners' without a sufficient number of points
     filtered_features = filter_features(features, params_obj.feature_2_min_length, mode='gaussian')
     analysis_obj.features_gaussian = filtered_features
+
+    # save filtered gaussians into analysis object as feat_protein_gaussians
+    assigned_gaussians = gaussians_by_cv_from_feats(filtered_features, cv_axis)
+    analysis_obj.feat_protein_gaussians = assigned_gaussians
+
     return analysis_obj
+
+
+def gaussians_by_cv_from_feats(feature_list, cv_axis):
+    """
+    Generate a list of Gaussians by CV from a list of features
+    :param feature_list: list of Features
+    :type feature_list: list[Feature]
+    :param cv_axis: CV axis to ensure Gaussians are placed in the correct location
+    :return: list of lists of Gaussian objects at each CV
+    """
+    gauss_lists_by_cv = [[] for _ in range(len(cv_axis))]
+
+    # place all Gaussians in each in feature into the final list of Gaussians
+    for feature in feature_list:
+        for gaussian in feature.gaussians:
+            insert_index = np.where(cv_axis == gaussian.cv)[0][0]
+            gauss_lists_by_cv[insert_index].append(gaussian)
+
+    return gauss_lists_by_cv
 
 
 def ciu50_main(analysis_obj, params_obj, outputdir, gaussian_bool):
@@ -337,7 +367,11 @@ def plot_features(analysis_obj, params_obj, outputdir):
     feature_index = 1
     if params_obj.feature_1_ciu50_mode == 'gaussian':
         # plot the raw data to show what was fit
-        filt_centroids = analysis_obj.get_attribute_by_cv('centroid', True)
+        # filt_centroids = analysis_obj.get_attribute_by_cv('centroid', True)
+        filt_centroids = []
+        for cv_sublist in analysis_obj.feat_protein_gaussians:
+            filt_centroids.append([gaussian.centroid for gaussian in cv_sublist])
+
         for x, y in zip(analysis_obj.axes[1], filt_centroids):
             plt.scatter([x] * len(y), y, c='w')
 
@@ -659,10 +693,10 @@ class Feature(object):
         :return: void
         """
         self.gauss_median_centroid = np.median([x.centroid for x in self.gaussians])
+        # get all CVs included (without repeats)
         for gaussian in self.gaussians:
             if gaussian.cv not in self.cvs:
                 self.cvs.append(gaussian.cv)
-        # self.cvs = [x.cv for x in self.gaussians if x.cv not in self.cvs]   # get all CV's included (without repeats)
         self.cvs = sorted(self.cvs)
 
     def accept_centroid(self, centroid, width_tol, collision_voltage, cv_tol, cv_spacing):
@@ -700,6 +734,16 @@ class Feature(object):
             return self.gauss_median_centroid
         else:
             return np.median(self.dt_max_vals)
+
+    def get_std_dev(self):
+        """
+        Return the standard deviation (in drift axis units) of centroids in this feature
+        :return: (float) std deviation
+        """
+        if self.gaussian_bool:
+            return np.std([x.centroid for x in self.gaussians])
+        else:
+            return np.std(self.centroids)
 
     def init_feature_data(self, cv_index_list, dt_val_list):
         """
@@ -963,24 +1007,24 @@ class Transition(object):
 
 
 # testing
-if __name__ == '__main__':
-    import tkinter
-    from tkinter import filedialog
-
-    # open a filechoose to choose .ciu files (change to .csv and add generate_raw_obj/process_raw_obj from CIU2 main if analyzing _raw.csv data)
-    root = tkinter.Tk()
-    root.withdraw()
-    files = filedialog.askopenfilenames(filetypes=[('CIU', '.ciu')])
-    main_dir = os.path.dirname(files[0])
-
-    # initialize parameters to defaults
-    params = CIU_Params.Parameters()
-    params.set_params(CIU_Params.parse_params_file(CIU_Params.hard_descripts_file))
-
-    # load files and run feature detection and/or CIU-50
-    for file in files:
-        with open(file, 'rb') as analysis_file:
-            obj = pickle.load(analysis_file)
-
-        obj = feature_detect_col_max(obj, params)
-        obj = ciu50_main(obj, params, main_dir, gaussian_bool=False)
+# if __name__ == '__main__':
+    # import tkinter
+    # from tkinter import filedialog
+    #
+    # # open a filechoose to choose .ciu files (change to .csv and add generate_raw_obj/process_raw_obj from CIU2 main if analyzing _raw.csv data)
+    # root = tkinter.Tk()
+    # root.withdraw()
+    # files = filedialog.askopenfilenames(filetypes=[('CIU', '.ciu')])
+    # main_dir = os.path.dirname(files[0])
+    #
+    # # initialize parameters to defaults
+    # params = CIU_Params.Parameters()
+    # params.set_params(CIU_Params.parse_params_file(CIU_Params.hard_descripts_file))
+    #
+    # # load files and run feature detection and/or CIU-50
+    # for file in files:
+    #     with open(file, 'rb') as analysis_file:
+    #         obj = pickle.load(analysis_file)
+    #
+    #     obj = feature_detect_col_max(obj, params)
+    #     obj = ciu50_main(obj, params, main_dir, gaussian_bool=False)

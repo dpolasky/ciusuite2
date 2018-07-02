@@ -697,54 +697,6 @@ class CIUSuite2(object):
             self.display_analysis_files()
         self.progress_done()
 
-    # todo: deprecated
-    # def on_button_ciu50_gaussian_clicked(self):
-    #     """
-    #     Repeat of CIU50 button, but with Gaussian feature det instead of changepoint. Will clean up
-    #     so there's only one method once final analysis method is decided on.
-    #     :return: void
-    #     """
-    #     param_keys = [x for x in self.params_obj.params_dict.keys() if 'ciu50_gauss' in x and 'cpt' not in x]
-    #     if self.run_param_ui('CIU-50 Parameters', param_keys):
-    #         files_to_read = self.check_file_range_entries()
-    #         self.progress_started()
-    #
-    #         new_file_list = []
-    #         all_outputs = ''
-    #         short_outputs = ''
-    #         filename = ''
-    #         combine_flag = False
-    #         for file in files_to_read:
-    #             # load file
-    #             analysis_obj = load_analysis_obj(file)
-    #
-    #             # run feature detection
-    #             analysis_obj = Feature_Detection.ciu50_gaussians(analysis_obj, self.params_obj, outputdir=self.output_dir)
-    #             filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
-    #             new_file_list.append(filename)
-    #
-    #             if not self.params_obj.ciu50_gauss_2_combine_outputs:
-    #                 Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir)
-    #                 Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir)
-    #                 combine_flag = False
-    #             else:
-    #                 file_string = os.path.basename(filename).rstrip('.ciu') + '\n'
-    #                 all_outputs += file_string
-    #                 all_outputs += Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir, combine=True)
-    #                 short_outputs += os.path.basename(filename).rstrip('.ciu')
-    #                 short_outputs += Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir, combine=True)
-    #                 combine_flag = True
-    #             self.update_progress(files_to_read.index(file), len(files_to_read))
-    #
-    #         if combine_flag:
-    #             outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_ciu50s.csv')
-    #             outputpath_short = os.path.join(self.output_dir,
-    #                                             os.path.basename(filename.rstrip('.ciu')) + '_ciu50-short.csv')
-    #             save_existing_output_string(outputpath, all_outputs)
-    #             save_existing_output_string(outputpath_short, short_outputs)
-    #
-    #         self.display_analysis_files()
-    #     self.progress_done()
 
     def on_button_gaussian_reconstruct_clicked(self):
         """
@@ -786,12 +738,12 @@ class CIUSuite2(object):
                     analysis_obj = load_analysis_obj(file)
 
                     # check to make sure the analysis_obj has Gaussian data fitted
-                    if analysis_obj.protein_gaussians is None:
+                    if analysis_obj.feat_protein_gaussians is None:
                         messagebox.showerror('Gaussian feature detection required', 'Data in file {} does not have Gaussian feature detection performed. Please run Gaussian feature detection, then try again.')
                         break
 
                     # If gaussian data exists, perform the analysis
-                    new_obj = Gaussian_Fitting.reconstruct_from_fits(analysis_obj.protein_gaussians, analysis_obj.axes, analysis_obj.short_filename, self.params_obj)
+                    new_obj = Gaussian_Fitting.reconstruct_from_fits(analysis_obj.feat_protein_gaussians, analysis_obj.axes, analysis_obj.short_filename, self.params_obj)
                     filename = save_analysis_obj(new_obj, self.params_obj, outputdir=self.output_dir)
                     new_file_list.append(filename)
                     self.update_progress(files_to_read.index(file), len(files_to_read))
@@ -817,7 +769,7 @@ class CIUSuite2(object):
 
                 if self.params_obj.feature_1_ciu50_mode == 'gaussian':
                     # check to make sure the analysis_obj has Gaussian data fitted
-                    if analysis_obj.gaussians is None:
+                    if analysis_obj.raw_protein_gaussians is None:
                         messagebox.showwarning('Gaussian fitting required', 'Data in file {} does not have Gaussian fitting'
                                                                             'performed. Please run Gaussian fitting, then try '
                                                                             'again.')

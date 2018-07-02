@@ -104,6 +104,7 @@ class SingleFitStats(object):
         """
         self.x_data = x_data
         self.y_data = y_data
+        self.cv = cv
 
         if lmfit_output is not None:
             protein_popt, nonprotein_popt = get_popt_from_lmoutput(lmfit_output, amp_cutoff)
@@ -458,9 +459,11 @@ def gaussian_lmfit_main(analysis_obj, params_obj):
     :return: updated analysis object
     :rtype: CIUAnalysisObj
     """
+    print('Starting Gaussian fitting for file {}'.format(analysis_obj.short_filename))
     start_time = time.time()
 
     cv_col_data = np.swapaxes(analysis_obj.ciu_data, 0, 1)
+    main_out_dir = os.path.dirname(analysis_obj.filename)
     outputpath = os.path.join(os.path.dirname(analysis_obj.filename), analysis_obj.short_filename)
     if not os.path.isdir(outputpath):
         os.makedirs(outputpath)
@@ -483,6 +486,8 @@ def gaussian_lmfit_main(analysis_obj, params_obj):
         pool_result = pool.apply_async(iterate_lmfitting, args=argslist)
         results.append(pool_result)
 
+    pool.close()    # tell the pool we don't need it process any more data
+
     for cv_index, cv_results in enumerate(results):
         all_fits = cv_results.get()
 
@@ -491,6 +496,8 @@ def gaussian_lmfit_main(analysis_obj, params_obj):
         best_fits_by_cv.append(best_fit)
         scores_by_cv.append([fit.score for fit in all_fits])
 
+    pool.join()     # terminate pool processes once finished
+
     # output final results
     fit_time = time.time() - start_time
     print('fitting done in {:.2f}'.format(fit_time))
@@ -498,9 +505,7 @@ def gaussian_lmfit_main(analysis_obj, params_obj):
     # save output
     prot_gaussians = [fit.gaussians_protein for fit in best_fits_by_cv]
     nonprot_gaussians = [fit.gaussians_nonprotein for fit in best_fits_by_cv]
-    all_gaussians = [fit.gaussians for fit in best_fits_by_cv]
-    # rsqs = [fit.adjrsq for fit in best_fits_by_cv]
-    # save_gaussfits_pdf(analysis_obj, prot_gaussians, outputpath, rsq_list=rsqs, filename_append='lmfit')
+    # all_gaussians = [fit.gaussians for fit in best_fits_by_cv]
     save_fits_pdf_new(analysis_obj, best_fits_by_cv, outputpath)
 
     best_centroids = []
@@ -509,15 +514,15 @@ def gaussian_lmfit_main(analysis_obj, params_obj):
     nonprot_centroids = []
     for gauss_list in nonprot_gaussians:
         nonprot_centroids.append([x.centroid for x in gauss_list])
-    plot_centroids(best_centroids, analysis_obj, outputpath, nonprotein_centroids=nonprot_centroids)
+    plot_centroids(best_centroids, analysis_obj, main_out_dir, nonprotein_centroids=nonprot_centroids)
 
     plot_time = time.time() - start_time - fit_time
     print('plotting done in {:.2f}'.format(plot_time))
 
     # save results to analysis obj
-    analysis_obj.gaussians = all_gaussians
-    analysis_obj.protein_gaussians = prot_gaussians
-    analysis_obj.nonprotein_gaussians = nonprot_gaussians
+    # analysis_obj.gaussians = all_gaussians
+    analysis_obj.raw_protein_gaussians = prot_gaussians
+    analysis_obj.raw_nonprotein_gaussians = nonprot_gaussians
     analysis_obj.gauss_fits_by_cv = best_fits_by_cv
 
     return analysis_obj
@@ -646,39 +651,84 @@ def iterate_lmfitting(x_data, y_data, guesses_list, params_obj, outputpath):
     output_fits = []
     # iterate over all peak combinations
     for num_prot_pks in range(1, max_num_prot_pks + 1):
-        for num_nonprot_pks in range(params_obj.gaussian_81_min_nonprot_comps, max_num_nonprot_pks + 1):
-            # assemble the models and fit parameters for this number of protein/non-protein peaks
-            models_list, fit_params = assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, dt_axis=x_data)
-
-            # combine all model parameters and perform the actual fitting
-            final_model = models_list[0]
-            for model in models_list[1:]:
-                final_model += model
-
-            output = final_model.fit(y_data, fit_params, x=x_data, method=params_obj.gaussian_6_fit_method, nan_policy='omit',
-                                     scale_covar=False)
-
-            # compute fits and score
-            current_fit = SingleFitStats(x_data=x_data, y_data=y_data, cv=cv, lmfit_output=output, amp_cutoff=params_obj.gaussian_2_int_threshold)
-            # only score protein peaks, as non-protein peaks can overlap and have differing widths (may add different score func eventually if needed)
-            current_fit.compute_fit_score(params_obj, penalty_scaling=1)
+        # Mass selected mode (no nonprotein peaks)
+        if max_num_nonprot_pks == 0:
+            num_nonprot_pks = 0
+            current_fit, lmfit_output = perform_fit(x_data, y_data, cv, num_prot_pks, num_nonprot_pks, guesses_list,
+                                                    params_obj)
             output_fits.append(current_fit)
 
-            plt.clf()
-            model_components = output.eval_components(x=x_data)
-            output.plot_fit()
-            for component_name, comp_value in model_components.items():
-                plt.plot(x_data, comp_value, '--', label=component_name)
-            plt.legend(loc='best')
-            if not output.success:
-                plt.title('{}V, fitting failed'.format(cv))
-            else:
-                penalty_string = ['{:.2f}'.format(x) for x in current_fit.peak_penalties]
-                plt.title('{}V, r2: {:.3f}, score: {:.4f}, peak pens: {}'.format(cv, current_fit.adjrsq, current_fit.score, ','.join(penalty_string)))
-            outputname = os.path.join(outputpath, '{}_p{}_np{}_fits.png'.format(cv, num_prot_pks, num_nonprot_pks))
-            plt.savefig(outputname)
+            outputname = os.path.join(outputpath, '{}_p{}_fits.png'.format(cv, num_prot_pks))
+            plot_fit_result(current_fit, lmfit_output, x_data, outputname)
+        else:
+            # No selection mode - iterate over nonprotein peaks as well
+            for num_nonprot_pks in range(params_obj.gaussian_81_min_nonprot_comps, max_num_nonprot_pks + 1):
+
+                current_fit, lmfit_output = perform_fit(x_data, y_data, cv, num_prot_pks, num_nonprot_pks, guesses_list, params_obj)
+                output_fits.append(current_fit)
+
+                outputname = os.path.join(outputpath, '{}_p{}_np{}_fits.png'.format(cv, num_prot_pks, num_nonprot_pks))
+                plot_fit_result(current_fit, lmfit_output, x_data, outputname)
 
     return output_fits
+
+
+def perform_fit(x_data, y_data, cv, num_prot_pks, num_nonprot_pks, guesses_list, params_obj):
+    """
+    Helper method to improve code readability. Runs fitting for iterate_lmfit with provided data
+    and peak options/guesses.
+    :param x_data: DT (x) data to fit (ndarray)
+    :param y_data: intensity (y) data to fit (ndarray)
+    :param cv: collision voltage (float)
+    :param num_prot_pks: (int) number of protein components to fit in this iteration
+    :param num_nonprot_pks: (int) number of nonprotein components to fit in this iteration
+    :param guesses_list: list of peak initial guesses (list of Gaussian objects)
+    :param params_obj: Parameters object
+    :type params_obj: Parameters
+    :return: SingleFitStats container with fit results and score, LMFit output (ModelResult) from fitting
+    """
+    # assemble the models and fit parameters for this number of protein/non-protein peaks
+    models_list, fit_params = assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, dt_axis=x_data)
+
+    # combine all model parameters and perform the actual fitting
+    final_model = models_list[0]
+    for model in models_list[1:]:
+        final_model += model
+
+    output = final_model.fit(y_data, fit_params, x=x_data, method=params_obj.gaussian_6_fit_method, nan_policy='omit',
+                             scale_covar=False)
+
+    # compute fits and score
+    current_fit = SingleFitStats(x_data=x_data, y_data=y_data, cv=cv, lmfit_output=output,
+                                 amp_cutoff=params_obj.gaussian_2_int_threshold)
+    # only score protein peaks, as non-protein peaks can overlap and have differing widths (may add different score func eventually if needed)
+    current_fit.compute_fit_score(params_obj, penalty_scaling=1)
+    return current_fit, output
+
+
+def plot_fit_result(current_fit, output, x_data, outputname):
+    """
+    Plotting method for diagnostics. Creates a fit plot for an iteration.
+    :param current_fit: fit stats container
+    :type current_fit: SingleFitStats
+    :param output: LMFit output (ModelResult) from the fitting. Can't be saved to SingleFitStats without breaking pickle-ability
+    :param x_data: (ndarray) x (drift axis) data from fitting to plot
+    :param outputname: full output filename and path to save plot
+    :return: void
+    """
+    plt.clf()
+    model_components = output.eval_components(x=x_data)
+    output.plot_fit()
+    for component_name, comp_value in model_components.items():
+        plt.plot(x_data, comp_value, '--', label=component_name)
+    plt.legend(loc='best')
+    if not output.success:
+        plt.title('{}V, fitting failed'.format(current_fit.cv))
+    else:
+        penalty_string = ['{:.2f}'.format(x) for x in current_fit.peak_penalties]
+        plt.title('{}V, r2: {:.3f}, score: {:.4f}, peak pens: {}'.format(current_fit.cv, current_fit.adjrsq, current_fit.score,
+                                                                         ','.join(penalty_string)))
+    plt.savefig(outputname)
 
 
 def assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, dt_axis):
@@ -1164,7 +1214,10 @@ def plot_fwhms(analysis_obj, outputpath):
     :return: void
     """
     print('Saving TrapcCVvsFWHM_' + str(analysis_obj.raw_obj.filename) + '_.png .....')
-    gauss_fwhms = analysis_obj.get_attribute_by_cv('fwhm', False)
+    # gauss_fwhms = analysis_obj.get_attribute_by_cv('fwhm', False)
+    gauss_fwhms = []
+    for cv_sublist in analysis_obj.raw_protein_gaussians:
+        gauss_fwhms.append([gaussian.fwhm for gaussian in cv_sublist])
 
     for x, y in zip(analysis_obj.axes[1], gauss_fwhms):
         plt.scatter([x] * len(y), y)
@@ -1195,23 +1248,20 @@ def save_gauss_params(analysis_obj, outputpath):
         output.write('# Trap CV,Amplitude,Centroid,Peak Width\n')
         index = 0
         while index < len(analysis_obj.axes[1]):
-            # outputline = '{},'.format(self.axes[1][index])
-            outputline = ','.join([gaussian.print_info() for gaussian in analysis_obj.protein_gaussians[index]])
-            # outputline += ','.join(['{:.2f}'.format(x) for x in self.gauss_filt_params[index]])
-            output.write(outputline + '\n')
+            # todo: fix (save raw prot/nonprot, feat_prot gaussians)
+            # outputline = ','.join([gaussian.print_info() for gaussian in analysis_obj.protein_gaussians[index]])
+            # output.write(outputline + '\n')
             index += 1
 
-        index = 0
-        output.write('# All Gaussians (round 2)\n')
-        output.write('# Trap CV,Amplitude,Centroid,Peak Width\n')
-        while index < len(analysis_obj.axes[1]):
-            # gauss_line = '{:.3f},{:.3f},'.format(analysis_obj.gauss_r2s[index], analysis_obj.gauss_adj_r2s[index])
-            # gauss_line += ','.join(['{:.2f}'.format(x) for x in self.gauss_params[index]])
-            gauss_line = ','.join([gaussian.print_info() for gaussian in analysis_obj.gaussians[index]])
-
-            # gauss_line += ','.join([str(x) for x in self.gauss_params[index]])
-            output.write(gauss_line + '\n')
-            index += 1
+        # index = 0
+        # output.write('# All Gaussians (round 2)\n')
+        # output.write('# Trap CV,Amplitude,Centroid,Peak Width\n')
+        # while index < len(analysis_obj.axes[1]):
+        #     gauss_line = ','.join([gaussian.print_info() for gaussian in analysis_obj.gaussians[index]])
+        #
+        #     # gauss_line += ','.join([str(x) for x in self.gauss_params[index]])
+        #     output.write(gauss_line + '\n')
+        #     index += 1
 
 
 if __name__ == '__main__':

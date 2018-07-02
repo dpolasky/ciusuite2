@@ -48,18 +48,12 @@ class CIUAnalysisObj(object):
         self.features_gaussian = None   # type: List[Feature]
         self.features_changept = None   # type: List[Feature]
 
-        # Gaussian fitting parameters - not always initialized with the object
-        self.gaussians = None
-        # self.filtered_gaussians = None
-        self.protein_gaussians = None
-        self.nonprotein_gaussians = None
+        # Gaussian fitting results - raw and following feature detection included
+        # self.gaussians = None
+        self.raw_protein_gaussians = None
+        self.raw_nonprotein_gaussians = None
+        self.feat_protein_gaussians = None
         self.gauss_fits_by_cv = None
-
-        # self.gauss_adj_r2s = None
-        # self.gauss_fits = None
-        # self.gauss_covariances = None
-        # self.gauss_r2s = None
-        # self.gauss_fit_stats = None
 
         # classification (unknown) outputs
         self.classif_predicted_label = None
@@ -89,37 +83,38 @@ class CIUAnalysisObj(object):
         self.col_max_dts = [self.axes[0][x] for x in self.col_maxes]
         # self.col_max_dts = [self.axes[0][0] + (x - 1) * self.bin_spacing for x in self.col_maxes]  # DT of maximum value
 
-    def get_attribute_by_cv(self, attribute, filtered):
-        """
-        Return a list of lists of the specified attribute at each collision voltage (i.e. [[centroid 1], [centroid 1,
-        centroid 2], ..]. Attributes must be exact string matches for the attribute name in the Gaussian object
-        :param attribute: Name (string) of the gaussian attribute to get. Options = 'centroid', 'amplitude', 'width',
-        etc. See Gaussian class for details.
-        :param filtered: if True, returns from filtered_gaussians instead of gaussians
-        :return: CV-sorted list of centroid lists
-        """
-        attribute_list = []
-        if filtered:
-            for cv_sublist in self.protein_gaussians:
-                attribute_list.append([getattr(gaussian, attribute) for gaussian in cv_sublist])
-        else:
-            for cv_sublist in self.gaussians:
-                attribute_list.append([getattr(gaussian, attribute) for gaussian in cv_sublist])
-        return attribute_list
-
-    def get_attribute_flat(self, attribute, filtered_bool):
-        """
-        Return a flattened list (not sorted by CV) of all attributes from a list of Gaussian objects.
-        Attribute string must exactly match attribute name in Gaussian object.
-        :param attribute: Name (string) of the gaussian attribute to get. Options = 'centroid', 'amplitude', 'width',
-        etc. See Gaussian class for details.
-        :param filtered_bool: if True, returns from filtered_gaussians instead of gaussians
-        :return: list of attribute values
-        """
-        if filtered_bool:
-            return [getattr(gaussian, attribute) for cv_sublist in self.protein_gaussians for gaussian in cv_sublist]
-        else:
-            return [getattr(gaussian, attribute) for cv_sublist in self.gaussians for gaussian in cv_sublist]
+    # todo: deprecate
+    # def get_attribute_by_cv(self, attribute, filtered):
+    #     """
+    #     Return a list of lists of the specified attribute at each collision voltage (i.e. [[centroid 1], [centroid 1,
+    #     centroid 2], ..]. Attributes must be exact string matches for the attribute name in the Gaussian object
+    #     :param attribute: Name (string) of the gaussian attribute to get. Options = 'centroid', 'amplitude', 'width',
+    #     etc. See Gaussian class for details.
+    #     :param filtered: if True, returns from filtered_gaussians instead of gaussians
+    #     :return: CV-sorted list of centroid lists
+    #     """
+    #     attribute_list = []
+    #     if filtered:
+    #         for cv_sublist in self.protein_gaussians:
+    #             attribute_list.append([getattr(gaussian, attribute) for gaussian in cv_sublist])
+    #     else:
+    #         for cv_sublist in self.gaussians:
+    #             attribute_list.append([getattr(gaussian, attribute) for gaussian in cv_sublist])
+    #     return attribute_list
+    #
+    # def get_attribute_flat(self, attribute, filtered_bool):
+    #     """
+    #     Return a flattened list (not sorted by CV) of all attributes from a list of Gaussian objects.
+    #     Attribute string must exactly match attribute name in Gaussian object.
+    #     :param attribute: Name (string) of the gaussian attribute to get. Options = 'centroid', 'amplitude', 'width',
+    #     etc. See Gaussian class for details.
+    #     :param filtered_bool: if True, returns from filtered_gaussians instead of gaussians
+    #     :return: list of attribute values
+    #     """
+    #     if filtered_bool:
+    #         return [getattr(gaussian, attribute) for cv_sublist in self.protein_gaussians for gaussian in cv_sublist]
+    #     else:
+    #         return [getattr(gaussian, attribute) for cv_sublist in self.gaussians for gaussian in cv_sublist]
 
 
 # testing
