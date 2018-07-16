@@ -21,9 +21,9 @@ import lmfit
 import time
 import multiprocessing
 
-from CIU_raw import CIURaw
-from Raw_Processing import normalize_by_col
-from CIU_analysis_obj import CIUAnalysisObj
+import CIU_raw
+import Raw_Processing
+import CIU_analysis_obj
 
 # imports for type checking
 from typing import TYPE_CHECKING
@@ -53,7 +53,7 @@ class Gaussian(object):
         self.width = width
         self.cv = collision_voltage
         self.fwhm = 2*(math.sqrt(2*math.log(2)))*self.width
-        self.resolution = self.centroid/self.fwhm
+        self.resolution = self.centroid/(self.fwhm + 1e-10)
         self.fit_covariances = pcov
         self.is_protein = protein_bool
         if pcov is not None:
@@ -281,11 +281,6 @@ def gaussfunc(x, amplitude, centroid, sigma):
     y = amplitude * (np.exp(-exponent))         # using this function since our data is always normalized
     # y = amplitude/(np.sqrt(2*np.pi) * sigma) * (np.exp(-exponent))     # use this for non-normalized data
 
-    # if amplitude < 0.25:
-    #     y = amplitude / sigma * (np.exp(-exponent))
-    # else:
-    #     y = amplitude * (np.exp(-exponent))
-
     return y
 
 
@@ -379,10 +374,10 @@ def reconstruct_from_fits(gaussian_lists_by_cv, axes, new_filename, params_obj):
 
     # finally, transpose the CIU data to match the typical format, normalize, and return the object
     final_data = np.asarray(ciu_data_by_cols).T
-    final_data = normalize_by_col(final_data)
+    final_data = Raw_Processing.normalize_by_col(final_data)
 
-    raw_obj = CIURaw(final_data, dt_axis, axes[1], new_filename)
-    new_analysis_obj = CIUAnalysisObj(raw_obj, final_data, axes, params_obj)
+    raw_obj = CIU_raw.CIURaw(final_data, dt_axis, axes[1], new_filename)
+    new_analysis_obj = CIU_analysis_obj.CIUAnalysisObj(raw_obj, final_data, axes, params_obj)
     new_analysis_obj.short_filename = new_analysis_obj.short_filename + '_gauss-recon'
 
     new_analysis_obj.protein_gaussians = gaussian_lists_by_cv

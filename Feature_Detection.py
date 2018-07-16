@@ -11,13 +11,15 @@ import scipy.optimize
 import scipy.interpolate
 import os
 import Raw_Processing
-# import pickle
-# import CIU_Params
+import Gaussian_Fitting
 
 # imports for type checking
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from CIU_analysis_obj import CIUAnalysisObj
+
+# todo: put in final version?
+# np.warnings.filterwarnings('ignore')
 
 TRANS_COLOR_DICT = {6: 'white',
                     0: 'red',
@@ -222,7 +224,7 @@ def ciu50_main(features_list, analysis_obj, params_obj, outputdir, gaussian_bool
         adjusted_features = features_list
 
     # compute transitions
-    transitions_list = compute_transitions(analysis_obj, params_obj, adjusted_features)
+    transitions_list = compute_transitions(analysis_obj, params_obj, adjusted_features, gaussian_bool)
     if len(transitions_list) == 0:
         print('No transitions found for file {}'.format(os.path.basename(analysis_obj.filename).rstrip('.ciu')))
 
@@ -231,7 +233,7 @@ def ciu50_main(features_list, analysis_obj, params_obj, outputdir, gaussian_bool
     return analysis_obj
 
 
-def compute_transitions(analysis_obj, params_obj, adjusted_features):
+def compute_transitions(analysis_obj, params_obj, adjusted_features, gaussian_bool):
     """
     Fit logistic/sigmoidal transition functions to the transition between each sequential pair
     of features in the provided gaussian feature list. Saves Transition objects containing combined
@@ -241,8 +243,9 @@ def compute_transitions(analysis_obj, params_obj, adjusted_features):
     :type analysis_obj: CIUAnalysisObj
     :param params_obj: Parameters object with parameter information
     :type params_obj: Parameters
-    :rtype: list[Transition]
+    :param gaussian_bool: Gaussian mode (True) or standard (False)
     :return: list of Transition objects (also saves to analysis_obj)
+    :rtype: list[Transition]
     """
     # initialize transition fitting information for gaussian feature lists
     for feature in adjusted_features:
@@ -264,7 +267,8 @@ def compute_transitions(analysis_obj, params_obj, adjusted_features):
     while index < len(adjusted_features) - 1:
         current_transition = Transition(adjusted_features[index],
                                         adjusted_features[index + 1],
-                                        analysis_obj)
+                                        analysis_obj,
+                                        gaussian_bool)
         # check to make sure this is a transition that should be fitted (upper feature has a col max)
         if current_transition.check_features(analysis_obj, params_obj):
             current_transition.fit_transition(params_obj)
@@ -523,12 +527,18 @@ def plot_transitions(transition_list, analysis_obj, params_obj, outputdir):
     # plot the initial CIU contour plot for reference
     plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap=params_obj.plot_01_cmap)
 
-    # plot markers for the features/segments assigned
-    plt.plot(x_axis, y_data, 'wo')
-
     # plot all transitions
     transition_num = 0
     for transition in transition_list:
+        # plot markers for the max/average/median values used in fitting for reference
+        for index, cv in enumerate(transition.combined_x_axis):
+            if params_obj.ciu50_1_centroiding_mode == 'max':
+                plt.plot(cv, transition.combined_y_vals[index], 'wo')
+            elif params_obj.ciu50_1_centroiding_mode == 'average':
+                plt.plot(cv, transition.combined_y_avg_raw[index], 'wo')
+            elif params_obj.ciu50_1_centroiding_mode == 'median':
+                plt.plot(cv, transition.combined_y_median_raw[index], 'wo')
+
         # prepare and plot the actual transition using fitted parameters
         interp_x = np.linspace(x_axis[0], x_axis[len(x_axis) - 1], 200)
         y_fit = logistic_func(interp_x, *transition.fit_params)
@@ -625,7 +635,7 @@ def fit_logistic(x_axis, y_data, guess_center, guess_min, guess_max, steepness_g
     # guess initial params: [c, y0, x0, k], default guess k=1
     p0 = [guess_max, guess_min, guess_center, steepness_guess]
     # constrain all parameters to positive values
-    fit_bounds_lower = [0, 0, 0, 0]
+    fit_bounds_lower = [1e-5, 1e-5, 1e-5, 1e-10]
     fit_bounds_upper = [np.inf, np.inf, np.inf, np.inf]
     try:
         popt, pcov = scipy.optimize.curve_fit(logistic_func, x_axis, y_data, p0=p0,
@@ -739,6 +749,18 @@ class Feature(object):
         else:
             return np.std(self.centroids)
 
+    def get_gaussian_at_cv(self, cv):
+        """
+        Return the Gaussian at the provided cv, or None if one is not present
+        :param cv: collision voltage (float) at which to look for the Gaussian
+        :return: Gaussian object found at the provided CV, or a Gaussian with 0 amplitude if none found
+        :rtype: Gaussian
+        """
+        for gaussian in self.gaussians:
+            if gaussian.cv == cv:
+                return gaussian
+        return Gaussian_Fitting.Gaussian(amplitude=0, width=1e-5, centroid=0, collision_voltage=cv, pcov=None, protein_bool=False)
+
     def init_feature_data(self, cv_index_list, dt_val_list):
         """
         Import and set data to use with Transition class. Adapted to removed ChangeptFeature subclass
@@ -761,7 +783,7 @@ class Transition(object):
     their combined CV/index range and DT data, and fitted logistic function parameters
     and CIU50.
     """
-    def __init__(self, feature1, feature2, analysis_obj):
+    def __init__(self, feature1, feature2, analysis_obj, gaussian_bool):
         """
         Create a combined Transition object from two identified features. Features MUST be
         adjacent in CV space for this to make sense.
@@ -769,15 +791,10 @@ class Transition(object):
         :param feature2: Higher CV ("later/ending") Feature object
         :param analysis_obj: CIUAnalysisObj with data to be fitted
         :type analysis_obj: CIUAnalysisObj
+        :param gaussian_bool: Whether to fit in Gaussian mode (True) or standard (False)
         """
         # initialize data from analysis_obj
-        self.whole_cv_axis = analysis_obj.axes[1]
-        dt_axis = analysis_obj.axes[0]
-        self.whole_dt_maxes = analysis_obj.col_max_dts
-        ciu_data = analysis_obj.ciu_data
         self.filename = analysis_obj.short_filename
-
-        self.center_guess_gaussian = None
 
         self.feature1 = feature1    # type: Feature
         self.feature2 = feature2    # type: Feature
@@ -791,34 +808,9 @@ class Transition(object):
             # overlapping features: flip sign to make feature distance the overlap distance
             self.feat_distance = self.feat_distance * -1
 
-        self.combined_x_axis = self.whole_cv_axis[self.start_index: self.end_index + 1]     # +1 b/c slicing
-        self.combined_y_vals = self.whole_dt_maxes[self.start_index: self.end_index + 1]    # +1 b/c slicing
+        self.combined_x_axis = analysis_obj.axes[1][self.start_index: self.end_index + 1]     # +1 b/c slicing
+        self.combined_y_vals, self.combined_y_avg_raw, self.combined_y_median_raw = self.compute_spectral_yvals(analysis_obj.ciu_data, analysis_obj.axes[0], gaussian_bool)
 
-        # Raw y data for final transition fitting
-        y_col_data = np.swapaxes(ciu_data, 0, 1)
-        y_wtd_avg_cols = []
-        y_median_cols = []
-        for cv_col in y_col_data:
-            # the weighted sum of a column is the product of intensity * drift time for each bin
-            wtd_sum_dt = 0
-            int_sum = 0
-            wtd_sum_dts = []
-            for i in range(len(cv_col)):
-                # cv_col[i] is the intensity at drift bin i; axes[0][i] is the drift time at bin i
-                wtd_value = cv_col[i] * dt_axis[i]
-                wtd_sum_dt += wtd_value
-                int_sum += cv_col[i]
-                wtd_sum_dts.append(wtd_sum_dt)
-            # spectral centroid (average) = (sum of (DT_value * intensity)) / (sum of intensity)
-            y_wtd_avg_cols.append(wtd_sum_dt / int_sum)
-            med_value = wtd_sum_dt / 2.0
-            wtd_sum_dts = np.asarray(wtd_sum_dts)
-            med_index = (np.abs(wtd_sum_dts - med_value)).argmin()
-            med_dt = dt_axis[med_index]
-            y_median_cols.append(med_dt)
-        # y_avg_cols = np.average(y_col_data, axis=1)
-        self.combined_y_avg_raw = y_wtd_avg_cols[self.start_index: self.end_index + 1]
-        self.combined_y_median_raw = y_median_cols[self.start_index: self.end_index + 1]
         self.min_guess = None
         self.max_guess = None
 
@@ -839,6 +831,73 @@ class Transition(object):
             return '<Transition> range: {}-{}'.format(self.start_cv, self.end_cv)
     __repr__ = __str__
 
+    def compute_spectral_yvals(self, ciu_data, dt_axis, gaussian_bool):
+        """
+        Determine spectral average and median values in standard and Gaussian modes to be
+        used in CIU50 fitting. Assumes that self.combined_y_vals has been set to the column
+        maxes of the provided ciu_data
+        :param ciu_data: CIUAnalysisObj.ciu_data: CIU data array in standard form
+        :param dt_axis: IM axis from CIUAnalysisObj
+        :param gaussian_bool: True if Gaussian, False if standard
+        :return: lists of max, average, and median values at each CV in the Transition
+        """
+        # max_indices = [np.argmax(ciu_data, axis=0)]
+        # y_max_vals = [dt_axis[x] for x in max_indices]
+        y_max_cols = []
+        y_wtd_avg_cols = []
+        y_median_cols = []
+
+        # prepare CIU column data for analysis
+        if not gaussian_bool:
+            # standard mode, compute y values based on raw data within the feature range
+            y_col_data = np.swapaxes(ciu_data, 0, 1)
+            y_col_data = y_col_data[self.start_index: self.end_index + 1]
+        else:
+            # Gaussian mode - use filtered Gaussian data to compute y-values
+            gaussian_ciu_cols = []
+
+            # Reconstruct Gaussian data for ONLY the two features being considered
+            for cv in self.combined_x_axis:
+                gauss1 = self.feature1.get_gaussian_at_cv(cv)
+                gauss2 = self.feature2.get_gaussian_at_cv(cv)
+                all_params = gauss1.return_popt()
+                all_params.extend(gauss2.return_popt())
+                recon_data = Gaussian_Fitting.multi_gauss_func(dt_axis, *all_params)
+                gaussian_ciu_cols.append(recon_data)
+
+            y_col_data = gaussian_ciu_cols
+
+        # compute spectral max, average, and median for each CIU column
+        for cv_col in y_col_data:
+            max_index = np.argmax(cv_col)
+            y_max_cols.append(dt_axis[max_index])
+
+            # the weighted sum of a column is the product of intensity * drift time for each bin
+            wtd_sum_dt = 0
+            int_sum = 0
+            wtd_sum_dts = []
+            for i in range(len(cv_col)):
+                # cv_col[i] is the intensity at drift bin i; axes[0][i] is the drift time at bin i
+                wtd_value = cv_col[i] * dt_axis[i]
+                wtd_sum_dt += wtd_value
+                int_sum += cv_col[i]
+                wtd_sum_dts.append(wtd_sum_dt)
+
+            # spectral centroid (average) = (sum of (DT_value * intensity)) / (sum of intensity)
+            y_wtd_avg_cols.append(wtd_sum_dt / int_sum)
+
+            # spectral median - center of weighted sum distribution
+            med_value = wtd_sum_dt / 2.0
+            wtd_sum_dts = np.asarray(wtd_sum_dts)
+            med_index = (np.abs(wtd_sum_dts - med_value)).argmin()
+            med_dt = dt_axis[med_index]
+            y_median_cols.append(med_dt)
+        # combined_y_max = y_max_vals[self.start_index: self.end_index + 1]
+        # combined_y_avg = y_wtd_avg_cols[self.start_index: self.end_index + 1]
+        # combined_y_median = y_median_cols[self.start_index: self.end_index + 1]
+
+        return y_max_cols, y_wtd_avg_cols, y_median_cols
+
     def fit_transition(self, params_obj):
         """
         Fit a logistic function to the transition using the feature information. Requires
@@ -849,15 +908,6 @@ class Transition(object):
         """
         # initial fitting guesses: center is in between the features, min/max are median DTs of features 1 and 2
         center_guess = self.feature2.start_cv_val - (self.feat_distance / 2.0)   # halfway between features
-
-        # todo: deprecate?
-        # if gaussian_bool:
-        #     self.min_guess = self.feature1.gauss_median_centroid
-        #     self.max_guess = self.feature2.gauss_median_centroid
-        #     steepness_guess = abs(2 * 1 / (self.feat_distance + 1))
-        # else:
-        # self.min_guess = dt_min + (np.median(self.feature1.dt_max_bins) - 1) * bin_spacing
-        # self.max_guess = dt_min + (np.median(self.feature2.dt_max_bins) - 1) * bin_spacing
         self.min_guess = self.feature1.get_median()
         self.max_guess = self.feature2.get_median()
 
@@ -890,18 +940,15 @@ class Transition(object):
             interp_function_raw = None
 
         if params_obj.ciu50_1_centroiding_mode == 'average':
-            # spectral averaging
+            # use spectral average for y-values
             interp_function_raw = scipy.interpolate.interp1d(self.combined_x_axis, self.combined_y_avg_raw)
             interp_y_vals = interp_function_raw(interp_x_vals)
-            # final_x_vals, final_y_vals = self.assemble_transition_data(interp_x_vals, interp_y_vals, trans_start_cv,
-            #                                                            trans_end_cv, self.feat_distance,
-            #                                                            interp_trans_factor=params_obj.ciu50_x_2_trans_interp_factor,
-            #                                                            trans_interp_fn=interp_function_raw)
         elif params_obj.ciu50_1_centroiding_mode == 'median':
-            # spectral median
+            # spectral median for y-values
             interp_function_raw = scipy.interpolate.interp1d(self.combined_x_axis, self.combined_y_median_raw)
             interp_y_vals = interp_function_raw(interp_x_vals)
 
+        # Skip transition data assembly for Gaussian mode, keep standard mode unchanged
         if params_obj.feature_1_ciu50_mode == 'gaussian':
             final_x_vals = interp_x_vals
             final_y_vals = interp_y_vals
@@ -920,8 +967,6 @@ class Transition(object):
         try:
             popt, pcov = fit_logistic(final_x_vals, final_y_vals, center_guess, self.min_guess, self.max_guess,
                                       steepness_guess)
-            # popt, pcov = fit_logistic(interp_x_vals, interp_y_vals, center_guess, self.min_guess, self.max_guess,
-            #                           steepness_guess)
             perr = np.sqrt(np.diag(pcov))
             self.fit_param_errors = perr
         except RuntimeError:
