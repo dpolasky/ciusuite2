@@ -14,6 +14,7 @@ from tkinter import messagebox
 import os
 import subprocess
 import pickle
+import sys
 
 import Raw_Processing
 from CIU_raw import CIURaw
@@ -30,11 +31,15 @@ from matplotlib import rcParams
 rcParams.update({'figure.autolayout': True})
 
 
-root_dir = r"C:\CIUSuite2"
+# Load resource file paths, supporting both live code and code bundled by PyInstaller
+if getattr(sys, 'frozen', False):
+    root_dir = sys._MEIPASS
+else:
+    root_dir = os.path.dirname(__file__)
 
 hard_file_path_ui = os.path.join(root_dir, 'CIUSuite2.ui')
 hard_params_file = os.path.join(root_dir, 'CIU2_param_info.csv')
-hard_params_ui = os.path.join(root_dir, 'Param_editor.ui')
+# hard_params_ui = os.path.join(resource_dir, 'Param_editor.ui')
 hard_crop_ui = os.path.join(root_dir, 'Crop_vals.ui')
 hard_agilent_ext_path = os.path.join(root_dir, os.path.join('Agilent_RawExtractor', 'MIDAC_CIU_Extractor.exe'))
 
@@ -109,6 +114,7 @@ class CIUSuite2(object):
         self.mainwindow.destroy()
         self.tk_root.destroy()
 
+    # todo: update tooltips for final GUI (also change to parsing a text file)
     def initialize_tooltips(self):
         """
         Register tooltips for all buttons/widgets that need tooltips
@@ -670,11 +676,21 @@ class CIUSuite2(object):
                 # load file
                 analysis_obj = load_analysis_obj(file)
 
-                # run feature detection
-                analysis_obj = Feature_Detection.ciu50_main(analysis_obj, self.params_obj, outputdir=self.output_dir, gaussian_bool=gaussian_bool)
+                # Ensure features are detected for this file
+                feature_list = analysis_obj.get_features(gaussian_bool)
+                if feature_list is None:
+                    # returning False means features aren't detected for the selected mode. Warn user
+                    messagebox.showerror('No Features in File {}'.format(analysis_obj.short_filename),
+                                         message='Feature Detection has not been performed in {} mode for file {}. Please '
+                                                 'perform feature detection before CIU50 analysis.'.format(self.params_obj.feature_1_ciu50_mode, analysis_obj.short_filename))
+                    continue
+
+                # run CIU50 analysis
+                analysis_obj = Feature_Detection.ciu50_main(feature_list, analysis_obj, self.params_obj, outputdir=self.output_dir, gaussian_bool=gaussian_bool)
                 filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
                 new_file_list.append(filename)
 
+                # save outputs to file in combined or stand-alone modes
                 if not self.params_obj.ciu50_3_combine_outputs:
                     Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir)
                     Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir)
@@ -689,6 +705,7 @@ class CIUSuite2(object):
                 self.update_progress(files_to_read.index(file), len(files_to_read))
 
             if combine_flag:
+                # save final combined output
                 outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_ciu50s.csv')
                 outputpath_short = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_ciu50-short.csv')
                 save_existing_output_string(outputpath, all_outputs)
@@ -696,7 +713,6 @@ class CIUSuite2(object):
 
             self.display_analysis_files()
         self.progress_done()
-
 
     def on_button_gaussian_reconstruct_clicked(self):
         """

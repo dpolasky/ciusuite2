@@ -83,6 +83,19 @@ class CIUAnalysisObj(object):
         self.col_max_dts = [self.axes[0][x] for x in self.col_maxes]
         # self.col_max_dts = [self.axes[0][0] + (x - 1) * self.bin_spacing for x in self.col_maxes]  # DT of maximum value
 
+    def get_features(self, gaussian_bool):
+        """
+        Returns feature list from CIUAnalysisObj for a given mode. Basically just making sure
+        keywords are accessed in a single location in case of refactoring/etc
+        :param gaussian_bool: (boolean) True if Gaussian mode, False if not
+        :return: (boolean) True if features present, False if not
+        """
+        if gaussian_bool:
+            return self.features_gaussian
+        else:
+            return self.features_changept
+
+
     # todo: deprecate
     # def get_attribute_by_cv(self, attribute, filtered):
     #     """
