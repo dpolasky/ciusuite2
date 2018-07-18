@@ -17,6 +17,7 @@ from tkinter import filedialog
 import scipy.signal
 import matplotlib.backends.backend_pdf
 import matplotlib.pyplot as plt
+import matplotlib.patches
 import lmfit
 import time
 import multiprocessing
@@ -24,11 +25,12 @@ import multiprocessing
 import CIU_raw
 import Raw_Processing
 import CIU_analysis_obj
+import CIU_Params
 
 # imports for type checking
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from CIU_Params import Parameters
+    from CIU_analysis_obj import CIUAnalysisObj
 
 protein_prefix = 'p'
 nonprotein_prefix = 'np'
@@ -150,9 +152,10 @@ class SingleFitStats(object):
         # compute penalties by peak to allow removal of poorly fit peaks
         peak_penalties = []
         for gaussian in self.gaussians_protein:
-            # antibody settings: exp=0.45, tol=0.2, steep=1
-            # membrane settings: exp=0.45, tol=0.4, steep=0.2
-            current_penalty = compute_width_penalty(gaussian.width, expected_width=params_obj.gaussian_72_prot_peak_width, tolerance=params_obj.gaussian_73_prot_width_tol, steepness=1)
+            current_penalty = compute_width_penalty(gaussian.width,
+                                                    expected_width=fwhm_to_sigma(params_obj.gaussian_72_prot_peak_width),
+                                                    tolerance=fwhm_to_sigma(params_obj.gaussian_73_prot_width_tol),
+                                                    steepness=1)
             if len(self.gaussians_protein) > 1:
                 current_penalty += compute_area_penalty(gaussian, self.gaussians_protein, self.x_data)
             peak_penalties.append(current_penalty)
@@ -284,31 +287,14 @@ def gaussfunc(x, amplitude, centroid, sigma):
     return y
 
 
-def resandfwhm(centroids, widths):
-    """
-    Compute FWHM (full width at half max) and resolution for peak centroid/width combinations.
-    Requires inputs to be lists (can have a single entry) to allow for multiple peak fittings
-    :param centroids: LIST of centroids
-    :param widths: LIST of widths (must be same length as list of centroids)
-    :return: list of FWHMs, list of resolutions (both same length as input lists)
-    """
-    fwhm_list = []
-    res_list = []
-    for xc, w in zip(centroids, widths):
-        fwhm = 2*(math.sqrt(2*math.log(2)))*w
-        fwhm_list.append(fwhm)
-        res_list.append(xc/fwhm)
-    return fwhm_list, res_list
-
-
-def adjrsquared(r2, num):
+def adjrsquared(r2, df):
     """
     Compute adjusted r2 given the number of degrees of freedom in an analysis
     :param r2: original r2 value (float)
-    :param num: degrees of freedom (int)
+    :param df: degrees of freedom (int)
     :return: adjusted r2
     """
-    y = 1 - (((1-r2)*(num-1))/(num-4-1))
+    y = 1 - (((1-r2)*(df-1))/(df-4-1))
     return y
 
 
@@ -423,6 +409,9 @@ def parse_gaussian_list_from_file(filepath):
             except ValueError:
                 print('Invalid CV in line: {}; value must be a number. Skipping this line'.format(line))
                 continue
+            except IndexError:
+                # no data on this line, continue
+                continue
 
             # read remaining Gaussian information
             index = 0
@@ -442,7 +431,7 @@ def parse_gaussian_list_from_file(filepath):
     return gaussian_list_by_cv, [dt_axis, np.asarray(cvs)]
 
 
-def gaussian_lmfit_main(analysis_obj, params_obj):
+def gaussian_lmfit_main(analysis_obj, params_obj, outputpath):
     """
     Alternative Gaussian fitting method using LMFit for composite modeling of peaks. Estimates initial peak
     parameters using helper methods, then fits optimized Gaussian distributions and saves results. Intended
@@ -451,17 +440,18 @@ def gaussian_lmfit_main(analysis_obj, params_obj):
     :type analysis_obj: CIUAnalysisObj
     :param params_obj: parameter information container
     :type params_obj: Parameters
+    :param outputpath: directory in which to save output
     :return: updated analysis object
     :rtype: CIUAnalysisObj
     """
-    print('Starting Gaussian fitting for file {}'.format(analysis_obj.short_filename))
+    print('Starting Gaussian fitting for file {}...'.format(analysis_obj.short_filename))
     start_time = time.time()
 
     cv_col_data = np.swapaxes(analysis_obj.ciu_data, 0, 1)
-    main_out_dir = os.path.dirname(analysis_obj.filename)
-    outputpath = os.path.join(os.path.dirname(analysis_obj.filename), analysis_obj.short_filename)
-    if not os.path.isdir(outputpath):
-        os.makedirs(outputpath)
+    outputfolder = os.path.join(outputpath, analysis_obj.short_filename)
+    if params_obj.gaussian_4_save_diagnostics:
+        if not os.path.isdir(outputfolder):
+            os.makedirs(outputfolder)
 
     best_fits_by_cv = []
     scores_by_cv = []
@@ -472,16 +462,14 @@ def gaussian_lmfit_main(analysis_obj, params_obj):
     for cv_index, cv_col_intensities in enumerate(cv_col_data):
         # prepare initial guesses in the form of a list of Gaussian objects, sorted by amplitude
         cv = analysis_obj.axes[1][cv_index]
-        gaussian_guess_list = guess_gauss_init(cv_col_intensities, analysis_obj.axes[0], params_obj.gaussian_5_width_fraction, cv, params_obj.gaussian_1_convergence, amp_cutoff=params_obj.gaussian_2_int_threshold)
+        gaussian_guess_list = guess_gauss_init(cv_col_intensities, analysis_obj.axes[0], cv, rsq_cutoff=0.99, amp_cutoff=params_obj.gaussian_2_int_threshold)
 
         # Run fitting and scoring across the provided range of peak options
-        # all_fits = iterate_lmfitting(analysis_obj.axes[0], cv_col_intensities, gaussian_guess_list, params_obj, outputpath)
-
-        argslist = [analysis_obj.axes[0], cv_col_intensities, gaussian_guess_list, params_obj, outputpath]
+        argslist = [analysis_obj.axes[0], cv_col_intensities, gaussian_guess_list, params_obj, outputfolder]
         pool_result = pool.apply_async(iterate_lmfitting, args=argslist)
         results.append(pool_result)
 
-    pool.close()    # tell the pool we don't need it process any more data
+    pool.close()    # tell the pool we don't need it to process any more data
 
     for cv_index, cv_results in enumerate(results):
         all_fits = cv_results.get()
@@ -495,42 +483,41 @@ def gaussian_lmfit_main(analysis_obj, params_obj):
 
     # output final results
     fit_time = time.time() - start_time
-    print('fitting done in {:.2f}'.format(fit_time))
+    print('fitting done in {:.2f} s'.format(fit_time))
 
-    # save output
     prot_gaussians = [fit.gaussians_protein for fit in best_fits_by_cv]
     nonprot_gaussians = [fit.gaussians_nonprotein for fit in best_fits_by_cv]
-    # all_gaussians = [fit.gaussians for fit in best_fits_by_cv]
-    save_fits_pdf_new(analysis_obj, best_fits_by_cv, outputpath)
 
+    # Generate centroid plots
     best_centroids = []
     for gauss_list in prot_gaussians:
         best_centroids.append([x.centroid for x in gauss_list])
     nonprot_centroids = []
     for gauss_list in nonprot_gaussians:
         nonprot_centroids.append([x.centroid for x in gauss_list])
-    plot_centroids(best_centroids, analysis_obj, main_out_dir, nonprotein_centroids=nonprot_centroids)
-
-    plot_time = time.time() - start_time - fit_time
-    print('plotting done in {:.2f}'.format(plot_time))
+    plot_centroids(best_centroids, analysis_obj, params_obj, outputpath, nonprotein_centroids=nonprot_centroids)
 
     # save results to analysis obj
-    # analysis_obj.gaussians = all_gaussians
     analysis_obj.raw_protein_gaussians = prot_gaussians
     analysis_obj.raw_nonprotein_gaussians = nonprot_gaussians
     analysis_obj.gauss_fits_by_cv = best_fits_by_cv
 
+    # save output
+    save_fits_pdf_new(analysis_obj, params_obj, best_fits_by_cv, outputpath)
+    save_gauss_params(analysis_obj, outputpath)
+    plot_time = time.time() - start_time - fit_time
+    print('plotting/pdf output done in {:.2f} s'.format(plot_time))
+
     return analysis_obj
 
 
-def guess_gauss_init(ciu_col, dt_axis, width_frac, cv, rsq_cutoff, amp_cutoff):
+def guess_gauss_init(ciu_col, dt_axis, cv, rsq_cutoff, amp_cutoff):
     """
     Generate initial guesses for Gaussians. Currently using just the estimate_multi_params_all method
     with output formatted as Gaussian objects, but will likely try to include initial first round of
     fitting from curve_fit as well.
     :param ciu_col: intensity (y) data at this CV
     :param dt_axis: DT (x) data
-    :param width_frac: estimate for peak width as a function of peak centroid. Typically 0.01.
     :param cv: collision voltage to record for Gaussians
     :param rsq_cutoff: r2 convergence criterion for initial fitting (peaks are added until r2 above this value)
     :param amp_cutoff: minimum amplitude for peak to be allowed
@@ -539,7 +526,7 @@ def guess_gauss_init(ciu_col, dt_axis, width_frac, cv, rsq_cutoff, amp_cutoff):
     gaussians = []
 
     # estimate a (rather inaccurate) list of possible peaks to use as guesses for fitting
-    guess_list = estimate_multi_params_all(ciu_col, dt_axis, width_frac)
+    guess_list = estimate_multi_params_all(ciu_col, dt_axis, width_frac=0.01)
 
     # run the initial (first round) fitting with curve_fit to generate high quality guesses
     popt, pcov, allfits = sequential_fit_rsq(guess_list, dt_axis, ciu_col, cv=cv, convergence_rsq=rsq_cutoff, amp_cutoff=amp_cutoff)
@@ -548,7 +535,6 @@ def guess_gauss_init(ciu_col, dt_axis, width_frac, cv, rsq_cutoff, amp_cutoff):
     r1_guesses = generate_gaussians_from_popt(opt_params_list=popt, protein_bool=True, cv=cv, pcov=pcov)
     gaussians.extend(sorted(r1_guesses, key=lambda x: x.amplitude, reverse=True))
 
-    # todo: skip peaks that are too close in starting location to the high quality first guesses?
     for param_guess in guess_list:
         # catch 0 amplitude and just make it very small
         if abs(param_guess[0]) < 1e-5:
@@ -637,7 +623,7 @@ def iterate_lmfitting(x_data, y_data, guesses_list, params_obj, outputpath):
     """
     # determine the number of components over which to iterate fitting
     max_num_prot_pks = params_obj.gaussian_71_max_prot_components
-    if params_obj.gaussian_3_mode == 'No Selection':
+    if params_obj.gaussian_1_mode == 'No Selection':
         max_num_nonprot_pks = params_obj.gaussian_82_max_nonprot_comps  # params_obj/advanced for more options?
     else:
         max_num_nonprot_pks = 0
@@ -653,8 +639,9 @@ def iterate_lmfitting(x_data, y_data, guesses_list, params_obj, outputpath):
                                                     params_obj)
             output_fits.append(current_fit)
 
-            outputname = os.path.join(outputpath, '{}_p{}_fits.png'.format(cv, num_prot_pks))
-            plot_fit_result(current_fit, lmfit_output, x_data, outputname)
+            if params_obj.gaussian_4_save_diagnostics:
+                outputname = os.path.join(outputpath, '{}_p{}_fits.png'.format(cv, num_prot_pks))
+                plot_fit_result(current_fit, lmfit_output, x_data, outputname)
         else:
             # No selection mode - iterate over nonprotein peaks as well
             for num_nonprot_pks in range(params_obj.gaussian_81_min_nonprot_comps, max_num_nonprot_pks + 1):
@@ -662,8 +649,9 @@ def iterate_lmfitting(x_data, y_data, guesses_list, params_obj, outputpath):
                 current_fit, lmfit_output = perform_fit(x_data, y_data, cv, num_prot_pks, num_nonprot_pks, guesses_list, params_obj)
                 output_fits.append(current_fit)
 
-                outputname = os.path.join(outputpath, '{}_p{}_np{}_fits.png'.format(cv, num_prot_pks, num_nonprot_pks))
-                plot_fit_result(current_fit, lmfit_output, x_data, outputname)
+                if params_obj.gaussian_4_save_diagnostics:
+                    outputname = os.path.join(outputpath, '{}_p{}_np{}_fits.png'.format(cv, num_prot_pks, num_nonprot_pks))
+                    plot_fit_result(current_fit, lmfit_output, x_data, outputname)
 
     return output_fits
 
@@ -690,7 +678,7 @@ def perform_fit(x_data, y_data, cv, num_prot_pks, num_nonprot_pks, guesses_list,
     for model in models_list[1:]:
         final_model += model
 
-    output = final_model.fit(y_data, fit_params, x=x_data, method=params_obj.gaussian_6_fit_method, nan_policy='omit',
+    output = final_model.fit(y_data, fit_params, x=x_data, method='leastsq', nan_policy='omit',
                              scale_covar=False)
 
     # compute fits and score
@@ -749,6 +737,11 @@ def assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, dt_
     nonprots_remaining = num_nonprot_pks
     prots_remaining = num_prot_pks
 
+    # initialize width guesses (convert from FWHM [user input] to sigma [fitting input])
+    prot_width_center = fwhm_to_sigma(params_obj.gaussian_72_prot_peak_width)
+    prot_width_tol = fwhm_to_sigma(params_obj.gaussian_73_prot_width_tol)
+    min_nonprot_width = fwhm_to_sigma(params_obj.gaussian_83_nonprot_width_min)
+
     if num_nonprot_pks > 0:
         # non-protein peak(s) present, assign peaks wider than width max for protein to them
         for comp_index in range(0, total_num_components):
@@ -757,16 +750,15 @@ def assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, dt_
             except IndexError:
                 # out of guesses - make a generic non-protein guess (50% amplitude, centered in the middle of the dt axis, non-protein minimum width)
                 dt_middle = (dt_axis[-1] - dt_axis[0]) / 2.0
-                next_guess = Gaussian(amplitude=0.5, centroid=dt_middle, width=params_obj.gaussian_83_nonprot_width_min, collision_voltage=None, pcov=None, protein_bool=False)
+                next_guess = Gaussian(amplitude=0.5, centroid=dt_middle, width=min_nonprot_width, collision_voltage=None, pcov=None, protein_bool=False)
 
-            # todo: add FWHM conversion
-            if next_guess.width > (params_obj.gaussian_72_prot_peak_width + params_obj.gaussian_73_prot_width_tol):
+            if next_guess.width > (prot_width_center + prot_width_tol):
                 # the width of this guess is wider than protein - try fitting a nonprotein peak here
                 if nonprots_remaining > 0:
                     model, params = make_nonprotein_model(
                         prefix='{}{}'.format(nonprotein_prefix, guess_index + 1),
                         guess_gaussian=next_guess,
-                        params_obj=params_obj,
+                        nonprot_width_min=min_nonprot_width,
                         dt_axis=dt_axis)
                     models_list.append(model)
                     fit_params.update(params)
@@ -777,7 +769,8 @@ def assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, dt_
                     # no more non-protein peaks left, so add a protein peak
                     model, params = make_protein_model(prefix='{}{}'.format(protein_prefix, guess_index + 1),
                                                        guess_gaussian=next_guess,
-                                                       params_obj=params_obj,
+                                                       width_center=prot_width_center,
+                                                       width_tol=prot_width_tol,
                                                        dt_axis=dt_axis)
                     models_list.append(model)
                     fit_params.update(params)
@@ -788,7 +781,8 @@ def assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, dt_
                 if prots_remaining > 0:
                     model, params = make_protein_model(prefix='{}{}'.format(protein_prefix, guess_index + 1),
                                                        guess_gaussian=next_guess,
-                                                       params_obj=params_obj,
+                                                       width_center=prot_width_center,
+                                                       width_tol=prot_width_tol,
                                                        dt_axis=dt_axis)
                     models_list.append(model)
                     fit_params.update(params)
@@ -799,7 +793,7 @@ def assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, dt_
                     model, params = make_nonprotein_model(
                         prefix='{}{}'.format(nonprotein_prefix, guess_index + 1),
                         guess_gaussian=next_guess,
-                        params_obj=params_obj,
+                        nonprot_width_min=min_nonprot_width,
                         dt_axis=dt_axis)
                     models_list.append(model)
                     fit_params.update(params)
@@ -815,11 +809,12 @@ def assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, dt_
             except IndexError:
                 # out of guesses - make a generic protein guess (50% amplitude, centered in the middle of the dt axis, estimated protein width)
                 dt_middle = (dt_axis[-1] - dt_axis[0]) / 2.0
-                next_guess = Gaussian(amplitude=0.5, centroid=dt_middle, width=params_obj.gaussian_72_prot_peak_width, collision_voltage=None, pcov=None, protein_bool=True)
+                next_guess = Gaussian(amplitude=0.5, centroid=dt_middle, width=prot_width_center, collision_voltage=None, pcov=None, protein_bool=True)
 
             model, params = make_protein_model(prefix='{}{}'.format(protein_prefix, guess_index + 1),
                                                guess_gaussian=next_guess,
-                                               params_obj=params_obj,
+                                               width_center=prot_width_center,
+                                               width_tol=prot_width_tol,
                                                dt_axis=dt_axis)
             models_list.append(model)
             fit_params.update(params)
@@ -828,31 +823,26 @@ def assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, dt_
     return models_list, fit_params
 
 
-def make_protein_model(prefix, guess_gaussian, params_obj, dt_axis):
+def make_protein_model(prefix, guess_gaussian, width_center, width_tol, dt_axis):
     """
     Generate an LMFit model object from initial parameters in the guess_gaussian container and
     parameters.
     :param prefix: string prefix for this model to prevent params from having same names
     :param guess_gaussian: Gaussian object with initial guess parameters
     :type guess_gaussian: Gaussian
-    :param params_obj: parameters container
-    :type params_obj: Parameters
+    :param width_center: center of allowed width distribution
+    :param width_tol: tolerance (width) of allowed peak width distribution
     :param dt_axis: dt_axis information for determining boundaries
     :return: LMFit model object with initialized parameters, bounds, and constraints
     """
     max_dt = dt_axis[-1]
     min_dt = dt_axis[0]
 
-    # model = lmfit.models.GaussianModel(prefix=prefix)
-    # model = lmfit.models.VoigtModel(prefix=prefix)
     model = lmfit.Model(gaussfunc, prefix=prefix)
-
     model_params = model.make_params()
-    # model_params[prefix + 'gamma'].set(value=0.7, vary=True)
 
-    # todo: convert from FWHM
-    min_width = params_obj.gaussian_72_prot_peak_width - params_obj.gaussian_73_prot_width_tol
-    max_width = params_obj.gaussian_72_prot_peak_width + params_obj.gaussian_73_prot_width_tol
+    min_width = width_center - width_tol
+    max_width = width_center + width_tol
 
     # set initial guesses and boundaries
     model_params[prefix + 'centroid'].set(guess_gaussian.centroid, min=min_dt, max=max_dt)
@@ -863,36 +853,39 @@ def make_protein_model(prefix, guess_gaussian, params_obj, dt_axis):
     return model, model_params
 
 
-def make_nonprotein_model(prefix, guess_gaussian, params_obj, dt_axis):
+def make_nonprotein_model(prefix, guess_gaussian, nonprot_width_min, dt_axis):
     """
     Generate an LMFit model object from initial parameters in the guess_gaussian container and
     parameters.
     :param prefix: string prefix for this model to prevent params from having same names
     :param guess_gaussian: Gaussian object with initial guess parameters
     :type guess_gaussian: Gaussian
-    :param params_obj: parameters container
-    :type params_obj: Parameters
+    :param nonprot_width_min: minimum width for non-protein peak
     :param dt_axis: dt_axis information for determining boundaries
     :return: LMFit model object with initialized parameters, bounds, and constraints
     """
     max_dt = dt_axis[-1]
     min_dt = dt_axis[0]
 
-    # model = lmfit.models.GaussianModel(prefix=prefix)
     model = lmfit.Model(gaussfunc, prefix=prefix)
-
     model_params = model.make_params()
 
     # set initial guesses and boundaries
-    # todo: change to FWHM instead of sigma (add conversion)
-    min_width = params_obj.gaussian_83_nonprot_width_min
-    # min_width = params_obj.gaussian_72_prot_peak_width + 3 * params_obj.gaussian_73_prot_width_tol
     model_params[prefix + 'centroid'].set(guess_gaussian.centroid, min=min_dt, max=max_dt)
-    model_params[prefix + 'sigma'].set(guess_gaussian.width, min=min_width, max=max_dt)
+    model_params[prefix + 'sigma'].set(guess_gaussian.width, min=nonprot_width_min, max=max_dt)
     model_params[prefix + 'amplitude'].set(guess_gaussian.amplitude, min=0, max=1.5)
 
     # return the model
     return model, model_params
+
+
+def fwhm_to_sigma(fwhm):
+    """
+    Convert FWHM (full-width at half max) to sigma for Gaussian function
+    :param fwhm: (float) peak full-width at half max
+    :return: sigma (float)
+    """
+    return fwhm / (2.0 * (math.sqrt(2 * math.log(2))))
 
 
 def get_popt_from_lmoutput(modelresult, amp_cutoff):
@@ -932,27 +925,6 @@ def remove_low_amp(popt_list, amp_cutoff):
         popt_list.remove(value)
 
     return popt_list
-
-
-def remove_penalized_peaks(gaussian_list, peak_penalties, penalty_cutoff):
-    """
-    Remove any peaks penalized above the acceptable (cutoff) value. Returns the (possibly shortened)
-    popt list a boolean (True if any peaks were removed)
-    :param gaussian_list: list gaussians from curve_fit
-    :param peak_penalties: list of peak penalties from compute_fit_score
-    :param penalty_cutoff: float - threshold above which to remove a peak
-    :return: filtered_popt list, peaks_removed boolean
-    """
-    final_gaussians = []
-    any_peaks_removed = False
-    for index, gaussian in enumerate(gaussian_list):
-        # if the penalty for this Gaussian is below cutoff, include it.
-        if peak_penalties[index] < penalty_cutoff:
-            final_gaussians.append(gaussian)
-        else:
-            any_peaks_removed = True
-
-    return final_gaussians, any_peaks_removed
 
 
 def compute_width_penalty(input_width, expected_width, tolerance, steepness):
@@ -1071,159 +1043,117 @@ def generate_gaussians_from_popt(opt_params_list, protein_bool, cv=None, pcov=No
     return gaussian_list
 
 
-def save_fits_pdf_new(analysis_obj, best_fit_list, outputpath):
+def save_fits_pdf_new(analysis_obj, params_obj, best_fit_list, outputpath):
     """
-
-    :param analysis_obj:
-    :param best_fit_list:
-    :param outputpath:
-    :return:
+    Save a PDF file with the best fit results at each collision voltage as a page of the PDF.
+    Fit components are plotted individually along with the raw data and combined fit. Scores
+    and r2 value are printed at the top of each plot.
+    :param analysis_obj: analysis object with data to plot
+    :type analysis_obj: CIUAnalysisObj
+    :param best_fit_list: list of SingleFitStats objects from each collision voltage
+    :param params_obj: Parameter container
+    :type params_obj: Parameters
+    :param outputpath: directory in which to save output
+    :return: void
     """
-    gauss_name = analysis_obj.short_filename + '_fits.pdf'
+    gauss_name = analysis_obj.short_filename + '_GaussFits.pdf'
     pdf_fig = matplotlib.backends.backend_pdf.PdfPages(os.path.join(outputpath, gauss_name))
 
     intarray = np.swapaxes(analysis_obj.ciu_data, 0, 1)
     for cv_index in range(len(analysis_obj.axes[1])):
-        plt.figure()
+        plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
+
         best_fit = best_fit_list[cv_index]
 
         # plot the original raw data as a scatter plot
         plt.scatter(analysis_obj.axes[0], intarray[cv_index])
 
         # plot the combined 'best fit' data
-        plt.plot(best_fit.x_data, best_fit.y_fit, color='black')
+        plt.plot(best_fit.x_data, best_fit.y_fit, color='black', label='Combined Fit')
 
         # plot each component individually
         prot_index = 1
         for prot_gauss in best_fit.gaussians_protein:
             gauss_fit = gaussfunc(best_fit.x_data, prot_gauss.amplitude, prot_gauss.centroid, prot_gauss.width)
-            plt.plot(best_fit.x_data, gauss_fit, ls='--', label='Protein {}'.format(prot_index))
+            plt.plot(best_fit.x_data, gauss_fit, ls='--', label='Signal {}'.format(prot_index))
             prot_index += 1
         nonprot_index = 1
         for nonprot_gauss in best_fit.gaussians_nonprotein:
             gauss_fit = gaussfunc(best_fit.x_data, nonprot_gauss.amplitude, nonprot_gauss.centroid, nonprot_gauss.width)
-            plt.plot(best_fit.x_data, gauss_fit, ls='--', label='Non-Protein{}'.format(nonprot_index))
+            plt.plot(best_fit.x_data, gauss_fit, ls='--', label='Noise {}'.format(nonprot_index))
             nonprot_index += 1
 
-        plt.legend(loc='best')
+        # plot titles, labels, and legends
+        if params_obj.plot_08_show_axes_titles:
+            plt.xlabel(params_obj.plot_10_y_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+            plt.ylabel('Relative Intensity', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        plt.xticks(fontsize=params_obj.plot_13_font_size)
+        plt.yticks(fontsize=params_obj.plot_13_font_size)
+        if params_obj.plot_07_show_legend:
+            plt.legend(loc='best', fontsize=params_obj.plot_13_font_size)
 
-        penalty_string = ['{:.2f}'.format(x) for x in best_fit.peak_penalties]
-        plt.title('{}V, r2: {:.3f}, score: {:.4f}, peak pens: {}'.format(analysis_obj.axes[1][cv_index], best_fit.adjrsq, best_fit.score,
-                                                                         ','.join(penalty_string)))
-
-        pdf_fig.savefig()
-        plt.close()
-    pdf_fig.close()
-
-
-def save_gaussfits_pdf(analysis_obj, gaussian_list, outputpath, filename_append='', rsq_list=None):
-    """
-    Save a pdf containing an image of the data and gaussian fit for each column to pdf in outputpath.
-    :param analysis_obj: container with gaussian fits to save
-    :type analysis_obj: CIUAnalysisObj
-    :param gaussian_list: list of gaussians to plot
-    :type gaussian_list: list[list[Gaussian]]
-    :param outputpath: directory in which to save output
-    :param rsq_list: list of adjusted r2 values by CV for captioning (optional)
-    :param filename_append: (optional) string to add to filename
-    :return: void
-    """
-    # TODO: make all plot parameters accessible
-
-    gauss_name = analysis_obj.short_filename + filename_append + '_gaussFit.pdf'
-    pdf_fig = matplotlib.backends.backend_pdf.PdfPages(os.path.join(outputpath, gauss_name))
-
-    intarray = np.swapaxes(analysis_obj.ciu_data, 0, 1)
-    for cv_index in range(len(analysis_obj.axes[1])):
-        plt.figure()
-        # plot the original raw data as a scatter plot
-        plt.scatter(analysis_obj.axes[0], intarray[cv_index])
-
-        # plot each fitted gaussian and centroid
-        sum_fit = np.zeros(len(analysis_obj.axes[0]))
-        for gaussian in gaussian_list[cv_index]:
-            fit = gaussfunc(analysis_obj.axes[0], gaussian.amplitude, gaussian.centroid, gaussian.width)
-            sum_fit += fit
-            plt.plot(analysis_obj.axes[0], fit)
-            plt.plot(gaussian.centroid, abs(gaussian.amplitude), '+', color='red')
-
-        # also plot the sum of all Gaussian fits for reference
-        plt.plot(analysis_obj.axes[0], sum_fit, ls='--', color='black')
-
-        if rsq_list is not None:
-            plt.title('CV: {}, R2: {:.3f}'.format(analysis_obj.axes[1][cv_index], rsq_list[cv_index]))
-        else:
-            plt.title('CV: {}'.format(analysis_obj.axes[1][cv_index]))
+        # penalty_string = ['{:.2f}'.format(x) for x in best_fit.peak_penalties]
+        plt.title('{}V, r2: {:.3f}, score: {:.4f}'.format(analysis_obj.axes[1][cv_index], best_fit.adjrsq, best_fit.score))
 
         pdf_fig.savefig()
         plt.close()
     pdf_fig.close()
 
 
-def plot_centroids(centroid_lists_by_cv, analysis_obj, outputpath, y_bounds=None, nonprotein_centroids=None):
+def plot_centroids(centroid_lists_by_cv, analysis_obj, params_obj, outputpath, nonprotein_centroids=None):
     """
     Save a png image of the centroid DTs fit by gaussians
     :param centroid_lists_by_cv: list of [list of centroids]s at each collision voltage
     :param nonprotein_centroids: non-protein components list of [list of centroids]s at each collision voltage
     :param analysis_obj: container with gaussian fits to save
     :type analysis_obj: CIUAnalysisObj
+    :param params_obj: Parameters container with plot params
+    :type params_obj: Parameters
     :param outputpath: directory in which to save output
-    :param y_bounds: [lower bound, upper bound] to crop the plot to (in y-axis units, typically ms)
     :return: void
     """
-    # TODO: make all plot parameters accessible
     plt.clf()
+    plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
 
     # plot centroids at each collision voltage
     for x, y in zip(analysis_obj.axes[1], centroid_lists_by_cv):
-        plt.scatter([x] * len(y), y, color='b')
+        plt.scatter([x] * len(y), y, color='b', s=(params_obj.plot_13_font_size / 2) ** 2)
 
     # plot non-protein components in red if they are present
+    nonprotein_flag = False
     if nonprotein_centroids is not None:
         for x, y in zip(analysis_obj.axes[1], nonprotein_centroids):
             try:
-                plt.scatter([x] * len(y), y, color='r')
+                plt.scatter([x] * len(y), y, color='r', s=(params_obj.plot_13_font_size / 2) ** 2)
+                if y:
+                    # only label noise peaks if they are present (if any of the lists is non-empty)
+                    nonprotein_flag = True
             except TypeError:
                 # empty list - continue to next cv
                 continue
 
-    # plt.scatter(self.axes[1], self.gauss_centroids)
-    plt.xlabel('Collision Voltage (V)')
-    plt.ylabel('ATD Centroid (ms)')
-    if y_bounds is not None:
-        plt.ylim(y_bounds)
-    # plt.title('Centroids filtered by peak width')
+    # plot titles, labels, and legends
+    if params_obj.plot_12_custom_title is not None:
+        plot_title = params_obj.plot_12_custom_title
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+    elif params_obj.plot_11_show_title:
+        plot_title = analysis_obj.short_filename
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+    if params_obj.plot_08_show_axes_titles:
+        plt.xlabel(params_obj.plot_09_x_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        plt.ylabel('Peak Centroid', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+    plt.xticks(fontsize=params_obj.plot_13_font_size)
+    plt.yticks(fontsize=params_obj.plot_13_font_size)
+    if params_obj.plot_07_show_legend:
+        handles = [matplotlib.patches.Patch(color='b', label='Signal Centroids')]
+        if nonprotein_flag:
+            handles.append(matplotlib.patches.Patch(color='r', label='Noise Centroids'))
+        plt.legend(handles=handles, loc='best', fontsize=params_obj.plot_13_font_size)
+
     plt.grid('on')
-    output_name = os.path.basename(analysis_obj.filename).rstrip('.ciu') + '_centroids.png'
-    plt.savefig(os.path.join(outputpath, output_name), dpi=500)
+    output_name = analysis_obj.short_filename + '_centroids.png'
+    plt.savefig(os.path.join(outputpath, output_name))
     plt.close()
-    # print('Saved TrapCVvsArrivtimecentroid ' + str(analysis_obj.raw_obj.filename) + '_.png')
-
-
-def plot_fwhms(analysis_obj, outputpath):
-    """
-    Save a png image of the FWHM (widths) fit by gaussians.
-    :param analysis_obj: container with gaussian fits to save
-    :type analysis_obj: CIUAnalysisObj
-    :param outputpath: directory in which to save output
-    :return: void
-    """
-    print('Saving TrapcCVvsFWHM_' + str(analysis_obj.raw_obj.filename) + '_.png .....')
-    # gauss_fwhms = analysis_obj.get_attribute_by_cv('fwhm', False)
-    gauss_fwhms = []
-    for cv_sublist in analysis_obj.raw_protein_gaussians:
-        gauss_fwhms.append([gaussian.fwhm for gaussian in cv_sublist])
-
-    for x, y in zip(analysis_obj.axes[1], gauss_fwhms):
-        plt.scatter([x] * len(y), y)
-    # plt.scatter(self.axes[1], self.gauss_fwhms)
-    plt.xlabel('Trap CV')
-    plt.ylabel('ATD_FWHM')
-    plt.grid('on')
-    output_name = os.path.basename(analysis_obj.filename).rstrip('.ciu') + '_FWHM.png'
-    plt.savefig(os.path.join(outputpath, output_name), dpi=300)
-    plt.close()
-    # print('Saving TrapCVvsFWHM_' + str(analysis_obj.raw_obj.filename) + '_.png')
 
 
 def save_gauss_params(analysis_obj, outputpath):
@@ -1234,37 +1164,48 @@ def save_gauss_params(analysis_obj, outputpath):
     :param outputpath: directory in which to save output
     :return: void
     """
-    output_name = os.path.basename(analysis_obj.filename).rstrip('.ciu') + '_gaussians.csv'
+    output_name = analysis_obj.short_filename + '_gaussians.csv'
     with open(os.path.join(outputpath, output_name), 'w') as output:
         # save DT information too to allow for reconstruction
         dt_line = ','.join([str(x) for x in analysis_obj.axes[0]])
         output.write('Drift axis:,' + dt_line + '\n')
-        output.write('# Filtered Gaussians (round 1)\n')
-        output.write('# Trap CV,Amplitude,Centroid,Peak Width\n')
+        output.write('# Protein Gaussians\n')
+        output.write('# CV,Amplitude,Centroid,Peak Width\n')
         index = 0
         while index < len(analysis_obj.axes[1]):
-            # todo: fix (save raw prot/nonprot, feat_prot gaussians)
-            # outputline = ','.join([gaussian.print_info() for gaussian in analysis_obj.protein_gaussians[index]])
-            # output.write(outputline + '\n')
+            outputline = ','.join([gaussian.print_info() for gaussian in analysis_obj.raw_protein_gaussians[index]])
+            output.write(outputline + '\n')
             index += 1
 
-        # index = 0
-        # output.write('# All Gaussians (round 2)\n')
-        # output.write('# Trap CV,Amplitude,Centroid,Peak Width\n')
-        # while index < len(analysis_obj.axes[1]):
-        #     gauss_line = ','.join([gaussian.print_info() for gaussian in analysis_obj.gaussians[index]])
-        #
-        #     # gauss_line += ','.join([str(x) for x in self.gauss_params[index]])
-        #     output.write(gauss_line + '\n')
-        #     index += 1
+        if analysis_obj.raw_nonprotein_gaussians is not None:
+            index = 0
+            output.write('# Non-Protein Gaussians\n')
+            output.write('# CV,Amplitude,Centroid,Peak Width\n')
+            while index < len(analysis_obj.axes[1]):
+                gauss_line = ','.join([gaussian.print_info() for gaussian in analysis_obj.raw_nonprotein_gaussians[index]])
+                output.write(gauss_line + '\n')
+                index += 1
 
 
+# testing
 if __name__ == '__main__':
     root = tkinter.Tk()
     root.withdraw()
+
+    root_dir = os.path.dirname(__file__)
+    hard_params_file = os.path.join(root_dir, 'CIU2_param_info.csv')
+    myparams = CIU_Params.Parameters()
+    myparams.set_params(CIU_Params.parse_params_file(hard_params_file))
 
     files = filedialog.askopenfilenames(filetypes=[('CIU', '.ciu')])
     for file in files:
         with open(file, 'rb') as analysis_file:
             current_analysis_obj = pickle.load(analysis_file)
-        # gaussian_fit_ciu(current_analysis_obj, current_analysis_obj.params)  # NOTE: analysis_obj.params is DEPRECATED
+
+        centroids = []
+        for mygauss_list in current_analysis_obj.raw_protein_gaussians:
+            centroids.append([x.centroid for x in mygauss_list])
+        np_centroids = []
+        for mygauss_list in current_analysis_obj.raw_nonprotein_gaussians:
+            np_centroids.append([x.centroid for x in mygauss_list])
+        plot_centroids(centroids, current_analysis_obj, myparams, os.path.dirname(current_analysis_obj.filename), np_centroids)

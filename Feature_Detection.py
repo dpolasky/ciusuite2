@@ -17,6 +17,7 @@ import Gaussian_Fitting
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from CIU_analysis_obj import CIUAnalysisObj
+    from CIU_Params import Parameters
 
 # todo: put in final version?
 # np.warnings.filterwarnings('ignore')
@@ -35,7 +36,7 @@ def feature_detect_col_max(analysis_obj, params_obj):
     Uses max values of each CV column to assign flat features to data. Should be roughly
     analogous to the changepoint detection + flat features from column maxes in CIU-50 analysis,
     but without reliance on the (somewhat fickle) changepoint detection
-    :param analysis_obj: CIUAnalysisObj with Gaussians previously fitted
+    :param analysis_obj: CIUAnalysisObj container for CIU data
     :type analysis_obj: CIUAnalysisObj
     :param params_obj: Parameters object with parameter information
     :type params_obj: Parameters
@@ -62,7 +63,7 @@ def feature_detect_col_max(analysis_obj, params_obj):
 
     # Search each gaussian for features it matches (based on centroid)
     for cv_index, col_max_dt in enumerate(analysis_obj.col_max_dts):
-        # check if any current features will accept the Gaussian
+        # check if any current features will accept this max value
         found_feature = False
         for feature in features:
             if feature.accept_centroid(col_max_dt, width_tol_dt, cv_axis[cv_index], gap_tol_cv, cv_spacing):
@@ -435,7 +436,7 @@ def print_features_list(feature_list, outputpath, mode):
                                                                                               feature.get_median(),
                                                                                               feature.cvs[0],
                                                                                               feature.cvs[len(feature.cvs) - 1]))
-                outfile.write('CV (V), Centroid, Amplitude, Width, Baseline, FWHM, Resolution\n')
+                outfile.write('CV (V), Amplitude, Centroid, Width\n')
                 for gaussian in feature.gaussians:
                     outfile.write(gaussian.print_info() + '\n')
             else:
@@ -461,10 +462,10 @@ def save_ciu50_outputs(analysis_obj, outputpath, combine=False):
     :type analysis_obj: CIUAnalysisObj
     :param outputpath: directory in which to save output
     :param combine: whether to output directly for this file or return a string for combining
-    :return: void
+    :return: output string if combining or void if not
     """
     output_name = os.path.join(outputpath, analysis_obj.filename + '_features.csv')
-    output_string = 'Transitions:,y0 (ms),ymax (ms),CIU-50 (V),k (steepness),r_squared\n'
+    output_string = 'Transitions:,max DT (ms),min DT (ms),CIU-50 (V),k (steepness),r_squared\n'
     trans_index = 1
     for transition in analysis_obj.transitions:
         output_string += 'transition {} -> {},'.format(trans_index, trans_index + 1)
@@ -487,9 +488,9 @@ def save_ciu50_short(analysis_obj, outputpath, combine=False):
     :type analysis_obj: CIUAnalysisObj
     :param outputpath: directory in which to save output
     :param combine: If True, return a string to be combined with other files instead of saving to file
-    :return:
+    :return: output string if combining or void if not
     """
-    output_name = os.path.join(outputpath, analysis_obj.filename + '_transitions-short.csv')
+    output_name = os.path.join(outputpath, analysis_obj.filename + '_CIU50-short.csv')
     output_string = ''
 
     # assemble the output
@@ -571,7 +572,7 @@ def plot_transitions(transition_list, analysis_obj, params_obj, outputdir):
         plt.legend(loc='best', fontsize=params_obj.plot_13_font_size)
 
     # save plot to file
-    filename = os.path.basename(analysis_obj.filename).rstrip('.ciu') + '_transition' + params_obj.plot_02_extension
+    filename = analysis_obj.short_filename + '_transition' + params_obj.plot_02_extension
     output_path = os.path.join(outputdir, filename)
     plt.savefig(output_path)
     plt.close()
@@ -615,7 +616,6 @@ def logistic_func(x, c, y0, x0, k):
     :param k: steepness of the curve/transition
     :return: y = f(x)
     """
-    # y = c / (1 + np.exp(-k * (x - x0))) + y0
     y = y0 + ((c - y0) / (1 + np.exp(-k * (x - x0))))
     return y
 
@@ -841,8 +841,6 @@ class Transition(object):
         :param gaussian_bool: True if Gaussian, False if standard
         :return: lists of max, average, and median values at each CV in the Transition
         """
-        # max_indices = [np.argmax(ciu_data, axis=0)]
-        # y_max_vals = [dt_axis[x] for x in max_indices]
         y_max_cols = []
         y_wtd_avg_cols = []
         y_median_cols = []
@@ -892,10 +890,6 @@ class Transition(object):
             med_index = (np.abs(wtd_sum_dts - med_value)).argmin()
             med_dt = dt_axis[med_index]
             y_median_cols.append(med_dt)
-        # combined_y_max = y_max_vals[self.start_index: self.end_index + 1]
-        # combined_y_avg = y_wtd_avg_cols[self.start_index: self.end_index + 1]
-        # combined_y_median = y_median_cols[self.start_index: self.end_index + 1]
-
         return y_max_cols, y_wtd_avg_cols, y_median_cols
 
     def fit_transition(self, params_obj):
@@ -917,7 +911,7 @@ class Transition(object):
             steepness_guess = -1 * steepness_guess
 
         # for interpolation of transition modes - determine transition region to interpolate
-        pad_cv = params_obj.ciu50_2_pad_transitions_cv
+        pad_cv = params_obj.ciu50_3_pad_transitions_cv
         if self.feature1.end_cv_val < self.feature2.start_cv_val:
             # features do NOT overlap, go from end of first feature to start of second
             trans_start_cv = self.feature1.end_cv_val - pad_cv
@@ -927,17 +921,14 @@ class Transition(object):
             trans_start_cv = self.feature2.start_cv_val - pad_cv
             trans_end_cv = self.feature1.end_cv_val + pad_cv
 
-        # todo: deprecate? or leave at 2 always (or some kind of advanced menu)
-        if params_obj.ciu50_x_1_interp_factor > 0:
-            # interpolate whole dataset
-            interp_x_vals = np.linspace(self.combined_x_axis[0], self.combined_x_axis[len(self.combined_x_axis) - 1],
-                                        len(self.combined_x_axis) * params_obj.ciu50_x_1_interp_factor)
-            interp_function_raw = scipy.interpolate.interp1d(self.combined_x_axis, self.combined_y_vals)
-            interp_y_vals = interp_function_raw(interp_x_vals)
-        else:
-            interp_x_vals = self.combined_x_axis
-            interp_y_vals = self.combined_y_vals
-            interp_function_raw = None
+        # interpolate whole dataset by a factor of 2 for improved fitting quality
+        interp_x_vals = np.linspace(self.combined_x_axis[0], self.combined_x_axis[len(self.combined_x_axis) - 1],
+                                    len(self.combined_x_axis) * 2)
+        interp_function_raw = scipy.interpolate.interp1d(self.combined_x_axis, self.combined_y_vals)
+        interp_y_vals = interp_function_raw(interp_x_vals)
+        # interp_x_vals = self.combined_x_axis
+        # interp_y_vals = self.combined_y_vals
+        # interp_function_raw = None
 
         if params_obj.ciu50_1_centroiding_mode == 'average':
             # use spectral average for y-values
@@ -960,7 +951,7 @@ class Transition(object):
             else:
                 final_x_vals, final_y_vals = self.assemble_transition_data(interp_x_vals, interp_y_vals, trans_start_cv,
                                                                            trans_end_cv, self.feat_distance,
-                                                                           interp_trans_factor=params_obj.ciu50_x_2_trans_interp_factor,
+                                                                           interp_trans_factor=2,
                                                                            trans_interp_fn=interp_function_raw)
 
         # run the logistic fitting
@@ -975,14 +966,8 @@ class Transition(object):
             pcov = []
 
         # check goodness of fit
-        # yfit = logistic_func(final_x_vals, *popt)
         yfit = logistic_func(interp_x_vals, *popt)
-
-
-        # slope, intercept, rvalue, pvalue, stderr = scipy.stats.linregress(final_y_vals, yfit)
         slope, intercept, rvalue, pvalue, stderr = scipy.stats.linregress(interp_y_vals, yfit)
-
-        # adjrsq = adjrsquared(rvalue ** 2, len(cv_col_intensities))
         rsq = rvalue ** 2
 
         if popt[2] < 0:
@@ -1053,7 +1038,6 @@ class Transition(object):
             # check if a column max is within tolerance of the feature median
             current_max_dt = analysis_obj.col_max_dts[cv_index]
             if abs(current_max_dt - self.feature2.gauss_median_centroid) <= width_tol_dt:
-                self.center_guess_gaussian = analysis_obj.axes[1][cv_index]
                 return True
 
         # no CV found with column max within tolerance - return false

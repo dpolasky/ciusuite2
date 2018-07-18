@@ -113,12 +113,13 @@ class Parameters(object):
         self.compare_1_custom_red = None
 
         # Gaussian fitting
-        self.gaussian_1_convergence = None
+        # self.gaussian_1_convergence = None
         self.gaussian_2_int_threshold = None
-        self.gaussian_3_mode = None
+        self.gaussian_1_mode = None
         self.gaussian_4_save_diagnostics = None
-        self.gaussian_5_width_fraction = None
-        self.gaussian_6_fit_method = None
+        # self.gaussian_5_width_fraction = None
+        # self.gaussian_6_fit_method = None
+        self.gaussian_61_num_cores = None
         self.gaussian_71_max_prot_components = None
         self.gaussian_72_prot_peak_width = None
         self.gaussian_73_prot_width_tol = None
@@ -126,7 +127,6 @@ class Parameters(object):
         self.gaussian_82_max_nonprot_comps = None
         self.gaussian_83_nonprot_width_min = None
         self.gaussian_9_min_protein_amp = None
-        self.gaussian_61_num_cores = None
 
         # self.gaussian_6_min_peak_dist = None
         # self.gaussian_3_width_max = None
@@ -139,11 +139,11 @@ class Parameters(object):
         self.feature_4_gap_tol = None
 
         self.ciu50_1_centroiding_mode = None
-        self.ciu50_2_pad_transitions_cv = None
-        self.ciu50_3_combine_outputs = None
+        self.ciu50_3_pad_transitions_cv = None
+        self.ciu50_2_combine_outputs = None
         # advanced menu for ciu50 - move below others or something
-        self.ciu50_x_1_interp_factor = None
-        self.ciu50_x_2_trans_interp_factor = None
+        # self.ciu50_x_1_interp_factor = None
+        # self.ciu50_x_2_trans_interp_factor = None
 
         # self.classif_feats_1_num_feats = None
         # self.classif_feats_2_min_score = None

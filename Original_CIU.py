@@ -72,11 +72,6 @@ def rmsd_difference(data_1, data_2):
     :param data_2: matrix 2 (numpy.ndarray) - MUST be same shape as matrix 1
     :return: difference matrix (ndarray), rmsd (float) in percent
     """
-    # data_1[data_1 < 0.1] = 0.1
-    # num_entries_1 = np.count_nonzero(data_1)
-    # data_2[data_2 < 0.1] = 0.1
-    # num_entries_2 = np.count_nonzero(data_2)
-
     data_1[data_1 < 0.1] = 0
     num_entries_1 = np.count_nonzero(data_1)
     data_2[data_2 < 0.1] = 0

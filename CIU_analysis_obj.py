@@ -49,7 +49,6 @@ class CIUAnalysisObj(object):
         self.features_changept = None   # type: List[Feature]
 
         # Gaussian fitting results - raw and following feature detection included
-        # self.gaussians = None
         self.raw_protein_gaussians = None
         self.raw_nonprotein_gaussians = None
         self.feat_protein_gaussians = None

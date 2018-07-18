@@ -498,6 +498,10 @@ class CIUSuite2(object):
         """
         # Determine if a file range has been specified
         files_to_read = self.check_file_range_entries()
+        if len(files_to_read) < 2:
+            messagebox.showerror('Too Few Files', 'At least 2 files must be selected to Average')
+            return
+
         self.progress_started()
 
         analysis_obj_list = [load_analysis_obj(x) for x in files_to_read]
@@ -550,8 +554,6 @@ class CIUSuite2(object):
             # check axes for equality and interpolate if different
             files_to_read = self.check_file_range_entries()
             loaded_files = [load_analysis_obj(x) for x in files_to_read]
-            # todo: I dont think cropping needs axis checking beforehand, but if so, this should be put back in
-            # loaded_files = check_axes_and_warn(loaded_files)
 
             crop_vals = run_crop_ui(loaded_files[0].axes)
             if crop_vals is None:
@@ -567,14 +569,8 @@ class CIUSuite2(object):
                 new_obj = Raw_Processing.crop(analysis_obj, crop_vals)
                 new_obj.refresh_data()
                 new_obj.crop_vals = crop_vals
-                # newfile = save_analysis_obj(crop_obj, filename_append='_crop', outputdir=self.output_dir)
                 newfile = save_analysis_obj(new_obj, new_obj.params, outputdir=self.output_dir)
                 new_file_list.append(newfile)
-                # also save _raw.csv output if desired
-                # if self.params_obj.output_1_save_csv:
-                #     save_path = file.rstrip('.ciu') + '_crop_raw.csv'
-                #     Original_CIU.write_ciu_csv(save_path, analysis_obj.ciu_data, analysis_obj.axes)
-                # self.update_progress(files_to_read.index(file), len(files_to_read))
                 self.update_progress(loaded_files.index(analysis_obj), len(loaded_files))
 
             self.analysis_file_list = new_file_list
@@ -642,8 +638,7 @@ class CIUSuite2(object):
             new_file_list = []
             for file in files_to_read:
                 analysis_obj = load_analysis_obj(file)
-                # analysis_obj = Gaussian_Fitting.gaussian_fit_ciu(analysis_obj, self.params_obj)
-                analysis_obj = Gaussian_Fitting.gaussian_lmfit_main(analysis_obj, self.params_obj)
+                analysis_obj = Gaussian_Fitting.gaussian_lmfit_main(analysis_obj, self.params_obj, self.output_dir)
 
                 filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
                 new_file_list.append(filename)
@@ -665,7 +660,7 @@ class CIUSuite2(object):
 
             new_file_list = []
             all_outputs = ''
-            short_outputs = ''
+            short_outputs = 'Filename,CIU50 1,CIU50 2,(etc)\n'
             filename = ''
             combine_flag = False
             gaussian_bool = False
@@ -691,7 +686,7 @@ class CIUSuite2(object):
                 new_file_list.append(filename)
 
                 # save outputs to file in combined or stand-alone modes
-                if not self.params_obj.ciu50_3_combine_outputs:
+                if not self.params_obj.ciu50_2_combine_outputs:
                     Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir)
                     Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir)
                     combine_flag = False
@@ -761,6 +756,12 @@ class CIUSuite2(object):
                     # If gaussian data exists, perform the analysis
                     new_obj = Gaussian_Fitting.reconstruct_from_fits(analysis_obj.feat_protein_gaussians, analysis_obj.axes, analysis_obj.short_filename, self.params_obj)
                     filename = save_analysis_obj(new_obj, self.params_obj, outputdir=self.output_dir)
+
+                    # also save an _raw.csv file with the generated data
+                    Original_CIU.write_ciu_csv(os.path.join(self.output_dir, new_obj.short_filename + '_raw.csv'),
+                                               new_obj.ciu_data,
+                                               new_obj.axes)
+
                     new_file_list.append(filename)
                     self.update_progress(files_to_read.index(file), len(files_to_read))
 
@@ -814,36 +815,6 @@ class CIUSuite2(object):
 
             self.display_analysis_files()
         self.progress_done()
-
-    # todo: deprecated
-    # def on_button_feature_changept_clicked(self):
-    #     """
-    #     Run simple flat feature detection routine. Does NOT require Gaussian fitting
-    #     :return: void
-    #     """
-    #     param_keys = [x for x in self.params_obj.params_dict.keys() if 'feature_cpt' in x]
-    #     if self.run_param_ui('Feature Detection Parameters', param_keys):
-    #         files_to_read = self.check_file_range_entries()
-    #         self.progress_started()
-    #         new_file_list = []
-    #
-    #         for file in files_to_read:
-    #             # load file
-    #             analysis_obj = load_analysis_obj(file)
-    #
-    #             # analysis_obj = Feature_Detection.feature_detect_changept(analysis_obj, self.params_obj)
-    #             analysis_obj = Feature_Detection.feature_detect_col_max(analysis_obj, self.params_obj)
-    #
-    #             filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
-    #             new_file_list.append(filename)
-    #
-    #             Feature_Detection.plot_features(analysis_obj, self.params_obj, self.output_dir, mode='changept')
-    #             outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_features.csv')
-    #             Feature_Detection.print_features_list(analysis_obj.features_changept, outputpath, mode='changept')
-    #             self.update_progress(files_to_read.index(file), len(files_to_read))
-    #
-    #         self.display_analysis_files()
-    #     self.progress_done()
 
     def on_button_classification_supervised_clicked(self):
         """
@@ -915,16 +886,6 @@ class CIUSuite2(object):
                 self.params_obj.silent_clf_4_num_gauss = max_num_gaussians
             else:
                 max_num_gaussians = 0   # no Gaussians in non-Gaussian mode
-
-            # check training size
-            # min_data_size = np.min([len(x) for x in obj_list_by_label])
-            # if self.params_obj.classif_1_training_size > min_data_size - 1:
-            #     messagebox.showerror('Training Size Too Large', 'Error: The training size specified is too large for the '
-            #                                                     'number of files provided. At least 1 file must be available '
-            #                                                     'for testing, so training size cannot be larger than the number'
-            #                                                     ' of files in the smallest class - 1. Classification canceled: '
-            #                                                     ' please adjust training size and try again.')
-            #     self.progress_done()
 
             # Run the classification
             if self.params_obj.classif_5_auto_featselect == 'automatic':
