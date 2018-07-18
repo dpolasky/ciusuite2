@@ -342,7 +342,6 @@ class CIUSuite2(object):
         if param_ui.return_code == 0:
             return_vals = param_ui.refresh_values()
             self.params_obj.set_params(return_vals)
-            self.check_params()
             return True
         return False
 
@@ -555,7 +554,7 @@ class CIUSuite2(object):
             files_to_read = self.check_file_range_entries()
             loaded_files = [load_analysis_obj(x) for x in files_to_read]
 
-            crop_vals = run_crop_ui(loaded_files[0].axes)
+            crop_vals = Raw_Processing.run_crop_ui(loaded_files[0].axes, hard_crop_ui)
             if crop_vals is None:
                 # user hit cancel, or no values were provided
                 self.progress_done()
@@ -638,7 +637,7 @@ class CIUSuite2(object):
             new_file_list = []
             for file in files_to_read:
                 analysis_obj = load_analysis_obj(file)
-                analysis_obj = Gaussian_Fitting.gaussian_lmfit_main(analysis_obj, self.params_obj, self.output_dir)
+                analysis_obj = Gaussian_Fitting.main_gaussian_lmfit(analysis_obj, self.params_obj, self.output_dir)
 
                 filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
                 new_file_list.append(filename)
@@ -872,7 +871,7 @@ class CIUSuite2(object):
                         if analysis_obj.features_gaussian is None:
                             messagebox.showerror('No Gaussian Features Fitted', 'Error: Gaussian feature classification selected, '
                                                                                 'but Gaussian Feature Detection has not been performed yet. '
-                                                                                'Please run Gaussian Feature Detection on all files being used'
+                                                                                'Please run Gaussian Feature Detection on all files being used '
                                                                                 'for classification and try again.')
                             # cancel the classification
                             self.progress_done()
@@ -938,23 +937,47 @@ class CIUSuite2(object):
         # check parameters
         param_keys = [x for x in self.params_obj.params_dict.keys() if 'classif' in x]
         if self.run_param_ui('Classification Parameters', param_keys):
-
-            # ensure Gaussian features are present if requested
-            if self.params_obj.classif_3_mode == 'Gaussian':
-                for analysis_obj in analysis_obj_list:
-                    if analysis_obj.features_gaussian is None:
-                        messagebox.showerror('No Gaussian Features Fitted',
-                                             'Error: No Gaussian Features in file: {} . Gaussian Feature classification selected, '
-                                             'but Gaussian Feature Detection has not been performed yet. '
-                                             'Please run Gaussian Feature Detection on all files being used'
-                                             'and try again.')
-                        # cancel the classification
-                        self.progress_done()
-
             # load classification scheme file
             scheme_file = filedialog.askopenfilename(filetypes=[('Classification File', '.clf')])
             if not scheme_file == '':
                 scheme = Classification.load_scheme(scheme_file)
+
+                # ensure Gaussian features are present if requested
+                if self.params_obj.classif_3_mode == 'Gaussian':
+                    for analysis_obj in analysis_obj_list:
+                        if analysis_obj.features_gaussian is None:
+                            messagebox.showerror('No Gaussian Features Fitted',
+                                                 'Error: No Gaussian Features in file: {} . Gaussian Feature classification selected, '
+                                                 'but Gaussian Feature Detection has not been performed yet. '
+                                                 'Please run Gaussian Feature Detection on all files being used'
+                                                 'and try again.')
+                            # cancel the classification
+                            self.progress_done()
+                        # prepare gaussian data for classification
+                        final_gaussians = Classification.prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
+                        analysis_obj.classif_gaussfeats = final_gaussians
+                        if analysis_obj.features_gaussian is None:
+                            print(
+                                'Error: Gaussian feature classification selected, but Gaussian Feature Detection has not been performed for file {}. '
+                                'File skipped. To classify, please run Gaussian Feature Detection on this file and try again.'.format(
+                                    analysis_obj.short_filename))
+                            # skip this file
+                            continue
+                        else:
+                            # make ready the gaussians (saved into analysis object and length checked)
+                            skip_flag = False
+                            for gaussian_list in final_gaussians:
+                                if len(gaussian_list) > scheme.num_gaussians:
+                                    messagebox.showerror('Gaussian Extrapolation Error',
+                                                         'Warning: there are more overlapping features in file {} than in any of the training data used the classification scheme. '
+                                                         'To fit, ensure that the Gaussian Feature Detection outputs for this file are similar to the data used to build the chosen '
+                                                         'classification scheme (especially in the maximum number of features that overlap at one CV)'.format(
+                                                             analysis_obj.short_filename))
+                                    # skip file
+                                    skip_flag = True
+                                    break
+                            if skip_flag:
+                                continue
 
                 # check axes against Scheme's saved axes and equalize if needed
                 scheme_cvs = [x.cv for x in scheme.selected_features]
@@ -968,35 +991,11 @@ class CIUSuite2(object):
                 # analyze unknowns using the scheme and save outputs
                 successful_objs_for_plot = []
                 for analysis_obj in analysis_obj_list:
-                    # if using Gaussian mode, prepare file and check # Gaussians
-                    if self.params_obj.classif_3_mode == 'Gaussian':
-                        if analysis_obj.features_gaussian is None:
-                            print('Error: Gaussian feature classification selected, but Gaussian Feature Detection has not been performed for file {}. '
-                                  'File skipped. To classify, please run Gaussian Feature Detection on this file and try again.'.format(analysis_obj.short_filename))
-                            # skip this file
-                            continue
-                        else:
-                            # make ready the gaussians (saved into analysis object and length checked)
-                            gaussians_by_cv = Classification.prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
-                            skip_flag = False
-                            for gaussian_list in gaussians_by_cv:
-                                if len(gaussian_list) > scheme.num_gaussians:
-                                    messagebox.showerror('Gaussian Extrapolation Error', 'Warning: there are more overlapping features in file {} than in any of the training data used the classification scheme. '
-                                                                                         'To fit, ensure that the Gaussian Feature Detection outputs for this file are similar to the data used to build the chosen '
-                                                                                         'classification scheme (especially in the maximum number of features that overlap at one CV)'.format(analysis_obj.short_filename))
-                                    # skip file
-                                    skip_flag = True
-                                    break
-                            if skip_flag:
-                                continue
-
                     # Finally, perform the classification and save outputs
                     analysis_obj = scheme.classify_unknown(analysis_obj, self.params_obj, self.output_dir)
                     # analysis_obj.classif_predicted_outputs = prediction_outputs
                     successful_objs_for_plot.append(analysis_obj)
 
-                    # filename = save_analysis_obj(analysis_obj, params_obj=self.params_obj, outputdir=self.output_dir)
-                    # new_file_list.append(filename)
                     self.update_progress(analysis_obj_list.index(analysis_obj), len(analysis_obj_list))
 
                 if len(successful_objs_for_plot) > 0:
@@ -1330,143 +1329,12 @@ def load_analysis_obj(analysis_filename):
     return analysis_obj
 
 
-# todo: move to its own file/module
-class CropUI(object):
-    """
-    Simple dialog with several fields build with Pygubu for inputting crop values
-    """
-    def __init__(self, init_axes):
-        # Get crop input from the Crop_vals UI form
-        self.builder = pygubu.Builder()
-
-        # load the UI file
-        self.builder.add_from_file(hard_crop_ui)
-        # create widget using provided root (Tk) window
-        self.mainwindow = self.builder.get_object('Crop_toplevel')
-        self.mainwindow.protocol('WM_DELETE_WINDOW', self.on_close_window)
-
-        callbacks = {
-            'on_button_cancel_clicked': self.on_button_cancel_clicked,
-            'on_button_crop_clicked': self.on_button_crop_clicked
-        }
-        self.builder.connect_callbacks(callbacks)
-        self.crop_vals = []
-
-        self.init_values(init_axes)
-
-    def run(self):
-        """
-        Run the UI and return the output values
-        :return: List of crop values [dt low, dt high, cv low, cv high]
-        """
-        self.builder.get_object('Crop_toplevel').grab_set()     # prevent users from clicking other stuff while crop is active
-        self.mainwindow.mainloop()
-        self.builder.get_object('Crop_toplevel').grab_release()
-        return self.return_values()
-
-    def on_close_window(self):
-        """
-        Quit the mainwindow to stop the mainloop and get it to return
-        the crop values, then destroy it to remove it from screen.
-        :return: the provided crop values, or None if none were provided
-        """
-        self.mainwindow.quit()
-        self.mainwindow.destroy()
-        return self.return_values()
-
-    def init_values(self, axes):
-        """
-        Display starting axes values in the object for the user to edit
-        :param axes: list of [dt_axis, cv_axis] (each their own list)
-        :return: void
-        """
-        dt_axis = axes[0]
-        cv_axis = axes[1]
-
-        self.builder.get_object('Entry_dt_start').delete(0, tk.END)
-        self.builder.get_object('Entry_dt_start').insert(0, dt_axis[0])
-        self.builder.get_object('Entry_dt_end').delete(0, tk.END)
-        self.builder.get_object('Entry_dt_end').insert(0, dt_axis[len(dt_axis) - 1])
-
-        self.builder.get_object('Entry_cv_start').delete(0, tk.END)
-        self.builder.get_object('Entry_cv_start').insert(0, cv_axis[0])
-        self.builder.get_object('Entry_cv_end').delete(0, tk.END)
-        self.builder.get_object('Entry_cv_end').insert(0, cv_axis[len(cv_axis) - 1])
-
-    def on_button_cancel_clicked(self):
-        """
-        Close the UI window and return None
-        :return: will return None from on_close_window
-        """
-        return self.on_close_window()
-
-    def on_button_crop_clicked(self):
-        """
-        Return the cropping values entered in the fields, after checking for invalid values.
-        If any values are invalid, returns without setting the crop_vals list
-        :return: sets crop_vals list [dt_low, dt_high, cv_low, cv_high] to the object's field for retrieval
-        """
-        dt_low = self.builder.get_object('Entry_dt_start').get()
-        dt_high = self.builder.get_object('Entry_dt_end').get()
-        cv_low = self.builder.get_object('Entry_cv_start').get()
-        cv_high = self.builder.get_object('Entry_cv_end').get()
-
-        try:
-            dt_low = float(dt_low)
-        except ValueError:
-            messagebox.showwarning('Error', 'Invalid starting DT: must be a number (decimals OK)')
-            return -1
-        try:
-            dt_high = float(dt_high)
-        except ValueError:
-            messagebox.showwarning('Error', 'Invalid ending DT: must be a number (decimals OK)')
-            return -1
-        try:
-            cv_low = float(cv_low)
-        except ValueError:
-            messagebox.showwarning('Error', 'Invalid starting CV: must be a number (decimals OK)')
-            return -1
-        try:
-            cv_high = float(cv_high)
-        except ValueError:
-            messagebox.showwarning('Error', 'Invalid ending CV: must be a number (decimals OK)')
-            return -1
-
-        # if all values are valid, save the list and close the window
-        self.crop_vals = [dt_low, dt_high, cv_low, cv_high]
-        # self.crop_vals = [dt_low, dt_high, cv_low, cv_high, dt_length, cv_length]
-        return self.on_close_window()
-
-    def return_values(self):
-        """
-        Returns the crop_values if they are specified
-        :return: crop_vals list [dt_low, dt_high, cv_low, cv_high] or None if they're not set
-        """
-        if len(self.crop_vals) > 0:
-            return self.crop_vals
-        else:
-            return None
-
-
-def run_crop_ui(axes):
-    """
-    Run the crop UI widget from PyGuBu to get cropping values and return them
-    :param axes: starting axes to display in the widget
-    :return: List of crop values [dt_low, dt_high, cv_low, cv_high], or None if none were specified or
-    the user hit the 'cancel' button
-    """
-    crop_app = CropUI(axes)
-    crop_vals = crop_app.run()
-    return crop_vals
-
-
 if __name__ == '__main__':
     # Build the GUI and start its mainloop (run) method
     root = tk.Tk()
     root.withdraw()
     print('building GUI...')
     ciu_app = CIUSuite2(root)
-    print('starting CIUSuite 2...')
+    print('Starting CIUSuite 2')
     ciu_app.run()
-    # test = run_crop_ui()
-    # print(test)
+

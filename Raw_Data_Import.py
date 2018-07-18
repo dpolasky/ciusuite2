@@ -6,11 +6,9 @@ DP
 """
 from PyQt5 import QtWidgets
 import sys
-import subprocess
 import os
 import numpy as np
 import tkinter
-from tkinter import simpledialog
 from tkinter import messagebox
 from tkinter import ttk
 

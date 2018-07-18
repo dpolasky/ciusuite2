@@ -95,40 +95,6 @@ class CIUAnalysisObj(object):
             return self.features_changept
 
 
-    # todo: deprecate
-    # def get_attribute_by_cv(self, attribute, filtered):
-    #     """
-    #     Return a list of lists of the specified attribute at each collision voltage (i.e. [[centroid 1], [centroid 1,
-    #     centroid 2], ..]. Attributes must be exact string matches for the attribute name in the Gaussian object
-    #     :param attribute: Name (string) of the gaussian attribute to get. Options = 'centroid', 'amplitude', 'width',
-    #     etc. See Gaussian class for details.
-    #     :param filtered: if True, returns from filtered_gaussians instead of gaussians
-    #     :return: CV-sorted list of centroid lists
-    #     """
-    #     attribute_list = []
-    #     if filtered:
-    #         for cv_sublist in self.protein_gaussians:
-    #             attribute_list.append([getattr(gaussian, attribute) for gaussian in cv_sublist])
-    #     else:
-    #         for cv_sublist in self.gaussians:
-    #             attribute_list.append([getattr(gaussian, attribute) for gaussian in cv_sublist])
-    #     return attribute_list
-    #
-    # def get_attribute_flat(self, attribute, filtered_bool):
-    #     """
-    #     Return a flattened list (not sorted by CV) of all attributes from a list of Gaussian objects.
-    #     Attribute string must exactly match attribute name in Gaussian object.
-    #     :param attribute: Name (string) of the gaussian attribute to get. Options = 'centroid', 'amplitude', 'width',
-    #     etc. See Gaussian class for details.
-    #     :param filtered_bool: if True, returns from filtered_gaussians instead of gaussians
-    #     :return: list of attribute values
-    #     """
-    #     if filtered_bool:
-    #         return [getattr(gaussian, attribute) for cv_sublist in self.protein_gaussians for gaussian in cv_sublist]
-    #     else:
-    #         return [getattr(gaussian, attribute) for cv_sublist in self.gaussians for gaussian in cv_sublist]
-
-
 # testing
 if __name__ == '__main__':
     root = tkinter.Tk()

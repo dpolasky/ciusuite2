@@ -141,9 +141,7 @@ class SingleFitStats(object):
         Uses a penalty function to attempt to regularize the fitting and score peak fits optimally.
         Penalty function is designed to penalize:
             - peaks whose widths deviate from expected protein peak width
-            - large numbers of peaks
-            - peaks that are too close together
-            - large movement compared to previous CV
+            - peaks that are too close together (sharing too much area)
         :param params_obj: parameter container
         :type params_obj: Parameters
         :param penalty_scaling: how much to scale penalty (to reduce contribution relative to rsq)
@@ -178,7 +176,6 @@ class SingleFitStats(object):
         # save information to the fit container
         self.score = score
         self.peak_penalties = peak_penalties
-        # return score, peak_penalties
 
     def get_popt(self):
         """
@@ -205,233 +202,7 @@ class SingleFitStats(object):
         plt.close()
 
 
-def multi_gauss_func(x, *params):
-    """
-    Attempt at basic multi-gaussian fitting by passing multiple parameter sets and generating a sum
-    of gaussians
-    :param x: data to fit
-    :param params: List of [amplitdue, centroid x, width] parameters, one set for each Gaussian to fit (in order)
-    :return: y = f(x), where f(x) describes a gaussian function
-    """
-    y = np.zeros_like(x)
-    # make a gaussian function for each set of parameters in the input list
-    for i in range(0, len(params), 3):
-        y = y + gaussfunc(x, params[i], params[i+1], params[i+2])
-    return y
-
-
-def estimate_multi_params(ciu_col, dt_axis, width_frac, peak_int_threshold=0.1, min_spacing_bins=10):
-    """
-    Make initial guesses for a sum of gaussians fitting
-    :param ciu_col: 1D numpy array representing the DT spectrum in a given column (CV)
-    :param dt_axis: drift time data (x axis to the fitted gaussian's y) for peak indexing
-    :param width_frac: estimation of peak width (DT * fraction), typically 10% has been found to work well
-    :param peak_int_threshold: Minimum intensity threshold to detect a peak for fitting
-    :param min_spacing_bins: Minimum distance between peaks IN BINS - should be about instrument resolution
-    :return: list of [centroid, width, amplitude] initial guesses
-    """
-    # estimate the number of components by doing a simple peak finding using PeakUtils
-    peak_indices = peakutils.indexes(ciu_col, thres=peak_int_threshold, min_dist=min_spacing_bins)
-
-    params_lists = []
-    # for each estimated peak/component, compute initial guess parameters for gaussian fitting
-    for peak_index in peak_indices:
-        centroid_guess = dt_axis[peak_index]    # centroid is the DT at the index of the peak
-        amp_guess = ciu_col[peak_index]         # amplitude is the value at the index of the peak
-        width_guess = peak_index * width_frac
-        params_lists.extend([amp_guess, centroid_guess, width_guess])
-        # params_lists.append([0, centroid_guess, amp_guess, width_guess])
-    return params_lists
-
-
-def estimate_multi_params_all(ciu_col, dt_axis, width_frac):
-    """
-    Make initial guesses for peak locations, but ensure overestimation. SciPy find_peaks_cwt tends to
-    way overestimate peaks (at least if a small width range is provided), but the fitting algorithm works
-    by passing increasing numbers of peaks until the fit converges, so we need to have a large number of
-    peaks to provide.
-    :param ciu_col: 1D numpy array representing the DT spectrum in a given column (CV)
-    :param dt_axis: drift time data (x axis to the fitted gaussian's y) for peak indexing
-    :param width_frac: estimation of peak width (DT * fraction), typically 10% has been found to work well
-    :return: list of [centroid, width, amplitude] initial guesses
-    """
-    # estimate the number of components by doing a simple peak finding using CWT - since it tends to give lots of peaks
-    peak_ind_scipy = scipy.signal.find_peaks_cwt(ciu_col, np.arange(1, 5))
-
-    params_lists = []
-    # for each estimated peak/component, compute initial guess parameters for gaussian fitting
-    for peak_index in peak_ind_scipy:
-        centroid_guess = dt_axis[peak_index]    # centroid is the DT at the index of the peak
-        amp_guess = ciu_col[peak_index]         # amplitude is the value at the index of the peak
-        width_guess = peak_index * width_frac
-        params_lists.append([amp_guess, centroid_guess, width_guess])
-
-    # sort guesses by amplitude (index 1 in each sublist) in order from largest to smallest
-    params_lists = sorted(params_lists, key=lambda x: x[0], reverse=True)
-    return params_lists
-
-
-def gaussfunc(x, amplitude, centroid, sigma):
-    """
-    Gaussian function with constraints applied for CIU data
-    :param x: x
-    :param amplitude: gaussian amplitude (constrained to be positive)
-    :param centroid: gaussian centroid
-    :param sigma: gaussian width
-    :return: y = f(x)
-    """
-    exponent = ((x - centroid)**2) / (2 * (sigma**2))
-    y = amplitude * (np.exp(-exponent))         # using this function since our data is always normalized
-    # y = amplitude/(np.sqrt(2*np.pi) * sigma) * (np.exp(-exponent))     # use this for non-normalized data
-
-    return y
-
-
-def adjrsquared(r2, df):
-    """
-    Compute adjusted r2 given the number of degrees of freedom in an analysis
-    :param r2: original r2 value (float)
-    :param df: degrees of freedom (int)
-    :return: adjusted r2
-    """
-    y = 1 - (((1-r2)*(df-1))/(df-4-1))
-    return y
-
-
-def filter_fits(params_list, peak_width_cutoff, intensity_cutoff, centroid_bounds=None):
-    """
-    Simple filter to remove any peaks with a width above a specified cutoff. Intended to separate
-    noise 'peaks' from protein peaks as they differ in observed width
-    :param params_list: list of optimized parameters from curve fit
-    :param peak_width_cutoff: maximum allowed width for a peak to remain in the list
-    :param intensity_cutoff: minimum relative intensity to remain in the list
-    :param centroid_bounds: list of [lower bound, upper bound] for peak centroid (in ms)
-    :return: filtered params_list, with peaks above the width cutoff removed
-    """
-    index = 0
-    filtered_list = []
-    while index < len(params_list):
-        # test if the peak meets all conditions for inclusion
-        include_peak = False
-
-        # ensure peak width (FWHM) is below the cutoff and above 0
-        fwhm = 2 * math.sqrt(2 * math.log(2)) * params_list[index + 2]
-        if 0 < fwhm < peak_width_cutoff:
-            # also remove amplitdues below the intensity cutoff
-            if params_list[index] > intensity_cutoff:
-                if centroid_bounds is not None:
-                    # centroid bounds provided - if matched, include the peak
-                    if centroid_bounds[0] < params_list[index + 1] < centroid_bounds[1]:
-                        include_peak = True
-                elif params_list[index + 1] > 0:
-                    # If no bounds provided lso remove centroids < 0
-                    include_peak = True
-
-        if include_peak:
-            filtered_list.extend(params_list[index:index + 3])
-        index += 3
-    return filtered_list
-
-
-def reconstruct_from_fits(gaussian_lists_by_cv, axes, new_filename, params_obj):
-    """
-    Construct a new analysis object using the filtered Gaussian fits of the provided analysis object
-    as the raw data. Must have previously performed Gaussian feature detection on the provided analysis_obj
-    :param gaussian_lists_by_cv: list of lists of Gaussian objects at each CV
-    :param axes: [DT_axis, CV_axis]: two numpy arrays with drift and CV axes to use
-    :param new_filename:
-    :param params_obj: Parameters container with parameters to save into the new CIUAnalsis obj
-    :return: new CIUAnalysisObj with reconstructed raw data
-    :rtype: CIUAnalysisObj
-    """
-    ciu_data_by_cols = []
-    dt_axis = axes[0]
-    # construct the raw data at each collision voltage to stitch together into a CIU matrix
-    for cv_gauss_list in gaussian_lists_by_cv:
-        # assemble all the parameters for Gaussians at this CV
-        all_params = []
-        for gaussian in cv_gauss_list:
-            all_params.extend(gaussian.return_popt())
-
-        # Use the Gaussian function to construct intensity data at each DT
-        intensities = multi_gauss_func(dt_axis, *all_params)
-
-        ciu_data_by_cols.append(intensities)
-
-    # finally, transpose the CIU data to match the typical format, normalize, and return the object
-    final_data = np.asarray(ciu_data_by_cols).T
-    final_data = Raw_Processing.normalize_by_col(final_data)
-
-    raw_obj = CIU_raw.CIURaw(final_data, dt_axis, axes[1], new_filename)
-    new_analysis_obj = CIU_analysis_obj.CIUAnalysisObj(raw_obj, final_data, axes, params_obj)
-    new_analysis_obj.short_filename = new_analysis_obj.short_filename + '_gauss-recon'
-
-    new_analysis_obj.protein_gaussians = gaussian_lists_by_cv
-    new_analysis_obj.gaussians = gaussian_lists_by_cv
-    return new_analysis_obj
-
-
-def parse_gaussian_list_from_file(filepath):
-    """
-    Read in a list of Gaussians from file and return a list of Gaussian objects.
-    File format: (comma delimited text file, headers (#) ignored)
-    CV1, gauss1_amp, gauss1_cent, gauss1_width, gauss2 A, c, w, ..., gaussN a, c, w
-    CV2, gauss1_amp, (etc)
-    CV3
-    ...
-    :param filepath: full path to file to read
-    :return: list of lists of Gaussian objects sorted by collision voltage, list of collision voltages
-    """
-    gaussian_list_by_cv = []
-    cvs = []
-    dt_axis = []
-    with open(filepath, 'r') as inputfile:
-        for line in list(inputfile):
-            # skip headers
-            if line.startswith('#'):
-                continue
-            splits = line.rstrip('\n').split(',')
-            splits = [x for x in splits if x is not '']
-
-            # read DT axis
-            if line.lower().startswith('drift'):
-                try:
-                    dt_axis = np.asarray([float(x) for x in splits[1:]])
-                except ValueError:
-                    print('DT axis could not be read. Line was: {}'.format(line))
-                    dt_axis = []
-                continue
-
-            # get CVs from first column only to avoid duplicates
-            try:
-                cv = float(splits[0])
-                cvs.append(cv)
-            except ValueError:
-                print('Invalid CV in line: {}; value must be a number. Skipping this line'.format(line))
-                continue
-            except IndexError:
-                # no data on this line, continue
-                continue
-
-            # read remaining Gaussian information
-            index = 0
-            gaussians = []
-            while index < len(splits) - 1:
-                try:
-                    cv = float(splits[index])
-                    amp = float(splits[index + 1])
-                    cent = float(splits[index + 2])
-                    width = float(splits[index + 3])
-                    gaussians.append(Gaussian(amp, cent, width, cv, pcov=None, protein_bool=True))
-                except (IndexError, ValueError):
-                    print('Invalid values for Gaussian. Values were: {}. Gaussian could not be parsed and was skipped'.format(splits[index:index + 3]))
-                index += 4
-            gaussian_list_by_cv.append(gaussians)
-
-    return gaussian_list_by_cv, [dt_axis, np.asarray(cvs)]
-
-
-def gaussian_lmfit_main(analysis_obj, params_obj, outputpath):
+def main_gaussian_lmfit(analysis_obj, params_obj, outputpath):
     """
     Alternative Gaussian fitting method using LMFit for composite modeling of peaks. Estimates initial peak
     parameters using helper methods, then fits optimized Gaussian distributions and saves results. Intended
@@ -691,7 +462,7 @@ def perform_fit(x_data, y_data, cv, num_prot_pks, num_nonprot_pks, guesses_list,
 
 def plot_fit_result(current_fit, output, x_data, outputname):
     """
-    Plotting method for diagnostics. Creates a fit plot for an iteration.
+    Plotting method for diagnostics only. Creates a fit plot for an iteration.
     :param current_fit: fit stats container
     :type current_fit: SingleFitStats
     :param output: LMFit output (ModelResult) from the fitting. Can't be saved to SingleFitStats without breaking pickle-ability
@@ -879,6 +650,99 @@ def make_nonprotein_model(prefix, guess_gaussian, nonprot_width_min, dt_axis):
     return model, model_params
 
 
+def gaussfunc(x, amplitude, centroid, sigma):
+    """
+    Gaussian function with constraints applied for CIU data
+    :param x: x
+    :param amplitude: gaussian amplitude (constrained to be positive)
+    :param centroid: gaussian centroid
+    :param sigma: gaussian width
+    :return: y = f(x)
+    """
+    exponent = ((x - centroid)**2) / (2 * (sigma**2))
+    y = amplitude * (np.exp(-exponent))         # using this function since our data is always normalized
+    # y = amplitude/(np.sqrt(2*np.pi) * sigma) * (np.exp(-exponent))     # use this for non-normalized data
+
+    return y
+
+
+def multi_gauss_func(x, *params):
+    """
+    Attempt at basic multi-gaussian fitting by passing multiple parameter sets and generating a sum
+    of gaussians
+    :param x: data to fit
+    :param params: List of [amplitdue, centroid x, width] parameters, one set for each Gaussian to fit (in order)
+    :return: y = f(x), where f(x) describes a gaussian function
+    """
+    y = np.zeros_like(x)
+    # make a gaussian function for each set of parameters in the input list
+    for i in range(0, len(params), 3):
+        y = y + gaussfunc(x, params[i], params[i+1], params[i+2])
+    return y
+
+
+def estimate_multi_params(ciu_col, dt_axis, width_frac, peak_int_threshold=0.1, min_spacing_bins=10):
+    """
+    Make initial guesses for a sum of gaussians fitting
+    :param ciu_col: 1D numpy array representing the DT spectrum in a given column (CV)
+    :param dt_axis: drift time data (x axis to the fitted gaussian's y) for peak indexing
+    :param width_frac: estimation of peak width (DT * fraction), typically 10% has been found to work well
+    :param peak_int_threshold: Minimum intensity threshold to detect a peak for fitting
+    :param min_spacing_bins: Minimum distance between peaks IN BINS - should be about instrument resolution
+    :return: list of [centroid, width, amplitude] initial guesses
+    """
+    # estimate the number of components by doing a simple peak finding using PeakUtils
+    peak_indices = peakutils.indexes(ciu_col, thres=peak_int_threshold, min_dist=min_spacing_bins)
+
+    params_lists = []
+    # for each estimated peak/component, compute initial guess parameters for gaussian fitting
+    for peak_index in peak_indices:
+        centroid_guess = dt_axis[peak_index]    # centroid is the DT at the index of the peak
+        amp_guess = ciu_col[peak_index]         # amplitude is the value at the index of the peak
+        width_guess = peak_index * width_frac
+        params_lists.extend([amp_guess, centroid_guess, width_guess])
+        # params_lists.append([0, centroid_guess, amp_guess, width_guess])
+    return params_lists
+
+
+def estimate_multi_params_all(ciu_col, dt_axis, width_frac):
+    """
+    Make initial guesses for peak locations, but ensure overestimation. SciPy find_peaks_cwt tends to
+    way overestimate peaks (at least if a small width range is provided), but the fitting algorithm works
+    by passing increasing numbers of peaks until the fit converges, so we need to have a large number of
+    peaks to provide.
+    :param ciu_col: 1D numpy array representing the DT spectrum in a given column (CV)
+    :param dt_axis: drift time data (x axis to the fitted gaussian's y) for peak indexing
+    :param width_frac: estimation of peak width (DT * fraction), typically 10% has been found to work well
+    :return: list of [centroid, width, amplitude] initial guesses
+    """
+    # estimate the number of components by doing a simple peak finding using CWT - since it tends to give lots of peaks
+    peak_ind_scipy = scipy.signal.find_peaks_cwt(ciu_col, np.arange(1, 5))
+
+    params_lists = []
+    # for each estimated peak/component, compute initial guess parameters for gaussian fitting
+    for peak_index in peak_ind_scipy:
+        centroid_guess = dt_axis[peak_index]    # centroid is the DT at the index of the peak
+        amp_guess = ciu_col[peak_index]         # amplitude is the value at the index of the peak
+        width_guess = peak_index * width_frac
+        params_lists.append([amp_guess, centroid_guess, width_guess])
+
+    # sort guesses by amplitude (index 1 in each sublist) in order from largest to smallest
+    params_lists = sorted(params_lists, key=lambda x: x[0], reverse=True)
+    return params_lists
+
+
+def adjrsquared(r2, df):
+    """
+    Compute adjusted r2 given the number of degrees of freedom in an analysis
+    :param r2: original r2 value (float)
+    :param df: degrees of freedom (int)
+    :return: adjusted r2
+    """
+    y = 1 - (((1-r2)*(df-1))/(df-4-1))
+    return y
+
+
 def fwhm_to_sigma(fwhm):
     """
     Convert FWHM (full-width at half max) to sigma for Gaussian function
@@ -886,6 +750,41 @@ def fwhm_to_sigma(fwhm):
     :return: sigma (float)
     """
     return fwhm / (2.0 * (math.sqrt(2 * math.log(2))))
+
+
+def filter_fits(params_list, peak_width_cutoff, intensity_cutoff, centroid_bounds=None):
+    """
+    Simple filter to remove any peaks with a width above a specified cutoff. Intended to separate
+    noise 'peaks' from protein peaks as they differ in observed width
+    :param params_list: list of optimized parameters from curve fit
+    :param peak_width_cutoff: maximum allowed width for a peak to remain in the list
+    :param intensity_cutoff: minimum relative intensity to remain in the list
+    :param centroid_bounds: list of [lower bound, upper bound] for peak centroid (in ms)
+    :return: filtered params_list, with peaks above the width cutoff removed
+    """
+    index = 0
+    filtered_list = []
+    while index < len(params_list):
+        # test if the peak meets all conditions for inclusion
+        include_peak = False
+
+        # ensure peak width (FWHM) is below the cutoff and above 0
+        fwhm = 2 * math.sqrt(2 * math.log(2)) * params_list[index + 2]
+        if 0 < fwhm < peak_width_cutoff:
+            # also remove amplitdues below the intensity cutoff
+            if params_list[index] > intensity_cutoff:
+                if centroid_bounds is not None:
+                    # centroid bounds provided - if matched, include the peak
+                    if centroid_bounds[0] < params_list[index + 1] < centroid_bounds[1]:
+                        include_peak = True
+                elif params_list[index + 1] > 0:
+                    # If no bounds provided lso remove centroids < 0
+                    include_peak = True
+
+        if include_peak:
+            filtered_list.extend(params_list[index:index + 3])
+        index += 3
+    return filtered_list
 
 
 def get_popt_from_lmoutput(modelresult, amp_cutoff):
@@ -906,6 +805,30 @@ def get_popt_from_lmoutput(modelresult, amp_cutoff):
     nonprotein_output_popt = remove_low_amp(nonprotein_output_popt, amp_cutoff)
 
     return protein_output_popt, nonprotein_output_popt
+
+
+def generate_gaussians_from_popt(opt_params_list, protein_bool, cv=None, pcov=None):
+    """
+    Convert a list of parameters to a list of Gaussian objects. Initializes Gaussians with a collision voltage
+    and covariance matrix if provided.
+    :param opt_params_list: list of parameters [amp, centroid, width, amp2, cent2, width2, ... ]
+    :param protein_bool: protein Gaussians (True) or non-protein (False)
+    :param cv: (optional) collision voltage to associate with all Gaussians
+    :param pcov: (optional) covariance matrix from fitting to associate with all Gaussians
+    :return: list of Gaussian objects from params list
+    :rtype: list[Gaussian]
+    """
+    index = 0
+    gaussian_list = []
+    while index < len(opt_params_list):
+        gaussian_list.append(Gaussian(amplitude=opt_params_list[index],
+                                      centroid=opt_params_list[index + 1],
+                                      width=opt_params_list[index + 2],
+                                      collision_voltage=cv,
+                                      pcov=pcov,
+                                      protein_bool=protein_bool))
+        index += 3
+    return gaussian_list
 
 
 def remove_low_amp(popt_list, amp_cutoff):
@@ -929,12 +852,13 @@ def remove_low_amp(popt_list, amp_cutoff):
 
 def compute_width_penalty(input_width, expected_width, tolerance, steepness):
     """
-
-    :param input_width:
-    :param expected_width:
-    :param tolerance:
-    :param steepness:
-    :return:
+    Penalty scoring method using width. Probably uncessary due to the constraints provided
+    to LMFit, but provides a backup for over-wide protein peaks.
+    :param input_width: observed peak width
+    :param expected_width: expected peak width
+    :param tolerance: tolerance on expected width
+    :param steepness: degree to which to penalize widths outside tolerance (default 1)
+    :return: penalty (float)
     """
     diff = abs(input_width - expected_width)
     if diff < tolerance:
@@ -942,23 +866,6 @@ def compute_width_penalty(input_width, expected_width, tolerance, steepness):
     else:
         penalized_width = abs(diff - tolerance)
         return steepness * penalized_width
-
-
-def compute_low_amp_penalty(gaussian):
-    """
-    Additional penalty for Gaussians with amplitude below cutoff value. Iterative fitting requires
-    allowing these peaks to be fit in cases where there are fewer peaks than proposed, but they
-    should be filtered after to prevent bad fits.
-
-    Penalty = e ^ (- (scaling) * x) gives a max penalty of 1 (amp = 0), increasing exponentially with
-    values becoming noticeable below amplitude = 1/scaling
-
-    :param gaussian: Gaussian container with fit information
-    :type gaussian: Gaussian
-    :return: penalty value (float)
-    """
-    amp_scale = 100
-    return np.exp(-1 * amp_scale * gaussian.amplitude)
 
 
 def compute_area_penalty(gaussian, list_of_gaussians, dt_axis):
@@ -1017,30 +924,6 @@ def shared_area_gauss(x_axis, gauss1_params, gauss2_params):
 
     # return the integrated area over the provided axis
     return scipy.integrate.trapz(shared_area_arr, x_axis)
-
-
-def generate_gaussians_from_popt(opt_params_list, protein_bool, cv=None, pcov=None):
-    """
-    Convert a list of parameters to a list of Gaussian objects. Initializes Gaussians with a collision voltage
-    and covariance matrix if provided.
-    :param opt_params_list: list of parameters [amp, centroid, width, amp2, cent2, width2, ... ]
-    :param protein_bool: protein Gaussians (True) or non-protein (False)
-    :param cv: (optional) collision voltage to associate with all Gaussians
-    :param pcov: (optional) covariance matrix from fitting to associate with all Gaussians
-    :return: list of Gaussian objects from params list
-    :rtype: list[Gaussian]
-    """
-    index = 0
-    gaussian_list = []
-    while index < len(opt_params_list):
-        gaussian_list.append(Gaussian(amplitude=opt_params_list[index],
-                                      centroid=opt_params_list[index + 1],
-                                      width=opt_params_list[index + 2],
-                                      collision_voltage=cv,
-                                      pcov=pcov,
-                                      protein_bool=protein_bool))
-        index += 3
-    return gaussian_list
 
 
 def save_fits_pdf_new(analysis_obj, params_obj, best_fit_list, outputpath):
@@ -1185,6 +1068,104 @@ def save_gauss_params(analysis_obj, outputpath):
                 gauss_line = ','.join([gaussian.print_info() for gaussian in analysis_obj.raw_nonprotein_gaussians[index]])
                 output.write(gauss_line + '\n')
                 index += 1
+
+
+def reconstruct_from_fits(gaussian_lists_by_cv, axes, new_filename, params_obj):
+    """
+    Construct a new analysis object using the filtered Gaussian fits of the provided analysis object
+    as the raw data. Must have previously performed Gaussian feature detection on the provided analysis_obj
+    :param gaussian_lists_by_cv: list of lists of Gaussian objects at each CV
+    :param axes: [DT_axis, CV_axis]: two numpy arrays with drift and CV axes to use
+    :param new_filename:
+    :param params_obj: Parameters container with parameters to save into the new CIUAnalsis obj
+    :return: new CIUAnalysisObj with reconstructed raw data
+    :rtype: CIUAnalysisObj
+    """
+    ciu_data_by_cols = []
+    dt_axis = axes[0]
+    # construct the raw data at each collision voltage to stitch together into a CIU matrix
+    for cv_gauss_list in gaussian_lists_by_cv:
+        # assemble all the parameters for Gaussians at this CV
+        all_params = []
+        for gaussian in cv_gauss_list:
+            all_params.extend(gaussian.return_popt())
+
+        # Use the Gaussian function to construct intensity data at each DT
+        intensities = multi_gauss_func(dt_axis, *all_params)
+
+        ciu_data_by_cols.append(intensities)
+
+    # finally, transpose the CIU data to match the typical format, normalize, and return the object
+    final_data = np.asarray(ciu_data_by_cols).T
+    final_data = Raw_Processing.normalize_by_col(final_data)
+
+    raw_obj = CIU_raw.CIURaw(final_data, dt_axis, axes[1], new_filename)
+    new_analysis_obj = CIU_analysis_obj.CIUAnalysisObj(raw_obj, final_data, axes, params_obj)
+    new_analysis_obj.short_filename = new_analysis_obj.short_filename + '_gauss-recon'
+
+    new_analysis_obj.protein_gaussians = gaussian_lists_by_cv
+    new_analysis_obj.gaussians = gaussian_lists_by_cv
+    return new_analysis_obj
+
+
+def parse_gaussian_list_from_file(filepath):
+    """
+    Read in a list of Gaussians from file and return a list of Gaussian objects.
+    File format: (comma delimited text file, headers (#) ignored)
+    CV1, gauss1_amp, gauss1_cent, gauss1_width, gauss2 A, c, w, ..., gaussN a, c, w
+    CV2, gauss1_amp, (etc)
+    CV3
+    ...
+    :param filepath: full path to file to read
+    :return: list of lists of Gaussian objects sorted by collision voltage, list of collision voltages
+    """
+    gaussian_list_by_cv = []
+    cvs = []
+    dt_axis = []
+    with open(filepath, 'r') as inputfile:
+        for line in list(inputfile):
+            # skip headers
+            if line.startswith('#'):
+                continue
+            splits = line.rstrip('\n').split(',')
+            splits = [x for x in splits if x is not '']
+
+            # read DT axis
+            if line.lower().startswith('drift'):
+                try:
+                    dt_axis = np.asarray([float(x) for x in splits[1:]])
+                except ValueError:
+                    print('DT axis could not be read. Line was: {}'.format(line))
+                    dt_axis = []
+                continue
+
+            # get CVs from first column only to avoid duplicates
+            try:
+                cv = float(splits[0])
+                cvs.append(cv)
+            except ValueError:
+                print('Invalid CV in line: {}; value must be a number. Skipping this line'.format(line))
+                continue
+            except IndexError:
+                # no data on this line, continue
+                continue
+
+            # read remaining Gaussian information
+            index = 0
+            gaussians = []
+            while index < len(splits) - 1:
+                try:
+                    cv = float(splits[index])
+                    amp = float(splits[index + 1])
+                    cent = float(splits[index + 2])
+                    width = float(splits[index + 3])
+                    gaussians.append(Gaussian(amp, cent, width, cv, pcov=None, protein_bool=True))
+                except (IndexError, ValueError):
+                    print('Invalid values for Gaussian. Values were: {}. Gaussian could not be parsed and was skipped'.format(splits[index:index + 3]))
+                index += 4
+            gaussian_list_by_cv.append(gaussians)
+
+    return gaussian_list_by_cv, [dt_axis, np.asarray(cvs)]
 
 
 # testing

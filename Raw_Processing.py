@@ -9,6 +9,10 @@ import os
 import scipy.signal
 import scipy.interpolate
 import scipy.stats
+import pygubu
+from tkinter import messagebox
+import tkinter as tk
+
 from CIU_raw import CIURaw
 from CIU_analysis_obj import CIUAnalysisObj
 from CIU_Params import Parameters
@@ -40,13 +44,6 @@ def get_data(fname):
     raw_obj = CIURaw(rawdata[1:, 1:], row_axis, col_axis, fname)
 
     return raw_obj
-
-
-# Generate lists of trap collision energies and drift times used for the plots ###
-# def get_axes(rawdata):
-#     row_axis = rawdata[1:, 0]
-#     col_axis = rawdata[0, 1:]
-#     return row_axis, col_axis
 
 
 def normalize_by_col(raw_data_matrix):
@@ -277,22 +274,11 @@ def crop(analysis_obj, crop_vals):
     ciu_data_matrix = np.swapaxes(ciu_data_matrix, 0, 1)
     new_axes = [dt_axis, cv_axis]
 
-    # save output to the analysis object
-    # analysis_obj.ciu_data = ciu_data_matrix
-    # analysis_obj.axes = new_axes
-
     # crop the data for the rare case that the highest value in a column is cropped out
     ciu_data_matrix = normalize_by_col(ciu_data_matrix)
 
     # save output to a new analysis object (clears fitting results/etc that can fail if axes are different)
     new_obj = CIUAnalysisObj(analysis_obj.raw_obj, ciu_data_matrix, new_axes, analysis_obj.params)
-
-    # for a specific figure
-    # new_obj.gaussians = analysis_obj.gaussians
-    # new_obj.filtered_gaussians = analysis_obj.filtered_gaussians
-
-    # new_obj.short_filename = analysis_obj.short_filename + '_crop'
-
     return new_obj
 
 
@@ -310,7 +296,7 @@ def interpolate_axes(analysis_obj, new_axes):
                                              analysis_obj.axes[1],
                                              analysis_obj.ciu_data.T)
     interp_data = interp_func(new_axes[0], new_axes[1])
-    ciu_interp_data = interp_data.T
+    ciu_interp_data = np.asarray(interp_data).T
 
     # save to analysis object and return
     analysis_obj.ciu_data = ciu_interp_data
@@ -457,8 +443,11 @@ def equalize_obj(analysis_obj, final_axes):
             return analysis_obj, True
     except ValueError:
         # if axes are different shapes, allclose raises a ValueError. Adjust axes.
-        # todo: IF AXES HAVE NO OVERLAP AT ALL, this will crash with a value error. Catch it.
-        analysis_obj = interpolate_axes(analysis_obj, final_axes)
+        try:
+            analysis_obj = interpolate_axes(analysis_obj, final_axes)
+        except ValueError:
+            print('Axis equalization failed in file {}. New axes must overlap at least partially with original axes.'.format(analysis_obj.short_filename))
+            return analysis_obj, False
         print('equalized axes to match in file {}'.format(analysis_obj.short_filename))
         return analysis_obj, True
 
@@ -533,11 +522,13 @@ def equalize_unk_axes_classif(flat_unknown_list, final_axes, scheme_cvs_list, ga
     # adjust ALL files to the same final axes
     for analysis_obj in flat_unknown_list:
         # interpolate DT axis ONLY - leave CV axis alone by passing the existing CV axis as the "new" axis
-        if not gaussian_mode:
-            adjusted_axes = [final_axes[0], analysis_obj.axes[1]]
-            analysis_obj, adj_flag = equalize_obj(analysis_obj, adjusted_axes)
-        else:
-            adjusted_axes = analysis_obj.axes
+        # if not gaussian_mode:
+        adjusted_axes = [final_axes[0], analysis_obj.axes[1]]
+        analysis_obj, adj_flag = equalize_obj(analysis_obj, adjusted_axes)
+        # todo: confirm?
+        # else:
+        #     return flat_unknown_list
+            # adjusted_axes = analysis_obj.axes
 
         # Remove all CVs except those required by the scheme (raises errors if those are not found)
         final_ciu_matrix = []
@@ -561,8 +552,135 @@ def equalize_unk_axes_classif(flat_unknown_list, final_axes, scheme_cvs_list, ga
         analysis_obj.axes = new_axes
         analysis_obj.ciu_data = final_ciu_matrix
         output_obj_list.append(analysis_obj)
-        # output_obj = CIUAnalysisObj(analysis_obj.raw_obj, final_ciu_matrix, new_axes, analysis_obj.params)
-        # output_obj.short_filename = analysis_obj.short_filename
-        # output_obj_list.append(output_obj)
 
     return output_obj_list
+
+
+class CropUI(object):
+    """
+    Simple dialog with several fields build with Pygubu for inputting crop values
+    """
+    def __init__(self, init_axes, crop_ui_file):
+        # Get crop input from the Crop_vals UI form
+        self.builder = pygubu.Builder()
+
+        # load the UI file
+        self.builder.add_from_file(crop_ui_file)
+        # create widget using provided root (Tk) window
+        self.mainwindow = self.builder.get_object('Crop_toplevel')
+        self.mainwindow.protocol('WM_DELETE_WINDOW', self.on_close_window)
+
+        callbacks = {
+            'on_button_cancel_clicked': self.on_button_cancel_clicked,
+            'on_button_crop_clicked': self.on_button_crop_clicked
+        }
+        self.builder.connect_callbacks(callbacks)
+        self.crop_vals = []
+
+        self.init_values(init_axes)
+
+    def run(self):
+        """
+        Run the UI and return the output values
+        :return: List of crop values [dt low, dt high, cv low, cv high]
+        """
+        self.builder.get_object('Crop_toplevel').grab_set()     # prevent users from clicking other stuff while crop is active
+        self.mainwindow.mainloop()
+        self.builder.get_object('Crop_toplevel').grab_release()
+        return self.return_values()
+
+    def on_close_window(self):
+        """
+        Quit the mainwindow to stop the mainloop and get it to return
+        the crop values, then destroy it to remove it from screen.
+        :return: the provided crop values, or None if none were provided
+        """
+        self.mainwindow.quit()
+        self.mainwindow.destroy()
+        return self.return_values()
+
+    def init_values(self, axes):
+        """
+        Display starting axes values in the object for the user to edit
+        :param axes: list of [dt_axis, cv_axis] (each their own list)
+        :return: void
+        """
+        dt_axis = axes[0]
+        cv_axis = axes[1]
+
+        self.builder.get_object('Entry_dt_start').delete(0, tk.END)
+        self.builder.get_object('Entry_dt_start').insert(0, dt_axis[0])
+        self.builder.get_object('Entry_dt_end').delete(0, tk.END)
+        self.builder.get_object('Entry_dt_end').insert(0, dt_axis[len(dt_axis) - 1])
+
+        self.builder.get_object('Entry_cv_start').delete(0, tk.END)
+        self.builder.get_object('Entry_cv_start').insert(0, cv_axis[0])
+        self.builder.get_object('Entry_cv_end').delete(0, tk.END)
+        self.builder.get_object('Entry_cv_end').insert(0, cv_axis[len(cv_axis) - 1])
+
+    def on_button_cancel_clicked(self):
+        """
+        Close the UI window and return None
+        :return: will return None from on_close_window
+        """
+        return self.on_close_window()
+
+    def on_button_crop_clicked(self):
+        """
+        Return the cropping values entered in the fields, after checking for invalid values.
+        If any values are invalid, returns without setting the crop_vals list
+        :return: sets crop_vals list [dt_low, dt_high, cv_low, cv_high] to the object's field for retrieval
+        """
+        dt_low = self.builder.get_object('Entry_dt_start').get()
+        dt_high = self.builder.get_object('Entry_dt_end').get()
+        cv_low = self.builder.get_object('Entry_cv_start').get()
+        cv_high = self.builder.get_object('Entry_cv_end').get()
+
+        try:
+            dt_low = float(dt_low)
+        except ValueError:
+            messagebox.showwarning('Error', 'Invalid starting DT: must be a number (decimals OK)')
+            return -1
+        try:
+            dt_high = float(dt_high)
+        except ValueError:
+            messagebox.showwarning('Error', 'Invalid ending DT: must be a number (decimals OK)')
+            return -1
+        try:
+            cv_low = float(cv_low)
+        except ValueError:
+            messagebox.showwarning('Error', 'Invalid starting CV: must be a number (decimals OK)')
+            return -1
+        try:
+            cv_high = float(cv_high)
+        except ValueError:
+            messagebox.showwarning('Error', 'Invalid ending CV: must be a number (decimals OK)')
+            return -1
+
+        # if all values are valid, save the list and close the window
+        self.crop_vals = [dt_low, dt_high, cv_low, cv_high]
+        # self.crop_vals = [dt_low, dt_high, cv_low, cv_high, dt_length, cv_length]
+        return self.on_close_window()
+
+    def return_values(self):
+        """
+        Returns the crop_values if they are specified
+        :return: crop_vals list [dt_low, dt_high, cv_low, cv_high] or None if they're not set
+        """
+        if len(self.crop_vals) > 0:
+            return self.crop_vals
+        else:
+            return None
+
+
+def run_crop_ui(axes, crop_ui_file):
+    """
+    Run the crop UI widget from PyGuBu to get cropping values and return them
+    :param axes: starting axes to display in the widget
+    :param crop_ui_file: full system path to crop_vals.ui file
+    :return: List of crop values [dt_low, dt_high, cv_low, cv_high], or None if none were specified or
+    the user hit the 'cancel' button
+    """
+    crop_app = CropUI(axes, crop_ui_file)
+    crop_vals = crop_app.run()
+    return crop_vals

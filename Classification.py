@@ -160,7 +160,6 @@ def prep_gaussfeats_for_classif(features_list, analysis_obj):
     features_list = close_feature_gaps(features_list, analysis_obj.axes[1])
 
     # iterate over features, filling any gaps within the feature and entering Gaussians into the final list
-    # todo: fix? This SHOULD no longer be necessary with the new protein gaussian feature methods, but should double check
     for feature in features_list:
         # determine if the feature contains gaps
         gaussian_cvs = [gaussian.cv for gaussian in feature.gaussians]
@@ -184,12 +183,21 @@ def prep_gaussfeats_for_classif(features_list, analysis_obj):
     # Finally, check if all CVs have been covered by features. If not, add highest amplitude Gaussian from non-feature list
     for cv_index, cv in enumerate(analysis_obj.axes[1]):
         if len(final_gaussian_lists[cv_index]) == 0:
-            # todo: fix - this doesn't work for new storage method
-            # no Gaussians have been added here yet. Include highest amplitude one from filtered_gaussians
-            cv_gaussians_from_obj = analysis_obj.feat_protein_gaussians[cv_index]
-            sorted_by_amp = sorted(cv_gaussians_from_obj, key=lambda x: x.amplitude)
+            # no Gaussians have been added here yet, so we need to add one. Get the raw set of Gaussians (before feature detection) fit at this CV
+            cv_gaussians_from_obj = analysis_obj.raw_protein_gaussians[cv_index]
+
+            # Find the feature that extends closest to this CV, then find the raw Gaussian at this CV closest to that feature's median centroid
+            min_cv_dist = np.inf
+            nearest_feat = None
+            for feature in features_list:
+                for feat_cv in feature.cvs:
+                    if abs(feat_cv - cv) < min_cv_dist:
+                        nearest_feat = feature
+                        min_cv_dist = abs(feat_cv - cv)
+            nearest_centroid_index = np.argmin([abs(x.centroid - nearest_feat.gauss_median_centroid) for x in cv_gaussians_from_obj])
             try:
-                final_gaussian_lists[cv_index].append(sorted_by_amp[0])
+                # add the closest Gaussian to the list at this CV
+                final_gaussian_lists[cv_index].append(cv_gaussians_from_obj[nearest_centroid_index])
             except IndexError:
                 # no Gaussians found at this CV in the original fitting - leave empty
                 continue
@@ -227,7 +235,7 @@ def close_feature_gaps(features_list, cv_axis):
 
 def univariate_feature_selection(shaped_label_list, analysis_obj_list_by_label, params_obj, output_path):
     """
-
+    Perform feature selection on the provided data.
     :param shaped_label_list: list of lists of class labels with the same shape as the analysis object list
     :param analysis_obj_list_by_label: list of lists of analysis objects, sorted by class
     :type analysis_obj_list_by_label: list[list[CIUAnalysisObj]]
@@ -281,13 +289,12 @@ def generate_products_for_ufs(analysis_obj_list_by_label, shaped_label_list, par
         product = DataProduct(data_list, label_list)
 
         # Run feature selection for this combination
-        # todo: make these parameters accessible
         select = GenericUnivariateSelect(score_func=f_classif, mode='percentile', param=100)
         select.fit(product.combined_data, product.numeric_label_arr)
 
         product.fit_pvalues = select.pvalues_
         product.fit_scores = select.scores_
-        product.fit_sc = -np.log10(select.pvalues_)  # not sure what this is - ask Suggie
+        product.fit_sc = -np.log10(select.pvalues_)
 
         products.append(product)
     return products
@@ -356,9 +363,12 @@ def crossval_main(analysis_obj_list_by_label, labels, outputdir, params_obj, fea
 
 def assemble_products(all_class_combination_lists):
     """
-    :param all_class_combination_lists:
-    Assemble the products of all class combinations
-    :return:
+    Assemble training and test (validation) datasets from each combination of classes using
+    a leave-one-out validation method, then run the classification (LDA/SVM) to generate
+    final scores.
+    :param all_class_combination_lists: List of all class combination
+    Assemble the products of all class combinations (DataCombination objects)
+    :return: training and test score mean and standard deviation lists
     """
     probs = []
     train_scores, test_scores = [], []
@@ -388,11 +398,6 @@ def assemble_products(all_class_combination_lists):
             final_test_labels = np.concatenate((final_test_labels, stacked_test_labels[rep_index]))
         final_test_data = np.asarray(final_test_data)
         final_test_labels = np.asarray(final_test_labels)
-
-        # stacked_train_data = np.vstack(np.vstack(x for x in stacked_train_data))
-        # stacked_train_labels = np.concatenate(np.vstack(stacked_train_labels))
-        # stacked_test_data = np.vstack(np.vstack(np.vstack(x for x in stacked_test_data)))
-        # stacked_test_labels = np.concatenate(np.vstack(stacked_test_labels))
 
         # replacing 'stacked' with 'final' in all lines below
         enc = LabelEncoder()
@@ -479,7 +484,7 @@ def plot_crossval_scores(crossval_data, scheme_name, params_obj, outputdir):
     test_score_means = crossval_data[2]
     test_score_stds = crossval_data[3]
 
-    xax = np.arange(1, len(train_score_means) + 1)  # todo: fix so that axis is # features (not # features - 1)
+    xax = np.arange(1, len(train_score_means) + 1)
     plt.plot(xax, train_score_means, color='blue', marker='s', label='train_score')
     plt.fill_between(xax, train_score_means-train_score_stds, train_score_means+train_score_stds, color='blue', alpha=0.2)
     plt.plot(xax, test_score_means, color='green', marker='o', label='test_score')
@@ -697,7 +702,7 @@ def save_lda_output(transformed_data, filenames, input_feats, scheme_name, outpu
 
 def save_predictions(list_of_analysis_objs, params_obj, features_list, class_labels, output_path):
     """
-
+    Save unknown data predictions to csv output file
     :param list_of_analysis_objs: list of CIUAnalysis containers with unknown data - MUST have transformed data already set
     :type list_of_analysis_objs: list[CIUAnalysisObj]
     :param params_obj: Parameters object with param information
@@ -823,16 +828,16 @@ def plot_feature_scores(feature_list, params_obj, scheme_name, output_path):
     plt.close()
 
 
-def plot_classification_decision_regions(class_scheme, params_obj, output_path, unknown_tups=None, filename=''):
+def plot_classification_decision_regions(class_scheme, params_obj, output_path, unknown_tups=None):
     """
-
-    :param class_scheme:
-    :param output_path:
+    Make a plot of decision regions determined for this classification scheme and the locations
+    of the input test (validation) data against the constructed scheme.
+    :param class_scheme: Classification object
+    :param output_path: directory in which to save plot
     :param params_obj: Parameters object with plot information
     :type params_obj: Parameters
     :param unknown_tups: tuples of unknown (data, label). data = transformed lda data for unknown
-    :param filename:
-    :return:
+    :return: void
     """
     shape_lda = np.shape(class_scheme.transformed_test_data)
     if shape_lda[1] > 3:
@@ -847,7 +852,6 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
     ax = plt.subplot(111)
 
     # plot 1D or 2D decision regions
-    xlabel, ylabel = '', ''
     if shape_lda[1] == 1:
         x1_min, x1_max = np.floor(class_scheme.transformed_test_data.min()), np.ceil(class_scheme.transformed_test_data.max())
         if unknown_tups is not None:
@@ -869,7 +873,6 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
             plt.xlabel('LD1', fontsize=params_obj.plot_13_font_size, fontweight='bold')
         if unknown_tups is not None:
             for ind, unknown_tup in enumerate(unknown_tups):
-                marklist = list(itertools.islice(itertools.cycle(markers), ind+1, ind+1+len(unknown_tups)))
                 plt.scatter(unknown_tup[0], np.zeros(np.shape(unknown_tup[0])), marker=markers[ind], color='black',
                             alpha=0.5, label=unknown_tup[1])
 
@@ -914,13 +917,6 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
                        c=color, s=40,
                        label=np.unique(unique_labels)[label])
 
-        # if params_obj.plot_08_show_axes_titles:
-        #     ax.set_xlabel('LD1', fontsize=params_obj.plot_13_font_size, fontweight='bold')
-        #     ax.set_ylabel('LD2', fontsize=params_obj.plot_13_font_size, fontweight='bold')
-        #     ax.set_zlabel('LD3', fontsize=params_obj.plot_13_font_size, fontweight='bold')
-        # z_val_labels = np.linspace(np.min(plot_data[:, 2]), np.max(plot_data[:, 2]), 5)
-        # ax.set_zticklabels(z_val_labels, fontsize=params_obj.plot_13_font_size)
-
         if unknown_tups is not None:
             for ind, unknown_tup in enumerate(unknown_tups):
                 ax.scatter(xs=unknown_tup[0][:, 0],
@@ -942,9 +938,7 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
         plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
     if params_obj.plot_07_show_legend:
         ax.legend(loc='best')
-        # box = ax.get_position()
-        # ax.set_position([box.x0, box.y0, box.width*0.8, box.height])
-        # ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), fancybox=True, fontsize=params_obj.plot_13_font_size)
+
     plt.xticks(fontsize=params_obj.plot_13_font_size)
     plt.yticks(fontsize=params_obj.plot_13_font_size)
 
@@ -968,22 +962,6 @@ def createtargetarray_featureselect(inputlabel):
         string_labels.append(input_string)
         numeric_labels.append(class_index)
     return np.asarray(numeric_labels), np.asarray(string_labels)
-
-
-# todo: deprecated
-# def write_features_scores(score_dict, fname='avg_score_features_sfs.txt'):
-#     """
-#
-#     :param score_dict:
-#     :param fname:
-#     :return:
-#     """
-#     with open(fname, 'w') as f:
-#         for key, val in sorted(score_dict.items()):
-#             feature_idx = val['feature_idx']
-#             avg_score = val['avg_score']
-#             f.write(str(avg_score) + '    ' + str(feature_idx) + '\n')
-#     f.close()
 
 
 def plot_sklearn_lda_2ld(class_scheme, marker, color, label_axes):
@@ -1110,15 +1088,10 @@ class ClassificationScheme(object):
         :return: updated analysis object with prediction data saved
         :rtype: CIUAnalysisObj
         """
-        # unk_ciudata = unk_ciu_obj.ciu_data
-        # todo: FIX MAX NUM GAUSSIAN COMMUNICATION (seems okay?)
         unk_ciudata = get_classif_data(unk_ciu_obj, params_obj, ufs_mode=False, num_gauss_override=self.num_gaussians)
 
         # Assemble feature data for fitting
-        unk_input_x, fake_labels, filenames, input_feats = arrange_data_for_lda([unk_ciudata], unk_label, self.selected_features, [unk_ciu_obj.axes[1]],[unk_ciu_obj.short_filename], method=params_obj.classif_4_data_structure)
-
-        # if params_obj.classif_3_mode == 'Gaussian':
-        #     unk_input_x = np.asarray(unk_input_x).T
+        unk_input_x, fake_labels, filenames, input_feats = arrange_data_for_lda([unk_ciudata], unk_label, self.selected_features, [unk_ciu_obj.axes[1]], [unk_ciu_obj.short_filename], method=params_obj.classif_4_data_structure)
 
         # Fit/classify data according to scheme LDA and classifier
         unknown_transformed_lda = self.lda.transform(unk_input_x)
@@ -1133,7 +1106,7 @@ class ClassificationScheme(object):
         unk_ciu_obj.classif_transformed_data = unknown_transformed_lda
 
         unknown_plot_info = [(unknown_transformed_lda, unk_ciu_obj.short_filename)]
-        plot_classification_decision_regions(self, params_obj, output_path, unknown_tups=unknown_plot_info, filename=unk_ciu_obj.short_filename)
+        plot_classification_decision_regions(self, params_obj, output_path, unknown_tups=unknown_plot_info)
 
         return unk_ciu_obj
 
@@ -1149,7 +1122,7 @@ class ClassificationScheme(object):
         :return: void
         """
         all_plot_tups = [(x.classif_transformed_data, x.short_filename) for x in unk_ciuobj_list]
-        plot_classification_decision_regions(self, params_obj, output_path, unknown_tups=all_plot_tups, filename='all')
+        plot_classification_decision_regions(self, params_obj, output_path, unknown_tups=all_plot_tups)
 
 
 class CFeature(object):
