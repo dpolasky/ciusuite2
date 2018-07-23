@@ -109,8 +109,9 @@ class Parameters(object):
 
         self.output_1_save_csv = None
         self.compare_batch_1_both_dirs = None
-        self.compare_2_custom_blue = None
         self.compare_1_custom_red = None
+        self.compare_2_custom_blue = None
+        self.compare_3_high_contrast = None
 
         # Gaussian fitting
         self.gaussian_1_mode = None
@@ -134,7 +135,7 @@ class Parameters(object):
 
         self.ciu50_1_centroiding_mode = None
         self.ciu50_3_pad_transitions_cv = None
-        self.ciu50_2_combine_outputs = None
+        self.feature_ciu50_2_combine_outputs = None
 
         self.classif_2_score_dif_tol = None
         self.classif_3_mode = None

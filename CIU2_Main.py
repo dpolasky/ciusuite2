@@ -105,6 +105,10 @@ class CIUSuite2(object):
         self.output_dir_override = False
 
     def run(self):
+        """
+        Run the main GUI loop
+        :return: void
+        """
         self.mainwindow.mainloop()
 
     def on_close_window(self):
@@ -385,7 +389,7 @@ class CIUSuite2(object):
 
         if len(files_to_read) == 2:
             # Direct compare between two files
-            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x and 'batch' not in x ]
+            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x and 'batch' not in x]
             if self.run_param_ui('Plot parameters', batch_keys):
                 ciu1 = load_analysis_obj(files_to_read[0])
                 ciu2 = load_analysis_obj(files_to_read[1])
@@ -625,68 +629,11 @@ class CIUSuite2(object):
                 self.update_progress(files_to_read.index(file), len(files_to_read))
 
             self.display_analysis_files()
-        self.progress_done()
 
-    def on_button_ciu50_clicked(self):
-        """
-        Run feature detection workflow to generate CIU-50 (transition) outputs for selected
-        files
-        :return: void
-        """
-        param_keys = [x for x in self.params_obj.params_dict.keys() if 'ciu50' in x]
-        if self.run_param_ui('CIU-50 Parameters', param_keys):
-            files_to_read = self.check_file_range_entries()
-            self.progress_started()
+            # prompt the user to run feature detection in Gaussian mode
+            if len(files_to_read) > 0:
+                messagebox.showinfo('Success!', 'Gaussing fitting finished successfully. Please run Feature Detection in "gaussian" mode to finalize Gaussian assignments to features (this is required for CIU50 analysis, classification, and reconstruction).')
 
-            new_file_list = []
-            all_outputs = ''
-            short_outputs = 'Filename,CIU50 1,CIU50 2,(etc)\n'
-            filename = ''
-            combine_flag = False
-            gaussian_bool = False
-            if self.params_obj.feature_1_ciu50_mode == 'gaussian':
-                gaussian_bool = True
-
-            for file in files_to_read:
-                # load file
-                analysis_obj = load_analysis_obj(file)
-
-                # Ensure features are detected for this file
-                feature_list = analysis_obj.get_features(gaussian_bool)
-                if feature_list is None:
-                    # returning False means features aren't detected for the selected mode. Warn user
-                    messagebox.showerror('No Features in File {}'.format(analysis_obj.short_filename),
-                                         message='Feature Detection has not been performed in {} mode for file {}. Please '
-                                                 'perform feature detection before CIU50 analysis.'.format(self.params_obj.feature_1_ciu50_mode, analysis_obj.short_filename))
-                    continue
-
-                # run CIU50 analysis
-                analysis_obj = Feature_Detection.ciu50_main(feature_list, analysis_obj, self.params_obj, outputdir=self.output_dir, gaussian_bool=gaussian_bool)
-                filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
-                new_file_list.append(filename)
-
-                # save outputs to file in combined or stand-alone modes
-                if not self.params_obj.ciu50_2_combine_outputs:
-                    Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir)
-                    Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir)
-                    combine_flag = False
-                else:
-                    file_string = os.path.basename(filename).rstrip('.ciu') + '\n'
-                    all_outputs += file_string
-                    all_outputs += Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir, combine=True)
-                    short_outputs += os.path.basename(filename).rstrip('.ciu')
-                    short_outputs += Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir, combine=True)
-                    combine_flag = True
-                self.update_progress(files_to_read.index(file), len(files_to_read))
-
-            if combine_flag:
-                # save final combined output
-                outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_ciu50s.csv')
-                outputpath_short = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_ciu50-short.csv')
-                save_existing_output_string(outputpath, all_outputs)
-                save_existing_output_string(outputpath_short, short_outputs)
-
-            self.display_analysis_files()
         self.progress_done()
 
     def on_button_gaussian_reconstruct_clicked(self):
@@ -760,6 +707,7 @@ class CIUSuite2(object):
             self.progress_started()
             new_file_list = []
 
+            all_outputs = 'Filename,Features Detected\n'
             for file in files_to_read:
                 # load file
                 analysis_obj = load_analysis_obj(file)
@@ -788,10 +736,82 @@ class CIUSuite2(object):
                     filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
                     new_file_list.append(filename)
 
+                # save output
                 Feature_Detection.plot_features(analysis_obj, self.params_obj, self.output_dir)
-                outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_features.csv')
-                Feature_Detection.print_features_list(features_list, outputpath, mode=self.params_obj.feature_1_ciu50_mode)
+                outputpath = os.path.join(self.output_dir, analysis_obj.short_filename + '_features.csv')
+                if self.params_obj.feature_ciu50_2_combine_outputs:
+                    all_outputs += analysis_obj.short_filename
+                    all_outputs += Feature_Detection.print_features_list(features_list, outputpath, mode=self.params_obj.feature_1_ciu50_mode, combine=True)
+                else:
+                    Feature_Detection.print_features_list(features_list, outputpath,
+                                                          mode=self.params_obj.feature_1_ciu50_mode, combine=False)
                 self.update_progress(files_to_read.index(file), len(files_to_read))
+
+            if self.params_obj.feature_ciu50_2_combine_outputs:
+                outputpath = os.path.join(self.output_dir, '_all-features.csv')
+                save_existing_output_string(outputpath, all_outputs)
+
+            self.display_analysis_files()
+        self.progress_done()
+
+    def on_button_ciu50_clicked(self):
+        """
+        Run feature detection workflow to generate CIU-50 (transition) outputs for selected
+        files
+        :return: void
+        """
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'ciu50' in x]
+        if self.run_param_ui('CIU-50 Parameters', param_keys):
+            files_to_read = self.check_file_range_entries()
+            self.progress_started()
+
+            new_file_list = []
+            all_outputs = ''
+            short_outputs = 'Filename,CIU50 1,CIU50 2,(etc)\n'
+            filename = ''
+            combine_flag = False
+            gaussian_bool = False
+            if self.params_obj.feature_1_ciu50_mode == 'gaussian':
+                gaussian_bool = True
+
+            for file in files_to_read:
+                # load file
+                analysis_obj = load_analysis_obj(file)
+
+                # Ensure features are detected for this file
+                feature_list = analysis_obj.get_features(gaussian_bool)
+                if feature_list is None:
+                    # returning False means features aren't detected for the selected mode. Warn user
+                    messagebox.showerror('No Features in File {}'.format(analysis_obj.short_filename),
+                                         message='Feature Detection has not been performed in {} mode for file {}. Please '
+                                                 'perform feature detection before CIU50 analysis.'.format(self.params_obj.feature_1_ciu50_mode, analysis_obj.short_filename))
+                    continue
+
+                # run CIU50 analysis
+                analysis_obj = Feature_Detection.ciu50_main(feature_list, analysis_obj, self.params_obj, outputdir=self.output_dir, gaussian_bool=gaussian_bool)
+                filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
+                new_file_list.append(filename)
+
+                # save outputs to file in combined or stand-alone modes
+                if not self.params_obj.feature_ciu50_2_combine_outputs:
+                    Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir)
+                    Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir)
+                    combine_flag = False
+                else:
+                    file_string = os.path.basename(filename).rstrip('.ciu') + '\n'
+                    all_outputs += file_string
+                    all_outputs += Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir, combine=True)
+                    short_outputs += os.path.basename(filename).rstrip('.ciu')
+                    short_outputs += Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir, combine=True)
+                    combine_flag = True
+                self.update_progress(files_to_read.index(file), len(files_to_read))
+
+            if combine_flag:
+                # save final combined output
+                outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_ciu50s.csv')
+                outputpath_short = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_ciu50-short.csv')
+                save_existing_output_string(outputpath, all_outputs)
+                save_existing_output_string(outputpath_short, short_outputs)
 
             self.display_analysis_files()
         self.progress_done()
@@ -1070,13 +1090,17 @@ class CIUSuite2(object):
         self.mainwindow.update()
 
     def progress_done(self):
+        """
+        Called after methods finished to ensure GUI mainloop continues
+        :return: void
+        """
         self.builder.get_object('Entry_progress').config(state=tk.NORMAL)
         self.builder.get_object('Entry_progress').delete(0, tk.END)
         self.builder.get_object('Entry_progress').insert(0, 'Done!')
         self.builder.get_object('Entry_progress').config(state=tk.DISABLED)
 
         self.builder.get_object('Progressbar_main')['value'] = 100
-        # added to keep program from exiting when run from command line - not sure if there's a better fix
+        # added to keep program from exiting when run from command line - not sure if there's a better way to do this, but seems to work
         self.run()
 
     def open_files(self, filetype):

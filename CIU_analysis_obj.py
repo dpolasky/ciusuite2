@@ -10,7 +10,13 @@ import pickle
 from CIU_Params import Parameters
 from Feature_Detection import Feature, Transition
 from CIU_raw import CIURaw
+
+# typing to allow easier refactoring of custom objects
 from typing import List
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from Gaussian_Fitting import Gaussian
+    from Gaussian_Fitting import SingleFitStats
 
 
 class CIUAnalysisObj(object):
@@ -49,10 +55,10 @@ class CIUAnalysisObj(object):
         self.features_changept = None   # type: List[Feature]
 
         # Gaussian fitting results - raw and following feature detection included
-        self.raw_protein_gaussians = None
-        self.raw_nonprotein_gaussians = None
-        self.feat_protein_gaussians = None
-        self.gauss_fits_by_cv = None
+        self.raw_protein_gaussians = None       # type: List[List[Gaussian]]
+        self.raw_nonprotein_gaussians = None    # type: List[List[Gaussian]]
+        self.feat_protein_gaussians = None      # type: List[List[Gaussian]]
+        self.gauss_fits_by_cv = None            # type: List[SingleFitStats]
 
         # classification (unknown) outputs
         self.classif_predicted_label = None

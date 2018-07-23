@@ -10,8 +10,6 @@ import scipy.interpolate
 from CIU_analysis_obj import CIUAnalysisObj
 from CIU_Params import Parameters
 
-rmsd_plot_scaling = 1
-
 
 def ciu_plot(analysis_obj, params_obj, output_dir):
     """
@@ -274,6 +272,13 @@ def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir):
     title = '{} - {}'.format(analysis_obj1.short_filename,
                              analysis_obj2.short_filename)
 
+    # scale plot to max difference value in high contrast mode, or max value (1) in default mode
+    if params_obj.compare_3_high_contrast:
+        rmsd_plot_scaling = np.amax(dif, axis=None)
+        rmsd_plot_scaling = round(rmsd_plot_scaling, 2)  # round to nearest hundredth
+        rmsd_plot_scaling += 0.01   # ensure that we didn't round down below the max value by adding 1/100
+    else:
+        rmsd_plot_scaling = 1
     contour_scaling = np.linspace(-rmsd_plot_scaling, rmsd_plot_scaling, 50, endpoint=True)
     colorbar_scaling = np.linspace(-rmsd_plot_scaling, rmsd_plot_scaling, 3, endpoint=True)
     rmsd_plot(difference_matrix=dif,

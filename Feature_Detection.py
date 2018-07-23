@@ -371,7 +371,7 @@ def plot_features(analysis_obj, params_obj, outputdir):
             filt_centroids.append([gaussian.centroid for gaussian in cv_sublist])
 
         for x, y in zip(analysis_obj.axes[1], filt_centroids):
-            plt.scatter([x] * len(y), y, c='w')
+            plt.plot([x] * len(y), y, 'wo')
 
         for feature in analysis_obj.features_gaussian:
             feature_x = [gaussian.cv for gaussian in feature.gaussians]
@@ -418,38 +418,45 @@ def plot_features(analysis_obj, params_obj, outputdir):
     plt.close()
 
 
-def print_features_list(feature_list, outputpath, mode):
+def print_features_list(feature_list, outputpath, mode, combine):
     """
-    Write feature information to file
+    Write feature information to file, OR return it as a string to be saved into a final file if combining
     :param feature_list: list of Feature objects
     :type feature_list: list[Feature]
     :param outputpath: directory in which to save output
     :param mode: gaussian or changepoint
-    :return: void
+    :param combine: whether to save an output file immediately or return the information as a string
+    :return: void or string if using 'combine=True'
     """
-    with open(outputpath, 'w') as outfile:
-        index = 1
-        for feature in feature_list:
-            if mode == 'gaussian':
-                outfile.write('Feature {},Median centroid:,{:.2f},CV range:,{} - {}\n'.format(index,
-                                                                                              feature.get_median(),
-                                                                                              feature.cvs[0],
-                                                                                              feature.cvs[len(feature.cvs) - 1]))
-                outfile.write('CV (V), Amplitude, Centroid, Width\n')
-                for gaussian in feature.gaussians:
-                    outfile.write(gaussian.print_info() + '\n')
-            else:
-                outfile.write('Feature {},Median centroid:,{:.2f},CV range:,{} - {}\n'.format(index,
-                                                                                              feature.get_median(),
-                                                                                              feature.cvs[0],
-                                                                                              feature.cvs[len(feature.cvs) - 1]))
-                outfile.write('CV (V),Peak Drift Time')
-                cv_index = 0
-                for cv in feature.cvs:
-                    outfile.write('{},{:.2f}\n'.format(cv, feature.dt_max_vals[cv_index]))
-                    cv_index += 1
+    index = 1
+    outputstring = ''
+    for feature in feature_list:
+        if mode == 'gaussian':
+            outputstring += ',Feature {},Median centroid:,{:.2f},CV range:,{} - {}\n'.format(index,
+                                                                                             feature.get_median(),
+                                                                                             feature.cvs[0],
+                                                                                             feature.cvs[len(feature.cvs) - 1])
+            outputstring += ',CV (V), Amplitude, Centroid, Width\n'
+            for gaussian in feature.gaussians:
+                outputstring += ',' + gaussian.print_info() + '\n'
+        else:
+            outputstring += ',Feature {},Median centroid:,{:.2f},CV range:,{} - {}\n'.format(index,
+                                                                                             feature.get_median(),
+                                                                                             feature.cvs[0],
+                                                                                             feature.cvs[len(feature.cvs) - 1])
+            outputstring += ',CV (V),Peak Drift Time\n'
+            cv_index = 0
+            for cv in feature.cvs:
+                outputstring += ',{},{:.2f}\n'.format(cv, feature.dt_max_vals[cv_index])
+                cv_index += 1
 
-            index += 1
+        index += 1
+
+    if not combine:
+        with open(outputpath, 'w') as outfile:
+            outfile.write(outputstring)
+    else:
+        return outputstring
 
 
 def save_ciu50_outputs(analysis_obj, outputpath, combine=False):
