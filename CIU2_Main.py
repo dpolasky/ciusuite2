@@ -42,6 +42,7 @@ hard_params_file = os.path.join(root_dir, 'CIU2_param_info.csv')
 # hard_params_ui = os.path.join(resource_dir, 'Param_editor.ui')
 hard_crop_ui = os.path.join(root_dir, 'Crop_vals.ui')
 hard_agilent_ext_path = os.path.join(root_dir, os.path.join('Agilent_RawExtractor', 'MIDAC_CIU_Extractor.exe'))
+hard_tooltips_file = os.path.join(root_dir, 'tooltips.txt')
 
 
 class CIUSuite2(object):
@@ -114,42 +115,14 @@ class CIUSuite2(object):
         self.mainwindow.destroy()
         self.tk_root.destroy()
 
-    # todo: update tooltips for final GUI (also change to parsing a text file)
     def initialize_tooltips(self):
         """
         Register tooltips for all buttons/widgets that need tooltips
         :return: void
         """
-        # tooltip.create(self.builder.get_object('Text_analysis_list'), 'Selected .ciu files appear here. Any processing will be '
-        #                                                               '\nperformed on all files in the table, unless the '
-        #                                                               '\nboxes below indicate only a subset of the files.')
-        # tooltip.create(self.builder.get_object('Text_ParamsMatch'), 'When parameters are edited, this box displays if edits have been saved to the .ciu files')
-        tooltip.create(self.builder.get_object('Button_RawFile'), 'Select text files to analyze. Data will be loaded and converted to generate a .ciu file, '
-                                                                  '\nwhich will appear in the table below')
-        tooltip.create(self.builder.get_object('Button_AnalysisFile'), 'Select previously processed .ciu files to load. Files will be displayed in the table below')
-        tooltip.create(self.builder.get_object('Button_change_outputdir'), 'Select a new directory in which to save output files, including .ciu files.'
-                                                                           '\nBy default, this is set to the directory containing the loaded .csv or .ciu '
-                                                                           '\n files in the table.')
-        # tooltip.create(self.builder.get_object('Button_reproc_files'), 'THIS BUTTON IS WAITING FOR A FINAL DECISION ON HOW WE ARE HANDLING PARAMETER EDITS AND DOES THE'
-        #                                                                '\nSAME THING AS RESTORE ORIGINAL DATA FOR NOW')
-        tooltip.create(self.builder.get_object('Button_restore_raw'), 'Clears ALL previous processing, cropping, and analysis from a .ciu file, restoring the original raw data.'
-                                                                      '\nCannot be undone')
-        tooltip.create(self.builder.get_object('Entry_start_files'), 'To process only some files in the table above, enter the number corresponding to the beginning'
-                                                                     '\nof the range of files to analyze. Must be an integer value only')
-        tooltip.create(self.builder.get_object('Entry_end_files'), 'To process only some files in the table above, enter the number corresponding to the end'
-                                                                   '\nof the range of files to analyze. Must be an integer value only')
-        tooltip.create(self.builder.get_object('Button_old_plot'), 'Generate a CIU fingerprint plot for all files in the table above')
-        tooltip.create(self.builder.get_object('Button_old_compare'), 'Perform RMSD comparisons between the files in the table above.')
-        tooltip.create(self.builder.get_object('Button_old_average'), 'Average selected fingerprints in the table above to form a new .ciu file with the'
-                                                                      '\naveraged data. Intended only for replicate analyses of the same data. '
-                                                                      '\nUse the range entries beneath the table to select replicate data if multiple'
-                                                                      '\ndatasets are present in the table.')
-        tooltip.create(self.builder.get_object('Button_old_deltadt'), 'Convert selected files to a delta-drift time axis. Each file has its drift time axis'
-                                                                      '\nshifted such that the apex/peak drift time in the first (lowest energy) column is '
-                                                                      '\nset to 0. This enables RMSD comparisons of shifting drift times separately from '
-                                                                      '\ndifferences in starting/initial drift time.')
-        tooltip.create(self.builder.get_object('Button_crop'), 'Crop CIU data in one or both axes. A popup window will open to input crop dimensions'
-                                                               '\nUpdates the .ciu file with the cropped data and axes. To undo, use the Restore Original Data button.')
+        tooltip_dict = parse_tooltips_file(hard_tooltips_file)
+        for tip_key, tip_value in tooltip_dict.items():
+            tooltip.create(self.builder.get_object(tip_key), tip_value)
 
     def on_button_rawfile_clicked(self):
         """
@@ -553,6 +526,14 @@ class CIUSuite2(object):
             # check axes for equality and interpolate if different
             files_to_read = self.check_file_range_entries()
             loaded_files = [load_analysis_obj(x) for x in files_to_read]
+
+            # Warn user if any files have features or Gaussians, as these will be erased by cropping
+            warned_yet_flag = False
+            for quick_obj in loaded_files:
+                if quick_obj.features_changept is not None or quick_obj.raw_protein_gaussians is not None or quick_obj.features_gaussian is not None:
+                    if not warned_yet_flag:
+                        messagebox.showwarning('Processing Results will be Erased', 'All processing results (feature detection, Gaussian fitting, etc.) are erased when cropping files to prevent axes errors. If you do not want this, press cancel on the next screen.')
+                        warned_yet_flag = True
 
             crop_vals = Raw_Processing.run_crop_ui(loaded_files[0].axes, hard_crop_ui)
             if crop_vals is None:
@@ -1265,6 +1246,36 @@ def parse_user_cvfeats_input():
     return True, selected_features
 
 
+def parse_tooltips_file(tooltips_file):
+    """
+    Parse the tooltips.txt file for all tooltips to display in the GUI. Returns a dictionary
+    with all object names and descriptions to display
+    :param tooltips_file: File to parse (tab-delimited text, headers = #)
+    :return: Dictionary, key=component name to pass to Pygubu, value=description
+    """
+    tooltip_dict = {}
+    try:
+        with open(tooltips_file, 'r') as tfile:
+            lines = list(tfile)
+            for line in lines:
+                # skip headers and blank lines
+                if line.startswith('#') or line.startswith('\n'):
+                    continue
+                line = line.replace('"', '')
+                splits = line.rstrip('\n').split('\t')
+                try:
+                    key = splits[0].strip()
+                    value = splits[1].strip()
+                    tooltip_dict[key] = value
+                except ValueError:
+                    print('Tooltip not parsed for line: {}'.format(line))
+                    continue
+        return tooltip_dict
+
+    except FileNotFoundError:
+        print('params file not found!')
+
+
 def update_params_in_obj(analysis_obj, params_obj):
     """
     Save the provided parameters object over the analysis_obj's current parameters object
@@ -1337,4 +1348,3 @@ if __name__ == '__main__':
     ciu_app = CIUSuite2(root)
     print('Starting CIUSuite 2')
     ciu_app.run()
-
