@@ -4,11 +4,16 @@ functionality of the original CIUSuite. Designed to operate in the framework of 
 with CIUAnalysisObj objects providing the primary basis for handling data.
 """
 import numpy as np
-import matplotlib.pyplot as plt
 import os
 import scipy.interpolate
+
 from CIU_analysis_obj import CIUAnalysisObj
 from CIU_Params import Parameters
+
+# use a non-interactive backend to prevent background windows from getting created and causing error messages
+import matplotlib
+matplotlib.use('Agg')
+from matplotlib import pyplot as plt
 
 
 def ciu_plot(analysis_obj, params_obj, output_dir):

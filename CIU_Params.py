@@ -114,7 +114,7 @@ class Parameters(object):
         self.compare_3_high_contrast = None
 
         # Gaussian fitting
-        self.gaussian_1_mode = None
+        self.gaussian_1_protein_mode = None
         self.gaussian_2_int_threshold = None
         self.gaussian_4_save_diagnostics = None
         self.gaussian_61_num_cores = None

@@ -13,9 +13,8 @@ import pygubu
 from tkinter import messagebox
 import tkinter as tk
 
-from CIU_raw import CIURaw
-from CIU_analysis_obj import CIUAnalysisObj
-from CIU_Params import Parameters
+import CIU_analysis_obj
+import CIU_raw
 
 
 def get_data(fname):
@@ -41,7 +40,7 @@ def get_data(fname):
     if np.max(col_counts) > 1:
         raise ValueError('Data import error in File: ', os.path.basename(fname), 'Duplicate column (CV) values. This file will NOT be processed.')
 
-    raw_obj = CIURaw(rawdata[1:, 1:], row_axis, col_axis, fname)
+    raw_obj = CIU_raw.CIURaw(rawdata[1:, 1:], row_axis, col_axis, fname)
 
     return raw_obj
 
@@ -278,7 +277,7 @@ def crop(analysis_obj, crop_vals):
     ciu_data_matrix = normalize_by_col(ciu_data_matrix)
 
     # save output to a new analysis object (clears fitting results/etc that can fail if axes are different)
-    new_obj = CIUAnalysisObj(analysis_obj.raw_obj, ciu_data_matrix, new_axes, analysis_obj.params)
+    new_obj = CIU_analysis_obj.CIUAnalysisObj(analysis_obj.raw_obj, ciu_data_matrix, new_axes, analysis_obj.params)
     return new_obj
 
 

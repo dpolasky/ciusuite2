@@ -215,7 +215,7 @@ def main_gaussian_lmfit(analysis_obj, params_obj, outputpath):
     :return: updated analysis object
     :rtype: CIUAnalysisObj
     """
-    print('Starting Gaussian fitting for file {}...'.format(analysis_obj.short_filename))
+    print('Fitting Gaussians for file {}...'.format(analysis_obj.short_filename))
     start_time = time.time()
 
     cv_col_data = np.swapaxes(analysis_obj.ciu_data, 0, 1)
@@ -394,7 +394,7 @@ def iterate_lmfitting(x_data, y_data, guesses_list, params_obj, outputpath):
     """
     # determine the number of components over which to iterate fitting
     max_num_prot_pks = params_obj.gaussian_71_max_prot_components
-    if params_obj.gaussian_1_mode == 'No Selection':
+    if not params_obj.gaussian_1_mode:
         max_num_nonprot_pks = params_obj.gaussian_82_max_nonprot_comps  # params_obj/advanced for more options?
     else:
         max_num_nonprot_pks = 0

@@ -15,20 +15,22 @@ import os
 import subprocess
 import pickle
 import sys
+import multiprocessing
 
-import Raw_Processing
 from CIU_raw import CIURaw
 from CIU_analysis_obj import CIUAnalysisObj
 import CIU_Params
-from CIU_Params import Parameters
+import Raw_Processing
 import Original_CIU
 import Gaussian_Fitting
 import Feature_Detection
 import Classification
 import Raw_Data_Import
 
-from matplotlib import rcParams
-rcParams.update({'figure.autolayout': True})
+# Set global matplotlib params for good figure layouts and a non-interactive backend
+import matplotlib
+matplotlib.rcParams.update({'figure.autolayout': True})
+matplotlib.use('Agg')
 
 
 # Load resource file paths, supporting both live code and code bundled by PyInstaller
@@ -39,7 +41,6 @@ else:
 
 hard_file_path_ui = os.path.join(root_dir, 'CIUSuite2.ui')
 hard_params_file = os.path.join(root_dir, 'CIU2_param_info.csv')
-# hard_params_ui = os.path.join(resource_dir, 'Param_editor.ui')
 hard_crop_ui = os.path.join(root_dir, 'Crop_vals.ui')
 hard_agilent_ext_path = os.path.join(root_dir, os.path.join('Agilent_RawExtractor', 'MIDAC_CIU_Extractor.exe'))
 hard_tooltips_file = os.path.join(root_dir, 'tooltips.txt')
@@ -618,6 +619,7 @@ class CIUSuite2(object):
             # Determine if a file range has been specified
             files_to_read = self.check_file_range_entries()
             self.progress_started()
+            print('**** Starting Gaussian Fitting - THIS MAY TAKE SOME TIME - the GUI will not respond until fitting is completed ****')
 
             new_file_list = []
             for file in files_to_read:
@@ -1064,10 +1066,10 @@ class CIUSuite2(object):
         """
         self.builder.get_object('Entry_progress').config(state=tk.NORMAL)
         self.builder.get_object('Entry_progress').delete(0, tk.END)
-        self.builder.get_object('Entry_progress').insert(0, 'Processing...')
+        self.builder.get_object('Entry_progress').insert(0, 'Processing... (This window will not respond until processing completes!)')
         self.builder.get_object('Entry_progress').config(state=tk.DISABLED)
 
-        self.builder.get_object('Progressbar_main')['value'] = 1
+        self.builder.get_object('Progressbar_main')['value'] = 10
         self.mainwindow.update()
 
     def update_progress(self, current_analysis, num_analyses):
@@ -1102,6 +1104,7 @@ class CIUSuite2(object):
         self.builder.get_object('Progressbar_main')['value'] = 100
         # added to keep program from exiting when run from command line - not sure if there's a better way to do this, but seems to work
         self.run()
+        # return 0
 
     def open_files(self, filetype):
         """
@@ -1366,6 +1369,7 @@ def load_analysis_obj(analysis_filename):
 
 if __name__ == '__main__':
     # Build the GUI and start its mainloop (run) method
+    multiprocessing.freeze_support()
     root = tk.Tk()
     root.withdraw()
     print('building GUI...')

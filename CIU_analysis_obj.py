@@ -7,16 +7,15 @@ import numpy as np
 import tkinter
 from tkinter import filedialog
 import pickle
-from CIU_Params import Parameters
-from Feature_Detection import Feature, Transition
-from CIU_raw import CIURaw
 
 # typing to allow easier refactoring of custom objects
 from typing import List
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from Gaussian_Fitting import Gaussian
-    from Gaussian_Fitting import SingleFitStats
+    import CIU_Params
+    import CIU_raw
+    import Feature_Detection
+    import Gaussian_Fitting
 
 
 class CIUAnalysisObj(object):
@@ -34,12 +33,12 @@ class CIUAnalysisObj(object):
         :type params_obj: Parameters
         """
         # basic information and objects
-        self.raw_obj = ciu_raw_obj  # type: CIURaw
+        self.raw_obj = ciu_raw_obj  # type: CIU_raw.CIURaw
         self.raw_obj_list = None    # used for replicates (averaged fingerprints) only
         self.ciu_data = ciu_data
         self.axes = axes            # convention: axis 0 = DT, axis 1 = CV
         self.crop_vals = None
-        self.params = params_obj  # type: Parameters
+        self.params = params_obj  # type: CIU_Params.Parameters
         self.filename = None        # filename of .ciu file saved
         self.short_filename = os.path.basename(self.raw_obj.filename).rstrip('_raw.csv')
 
@@ -50,15 +49,15 @@ class CIUAnalysisObj(object):
         self.col_max_dts = [self.axes[0][x] for x in self.col_maxes]       # DT of maximum value
 
         # Feature detection results
-        self.transitions = []   # type: List[Transition]
-        self.features_gaussian = None   # type: List[Feature]
-        self.features_changept = None   # type: List[Feature]
+        self.transitions = []   # type: List[Feature_Detection.Transition]
+        self.features_gaussian = None   # type: List[Feature_Detection.Feature]
+        self.features_changept = None   # type: List[Feature_Detection.Feature]
 
         # Gaussian fitting results - raw and following feature detection included
-        self.raw_protein_gaussians = None       # type: List[List[Gaussian]]
-        self.raw_nonprotein_gaussians = None    # type: List[List[Gaussian]]
-        self.feat_protein_gaussians = None      # type: List[List[Gaussian]]
-        self.gauss_fits_by_cv = None            # type: List[SingleFitStats]
+        self.raw_protein_gaussians = None       # type: List[List[Gaussian_Fitting.Gaussian]]
+        self.raw_nonprotein_gaussians = None    # type: List[List[Gaussian_Fitting.Gaussian]]
+        self.feat_protein_gaussians = None      # type: List[List[Gaussian_Fitting.Gaussian]]
+        self.gauss_fits_by_cv = None            # type: List[Gaussian_Fitting.SingleFitStats]
 
         # classification (unknown) outputs
         self.classif_predicted_label = None
