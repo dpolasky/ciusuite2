@@ -394,7 +394,7 @@ def iterate_lmfitting(x_data, y_data, guesses_list, params_obj, outputpath):
     """
     # determine the number of components over which to iterate fitting
     max_num_prot_pks = params_obj.gaussian_71_max_prot_components
-    if not params_obj.gaussian_1_mode:
+    if not params_obj.gaussian_1_protein_mode:
         max_num_nonprot_pks = params_obj.gaussian_82_max_nonprot_comps  # params_obj/advanced for more options?
     else:
         max_num_nonprot_pks = 0

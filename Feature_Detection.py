@@ -256,7 +256,7 @@ def compute_transitions(analysis_obj, params_obj, adjusted_features, gaussian_bo
             overall_index = cv_axis.index(cv)
             cv_indices.append(overall_index)
         if len(feature.dt_max_vals) == 0:
-            dt_max_vals = analysis_obj.col_max_dts[cv_indices[0]: cv_indices[-1]]
+            dt_max_vals = analysis_obj.col_max_dts[cv_indices[0]: cv_indices[-1] + 1]
         else:
             dt_max_vals = feature.dt_max_vals
         feature.init_feature_data(cv_indices, dt_max_vals)
@@ -270,12 +270,12 @@ def compute_transitions(analysis_obj, params_obj, adjusted_features, gaussian_bo
                                         analysis_obj,
                                         gaussian_bool)
         # check to make sure this is a transition that should be fitted (upper feature has a col max)
-        if current_transition.check_features(analysis_obj, params_obj):
-            current_transition.fit_transition(params_obj)
-            transition_list.append(current_transition)
-        else:
-            print('feature {} never reaches 50% intensity, '
-                  'skipping transition between {} and {}'.format(index + 2, index + 1, index + 2))
+        # if current_transition.check_features(analysis_obj, params_obj):
+        current_transition.fit_transition(params_obj)
+        transition_list.append(current_transition)
+        # else:
+        #     print('feature {} never reaches 50% intensity, '
+        #           'skipping transition between {} and {}'.format(index + 2, index + 1, index + 2))
         index += 1
     analysis_obj.transitions = transition_list
     return transition_list
@@ -325,7 +325,7 @@ def adjust_gauss_features(features_list, analysis_obj, params_obj):
             # check if the ciu_data column max value is appropriate for this feature at this CV
             cv_index = list(analysis_obj.axes[1]).index(cv)
             dt_diff = abs(analysis_obj.col_max_dts[cv_index] - feature.gauss_median_centroid)
-            if dt_diff < bin_to_ms(params_obj.feature_3_width_tol, analysis_obj.bin_spacing):
+            if dt_diff < params_obj.feature_3_width_tol:
                 # also check if a gap has formed and exclude features after the gap if so
                 if len(final_cvs) > 0:
                     if cv - final_cvs[-1] <= (params_obj.feature_4_gap_tol * analysis_obj.cv_spacing):
@@ -341,6 +341,8 @@ def adjust_gauss_features(features_list, analysis_obj, params_obj):
             adj_feature.cvs = final_cvs
             adjusted_features.append(adj_feature)
             adj_feature.gaussians = feature.gaussians
+        else:
+            print('Feature range {}-{} never reaches max relative intensity, no transition will be fit'.format(feature.start_cv_val, feature.end_cv_val))
     return adjusted_features
 
 
@@ -1037,7 +1039,7 @@ class Transition(object):
             return False
 
         feature2_cv_indices = np.arange(self.feature2.start_cv_index, self.feature2.end_cv_index)
-        width_tol_dt = params_obj.feature_3_width_tol * analysis_obj.bin_spacing
+        width_tol_dt = params_obj.feature_3_width_tol   # * analysis_obj.bin_spacing
         for cv_index in feature2_cv_indices:
             # check if a column max is within tolerance of the feature median
             current_max_dt = analysis_obj.col_max_dts[cv_index]
