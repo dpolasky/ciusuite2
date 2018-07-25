@@ -220,6 +220,8 @@ def ciu50_main(features_list, analysis_obj, params_obj, outputdir, gaussian_bool
     # Adjust features (remove long gaps, check for non-max data) if features are from Gaussian mode
     if gaussian_bool:
         adjusted_features = adjust_gauss_features(features_list, analysis_obj, params_obj)
+        adjusted_features = check_feature_order(adjusted_features)
+        plot_features(adjusted_features, analysis_obj, params_obj, outputdir, filename_append='_adjusted')
     else:
         adjusted_features = features_list
 
@@ -319,7 +321,7 @@ def adjust_gauss_features(features_list, analysis_obj, params_obj):
     :return: list of adjusted Features
     """
     adjusted_features = []
-    for feature in features_list:
+    for index, feature in enumerate(features_list):
         final_cvs = []
         for cv in feature.cvs:
             # check if the ciu_data column max value is appropriate for this feature at this CV
@@ -342,13 +344,41 @@ def adjust_gauss_features(features_list, analysis_obj, params_obj):
             adjusted_features.append(adj_feature)
             adj_feature.gaussians = feature.gaussians
         else:
-            print('Feature range {}-{} never reaches max relative intensity, no transition will be fit'.format(feature.start_cv_val, feature.end_cv_val))
+            print('Feature {} (range {}-{}) never reaches max relative intensity, no transition will be fit'.format(index + 1, feature.cvs[0], feature.cvs[-1]))
     return adjusted_features
 
 
-def plot_features(analysis_obj, params_obj, outputdir):
+def check_feature_order(features_list):
+    """
+    Ensure that features are in a reasonable order for transition fitting. Specifically,
+    make sure that the end of feature n+1 does not come before the start of feature n, as this
+    will cause transition fitting to crash/fail.
+    NOTE: initial fitting of features places them in order of starting CV, ensuring that this check
+    is not needed. However, after adjusting Gaussian features it is possible to get out of order, making
+    this check necessary for Gaussian features only.
+    :param features_list: list of Feature objects to sort
+    :return: sorted features list, swapping ONLY features that are completely out of order as described above
+    """
+    new_list = []
+    index = 0
+    while index < len(features_list):
+    # for index, feature in enumerate(features_list):
+        if features_list[index].cvs[0] > features_list[index + 1].cvs[-1]:
+            # the start of this feature comes AFTER the end of the "next" feature - swap them
+            new_list.append(features_list[index + 1])
+            new_list.append(features_list[index])
+            index += 2
+        else:
+            new_list.append(features_list[index])
+            index += 1
+    return new_list
+
+
+def plot_features(feature_list, analysis_obj, params_obj, outputdir, filename_append=None):
     """
     Generate a plot of features using previously saved (into the analysis_obj) feature fitting data
+    :param feature_list: list of Features to plot
+    :type feature_list: list[Feature]
     :param analysis_obj: CIUAnalysisObj with fitting data previously saved to obj.features_gaussian
     :type analysis_obj: CIUAnalysisObj
     :param params_obj: Parameters object with parameter information
@@ -375,9 +405,12 @@ def plot_features(analysis_obj, params_obj, outputdir):
         for x, y in zip(analysis_obj.axes[1], filt_centroids):
             plt.plot([x] * len(y), y, 'wo')
 
-        for feature in analysis_obj.features_gaussian:
-            feature_x = [gaussian.cv for gaussian in feature.gaussians]
-            feature_y = [feature.gauss_median_centroid for _ in feature.gaussians]
+        for feature in feature_list:
+            feature_x = feature.cvs
+            feature_y = [feature.gauss_median_centroid for _ in feature.cvs]
+
+            # feature_x = [gaussian.cv for gaussian in feature.gaussians]
+            # feature_y = [feature.gauss_median_centroid for _ in feature.gaussians]
             lines = plt.plot(feature_x, feature_y, label='Feature {} median: {:.2f}'.format(feature_index,
                                                                                             feature.get_median()))
             feature_index += 1
@@ -386,7 +419,7 @@ def plot_features(analysis_obj, params_obj, outputdir):
         # plot the raw data to show what was fit
         plt.plot(analysis_obj.axes[1], analysis_obj.col_max_dts, 'wo')
 
-        for feature in analysis_obj.features_changept:
+        for feature in feature_list:
             feature_x = feature.cvs
             feature_y = feature.dt_max_vals
             lines = plt.plot(feature_x, feature_y, label='Feature {} median: {:.2f}'.format(feature_index,
@@ -415,7 +448,10 @@ def plot_features(analysis_obj, params_obj, outputdir):
         plt.legend(loc='best', fontsize=params_obj.plot_13_font_size)
 
     # save plot
-    output_path = os.path.join(outputdir, analysis_obj.filename.rstrip('.ciu') + '_features' + params_obj.plot_02_extension)
+    if filename_append is None:
+        output_path = os.path.join(outputdir, analysis_obj.short_filename + '_features' + params_obj.plot_02_extension)
+    else:
+        output_path = os.path.join(outputdir, analysis_obj.short_filename + filename_append + '_features' + params_obj.plot_02_extension)
     plt.savefig(output_path)
     plt.close()
 
@@ -810,6 +846,7 @@ class Transition(object):
         self.start_index = feature1.start_cv_index
         self.end_index = feature2.end_cv_index
         self.feat_distance = self.feature2.start_cv_val - self.feature1.end_cv_val
+
         if self.feat_distance < 0:
             # overlapping features: flip sign to make feature distance the overlap distance
             self.feat_distance = self.feat_distance * -1

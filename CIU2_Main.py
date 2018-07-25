@@ -739,7 +739,7 @@ class CIUSuite2(object):
                     new_file_list.append(filename)
 
                 # save output
-                Feature_Detection.plot_features(analysis_obj, self.params_obj, self.output_dir)
+                Feature_Detection.plot_features(features_list, analysis_obj, self.params_obj, self.output_dir)
                 outputpath = os.path.join(self.output_dir, analysis_obj.short_filename + '_features.csv')
                 if self.params_obj.feature_ciu50_2_combine_outputs:
                     all_outputs += analysis_obj.short_filename
