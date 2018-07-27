@@ -1,6 +1,6 @@
 """
-Methods for high level analysis of fingerprints - feature detection, classification, etc
-author: DP, Gaussian fitting module from SD
+Gaussian fitting module for CIUSuite 2
+author: DP
 date: 10/10/2017
 """
 import numpy as np
@@ -227,30 +227,51 @@ def main_gaussian_lmfit(analysis_obj, params_obj, outputpath):
     best_fits_by_cv = []
     scores_by_cv = []
 
-    pool = multiprocessing.Pool(processes=params_obj.gaussian_61_num_cores)
-    results = []
+    # Separate multiprocessing behavior from standard, allowing both modes (since multiprocessing causes weird bugs sometimes)
+    if params_obj.gaussian_61_num_cores > 1:
+        pool = multiprocessing.Pool(processes=params_obj.gaussian_61_num_cores)
+        results = []
 
-    for cv_index, cv_col_intensities in enumerate(cv_col_data):
-        # prepare initial guesses in the form of a list of Gaussian objects, sorted by amplitude
-        cv = analysis_obj.axes[1][cv_index]
-        gaussian_guess_list = guess_gauss_init(cv_col_intensities, analysis_obj.axes[0], cv, rsq_cutoff=0.99, amp_cutoff=params_obj.gaussian_2_int_threshold)
+        for cv_index, cv_col_intensities in enumerate(cv_col_data):
+            # prepare initial guesses in the form of a list of Gaussian objects, sorted by amplitude
+            cv = analysis_obj.axes[1][cv_index]
+            gaussian_guess_list = guess_gauss_init(cv_col_intensities, analysis_obj.axes[0], cv, rsq_cutoff=0.99, amp_cutoff=params_obj.gaussian_2_int_threshold)
 
-        # Run fitting and scoring across the provided range of peak options
-        argslist = [analysis_obj.axes[0], cv_col_intensities, gaussian_guess_list, params_obj, outputfolder]
-        pool_result = pool.apply_async(iterate_lmfitting, args=argslist)
-        results.append(pool_result)
+            # Run fitting and scoring across the provided range of peak options with multiprocessing
+            argslist = [analysis_obj.axes[0], cv_col_intensities, gaussian_guess_list, params_obj, outputfolder]
+            pool_result = pool.apply_async(iterate_lmfitting, args=argslist)
+            results.append(pool_result)
 
-    pool.close()    # tell the pool we don't need it to process any more data
+        pool.close()    # tell the pool we don't need it to process any more data
 
-    for cv_index, cv_results in enumerate(results):
-        all_fits = cv_results.get()
+        for cv_index, cv_results in enumerate(results):
+            all_fits = cv_results.get()
 
-        # save the fit with the highest score out of all fits collected
-        best_fit = max(all_fits, key=lambda x: x.score)
-        best_fits_by_cv.append(best_fit)
-        scores_by_cv.append([fit.score for fit in all_fits])
+            # save the fit with the highest score out of all fits collected
+            best_fit = max(all_fits, key=lambda x: x.score)
+            best_fits_by_cv.append(best_fit)
+            scores_by_cv.append([fit.score for fit in all_fits])
 
-    pool.join()     # terminate pool processes once finished
+        pool.join()     # terminate pool processes once finished
+
+    else:
+        # User specified one thread, so don't use multiprocessing at all
+        results = []
+        for cv_index, cv_col_intensities in enumerate(cv_col_data):
+            cv = analysis_obj.axes[1][cv_index]
+            gaussian_guess_list = guess_gauss_init(cv_col_intensities, analysis_obj.axes[0], cv, rsq_cutoff=0.99,
+                                                   amp_cutoff=params_obj.gaussian_2_int_threshold)
+            all_fits = iterate_lmfitting(analysis_obj.axes[0], cv_col_intensities, gaussian_guess_list, params_obj,
+                                         outputpath)
+            results.append(all_fits)
+
+        for cv_index, cv_results in enumerate(results):
+            all_fits = cv_results
+
+            # save the fit with the highest score out of all fits collected
+            best_fit = max(all_fits, key=lambda x: x.score)
+            best_fits_by_cv.append(best_fit)
+            scores_by_cv.append([fit.score for fit in all_fits])
 
     # output final results
     fit_time = time.time() - start_time

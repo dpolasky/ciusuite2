@@ -362,13 +362,17 @@ def check_feature_order(features_list):
     new_list = []
     index = 0
     while index < len(features_list):
-    # for index, feature in enumerate(features_list):
-        if features_list[index].cvs[0] > features_list[index + 1].cvs[-1]:
-            # the start of this feature comes AFTER the end of the "next" feature - swap them
-            new_list.append(features_list[index + 1])
-            new_list.append(features_list[index])
-            index += 2
-        else:
+        try:
+            if features_list[index].cvs[0] > features_list[index + 1].cvs[-1]:
+                # the start of this feature comes AFTER the end of the "next" feature - swap them
+                new_list.append(features_list[index + 1])
+                new_list.append(features_list[index])
+                index += 2
+            else:
+                new_list.append(features_list[index])
+                index += 1
+        except IndexError:
+            # final feature in the list (so features_list[index + 1] gives IndexError) - append
             new_list.append(features_list[index])
             index += 1
     return new_list
