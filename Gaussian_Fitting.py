@@ -74,7 +74,7 @@ class Gaussian(object):
         Method for generating strings to save to output files with all info
         :return: string
         """
-        return '{},{:.2f},{:.2f},{:.2f}'.format(self.cv, self.amplitude, self.centroid, self.width)
+        return '{},{:.2f},{:.2f},{:.2f}'.format(self.cv, self.amplitude, self.centroid, self.fwhm)
 
     def return_popt(self):
         """
@@ -1074,7 +1074,7 @@ def save_gauss_params(analysis_obj, outputpath):
         dt_line = ','.join([str(x) for x in analysis_obj.axes[0]])
         output.write('Drift axis:,' + dt_line + '\n')
         output.write('# Protein Gaussians\n')
-        output.write('# CV,Amplitude,Centroid,Peak Width\n')
+        output.write('# CV,Amplitude,Centroid,Peak Width (FWHM)\n')
         index = 0
         while index < len(analysis_obj.axes[1]):
             outputline = ','.join([gaussian.print_info() for gaussian in analysis_obj.raw_protein_gaussians[index]])
@@ -1084,7 +1084,7 @@ def save_gauss_params(analysis_obj, outputpath):
         if analysis_obj.raw_nonprotein_gaussians is not None:
             index = 0
             output.write('# Non-Protein Gaussians\n')
-            output.write('# CV,Amplitude,Centroid,Peak Width\n')
+            output.write('# CV,Amplitude,Centroid,Peak Width (FWHM)\n')
             while index < len(analysis_obj.axes[1]):
                 gauss_line = ','.join([gaussian.print_info() for gaussian in analysis_obj.raw_nonprotein_gaussians[index]])
                 output.write(gauss_line + '\n')
@@ -1132,8 +1132,9 @@ def reconstruct_from_fits(gaussian_lists_by_cv, axes, new_filename, params_obj):
 def parse_gaussian_list_from_file(filepath):
     """
     Read in a list of Gaussians from file and return a list of Gaussian objects.
+    ** NOTE: provide widths as FWHM, not sigma **
     File format: (comma delimited text file, headers (#) ignored)
-    CV1, gauss1_amp, gauss1_cent, gauss1_width, gauss2 A, c, w, ..., gaussN a, c, w
+    CV1, gauss1_amp, gauss1_cent, gauss1_FWHM, gauss2 A, c, w, ..., gaussN a, c, w
     CV2, gauss1_amp, (etc)
     CV3
     ...
@@ -1179,7 +1180,7 @@ def parse_gaussian_list_from_file(filepath):
                     cv = float(splits[index])
                     amp = float(splits[index + 1])
                     cent = float(splits[index + 2])
-                    width = float(splits[index + 3])
+                    width = fwhm_to_sigma(float(splits[index + 3]))
                     gaussians.append(Gaussian(amp, cent, width, cv, pcov=None, protein_bool=True))
                 except (IndexError, ValueError):
                     print('Invalid values for Gaussian. Values were: {}. Gaussian could not be parsed and was skipped'.format(splits[index:index + 3]))

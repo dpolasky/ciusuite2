@@ -105,8 +105,6 @@ def smooth_main(analysis_obj, params_obj):
     :return: updated analysis_obj (.ciu_data updated, no other changes)
     """
     norm_data = analysis_obj.ciu_data
-    # norm_data = analysis_obj.raw_obj.rawdata
-    # norm_data = normalize_by_col(norm_data)
 
     if params_obj.smoothing_1_method is not None:
         # ensure window size is odd
@@ -116,9 +114,18 @@ def smooth_main(analysis_obj, params_obj):
         i = 0
         while i < params_obj.smoothing_3_iterations:
             if params_obj.smoothing_1_method.lower() == '2d savitzky-golay':
+                # catch data with only 1 row or column
+                if len(analysis_obj.axes[0]) < params_obj.smoothing_2_window or len(analysis_obj.axes[1]) < 2:
+                    print('File {} has at least one axis too small for 2D smoothing. 2D smoothing requires at least 2 activation axis bins and at least the smoothing window size mobility bins. The file was NOT smoothed'.format(analysis_obj.short_filename))
+                    break
                 norm_data = sgolay2d(norm_data, params_obj.smoothing_2_window, order=2)
 
             elif params_obj.smoothing_1_method.lower() == '1d savitzky-golay':
+                # catch data with only 1 row
+                if len(analysis_obj.axes[0]) < params_obj.smoothing_2_window:
+                    print('The mobility axis in file {} has fewer bins than the smoothing window and cannot be smoothed. The file was NOT smoothed'.format(
+                            analysis_obj.short_filename))
+                    break
                 norm_data = sav_gol_smooth(norm_data, params_obj.smoothing_2_window, smooth_order=2)
 
             else:

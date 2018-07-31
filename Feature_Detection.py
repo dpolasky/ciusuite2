@@ -57,8 +57,8 @@ def feature_detect_col_max(analysis_obj, params_obj):
 
     # compute width tolerance in DT units, CV gap in bins (NOT cv axis units)
     width_tol_dt = params_obj.feature_3_width_tol  # * analysis_obj.bin_spacing
-    gap_tol_cv = params_obj.feature_4_gap_tol * analysis_obj.cv_spacing
     cv_spacing = analysis_obj.axes[1][1] - analysis_obj.axes[1][0]
+    gap_tol_cv = params_obj.feature_4_gap_tol * cv_spacing
 
     # Search each gaussian for features it matches (based on centroid)
     for cv_index, col_max_dt in enumerate(analysis_obj.col_max_dts):
@@ -321,6 +321,8 @@ def adjust_gauss_features(features_list, analysis_obj, params_obj):
     :return: list of adjusted Features
     """
     adjusted_features = []
+    cv_spacing = analysis_obj.axes[1][1] - analysis_obj.axes[1][0]
+
     for index, feature in enumerate(features_list):
         final_cvs = []
         for cv in feature.cvs:
@@ -330,7 +332,7 @@ def adjust_gauss_features(features_list, analysis_obj, params_obj):
             if dt_diff < params_obj.feature_3_width_tol:
                 # also check if a gap has formed and exclude features after the gap if so
                 if len(final_cvs) > 0:
-                    if cv - final_cvs[-1] <= (params_obj.feature_4_gap_tol * analysis_obj.cv_spacing):
+                    if cv - final_cvs[-1] <= (params_obj.feature_4_gap_tol * cv_spacing):
                         # difference is within tolerances; include this CV in the adjusted feature
                         final_cvs.append(cv)
                 else:
