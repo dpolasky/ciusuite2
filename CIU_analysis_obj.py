@@ -23,7 +23,7 @@ class CIUAnalysisObj(object):
     Container for analysis/processed information from a CIU fingerprint. Requires a CIURaw object
     to start, additional fields added as data is processed.
     """
-    def __init__(self, ciu_raw_obj, ciu_data, axes, params_obj):
+    def __init__(self, ciu_raw_obj, ciu_data, axes, params_obj, short_filename=None):
         """
         Initialize with raw data and axes. Allows addition of Gaussian fitting data later
         :param ciu_raw_obj: Object containing initial raw data, axes, and filepath of the analysis
@@ -40,7 +40,11 @@ class CIUAnalysisObj(object):
         self.crop_vals = None
         self.params = params_obj  # type: CIU_Params.Parameters
         self.filename = None        # filename of .ciu file saved
-        self.short_filename = os.path.basename(self.raw_obj.filename).rstrip('_raw.csv')
+        # allow for saving modified short_filenames
+        if short_filename is None:
+            self.short_filename = os.path.basename(self.raw_obj.filename).rstrip('_raw.csv')
+        else:
+            self.short_filename = short_filename
 
         # CIU data manipulations for common use
         self.col_maxes = np.argmax(self.ciu_data, axis=0)       # Index of maximum value in each CV column (in DT bins)

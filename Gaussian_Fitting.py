@@ -155,7 +155,8 @@ class SingleFitStats(object):
                                                     tolerance=fwhm_to_sigma(params_obj.gaussian_73_prot_width_tol),
                                                     steepness=1)
             if len(self.gaussians_protein) > 1:
-                current_penalty += compute_area_penalty(gaussian, self.gaussians_protein, self.x_data)
+                if gaussian.amplitude > params_obj.gaussian_2_int_threshold:
+                    current_penalty += compute_area_penalty(gaussian, self.gaussians_protein, self.x_data)
             peak_penalties.append(current_penalty)
 
         # add up penalties and subtract from the fit adjusted r2 to obtain final score
@@ -215,7 +216,7 @@ def main_gaussian_lmfit(analysis_obj, params_obj, outputpath):
     :return: updated analysis object
     :rtype: CIUAnalysisObj
     """
-    print('Fitting Gaussians for file {}...'.format(analysis_obj.short_filename))
+    print('Fitting Gaussians for file {}...\n'.format(analysis_obj.short_filename))
     start_time = time.time()
 
     cv_col_data = np.swapaxes(analysis_obj.ciu_data, 0, 1)
@@ -1127,6 +1128,36 @@ def reconstruct_from_fits(gaussian_lists_by_cv, axes, new_filename, params_obj):
     new_analysis_obj.protein_gaussians = gaussian_lists_by_cv
     new_analysis_obj.gaussians = gaussian_lists_by_cv
     return new_analysis_obj
+
+
+def check_recon_for_crop(gaussian_lists_by_cv, axes):
+    """
+    Crops any columns from the beginning or end of a fingerprint being reconstructed that
+    have no Gaussians fit to them. Gaps with no Gaussians between features are left alone
+    and are handled gracefully by Feature Detection and Classification (or by smoothing).
+    :param gaussian_lists_by_cv: list of Gaussian lists by CV
+    :param axes: axes from the original analysis object, CV axis must be same length as gaussian_lists_by_cv
+    :return: cropped gaussian_lists_by_cv, cropped axes
+    """
+    cv_axis = axes[1]
+    true_start_index = 0
+    true_end_index = 0
+    start_flag = True
+
+    for index, gaussian_list in enumerate(gaussian_lists_by_cv):
+        if len(gaussian_list) == 0:
+            if start_flag:
+                # this list is empty AND we haven't yet found a non-empty list, so crop it
+                true_start_index += 1
+        else:
+            # not empty, so this can't be the true end
+            true_end_index = index
+            start_flag = False
+
+    # do the cropping
+    final_lists = gaussian_lists_by_cv[true_start_index: true_end_index + 1]
+    final_cv_axis = cv_axis[true_start_index: true_end_index + 1]
+    return final_lists, [axes[0], final_cv_axis]
 
 
 def parse_gaussian_list_from_file(filepath):

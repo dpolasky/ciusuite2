@@ -225,7 +225,7 @@ class CIUSuite2(object):
                 analysis_obj = load_analysis_obj(analysis_file)
 
                 # update parameters and re-process raw data
-                new_obj = process_raw_obj(analysis_obj.raw_obj, self.params_obj)
+                new_obj = process_raw_obj(analysis_obj.raw_obj, self.params_obj, short_filename=analysis_obj.short_filename)
                 filename = save_analysis_obj(new_obj, self.params_obj, outputdir=self.output_dir)
                 output_files.append(filename)
                 self.update_progress(files_to_read.index(analysis_file), len(files_to_read))
@@ -599,7 +599,7 @@ class CIUSuite2(object):
                 analysis_obj = Raw_Processing.interpolate_axes(analysis_obj, new_axes)
 
                 # create a new analysis object to prevent unstable behavior with new axes
-                new_obj = CIUAnalysisObj(analysis_obj.raw_obj, analysis_obj.ciu_data, analysis_obj.axes, self.params_obj)
+                new_obj = CIUAnalysisObj(analysis_obj.raw_obj, analysis_obj.ciu_data, analysis_obj.axes, self.params_obj, short_filename=analysis_obj.short_filename)
 
                 filename = save_analysis_obj(new_obj, self.params_obj, outputdir=self.output_dir)
                 new_file_list.append(filename)
@@ -619,7 +619,7 @@ class CIUSuite2(object):
             # Determine if a file range has been specified
             files_to_read = self.check_file_range_entries()
             self.progress_started()
-            print('**** Starting Gaussian Fitting - THIS MAY TAKE SOME TIME - the GUI will not respond until fitting is completed ****')
+            print('\n**** Starting Gaussian Fitting - THIS MAY TAKE SOME TIME - the GUI will not respond until fitting is completed ****')
 
             new_file_list = []
             for file in files_to_read:
@@ -683,7 +683,8 @@ class CIUSuite2(object):
                         break
 
                     # If gaussian data exists, perform the analysis
-                    new_obj = Gaussian_Fitting.reconstruct_from_fits(analysis_obj.feat_protein_gaussians, analysis_obj.axes, analysis_obj.short_filename, self.params_obj)
+                    final_gausslists, final_axes = Gaussian_Fitting.check_recon_for_crop(analysis_obj.feat_protein_gaussians, analysis_obj.axes)
+                    new_obj = Gaussian_Fitting.reconstruct_from_fits(final_gausslists, final_axes, analysis_obj.short_filename, self.params_obj)
                     filename = save_analysis_obj(new_obj, self.params_obj, outputdir=self.output_dir)
 
                     # also save an _raw.csv file with the generated data
@@ -1205,7 +1206,7 @@ def save_existing_output_string(full_output_path, string_to_save):
         outfile.write(string_to_save)
 
 
-def process_raw_obj(raw_obj, params_obj):
+def process_raw_obj(raw_obj, params_obj, short_filename=None):
     """
     Run all initial raw processing stages (data import, smoothing, interpolation, cropping)
     on a raw file using the parameters provided in a Parameters object. Returns a NEW
@@ -1214,6 +1215,7 @@ def process_raw_obj(raw_obj, params_obj):
     :type raw_obj: CIURaw
     :param params_obj: Parameters object containing processing parameters
     :type params_obj: Parameters
+    :param short_filename: filename to save into the new object (e.g. if reconstructing)
     :rtype: CIUAnalysisObj
     :return: CIUAnalysisObj with processed data
     """
@@ -1222,7 +1224,7 @@ def process_raw_obj(raw_obj, params_obj):
     axes = (raw_obj.dt_axis, raw_obj.cv_axis)
 
     # save a CIUAnalysisObj with the information above
-    analysis_obj = CIUAnalysisObj(raw_obj, norm_data, axes, params_obj)
+    analysis_obj = CIUAnalysisObj(raw_obj, norm_data, axes, params_obj, short_filename=short_filename)
     analysis_obj = Raw_Processing.smooth_main(analysis_obj, params_obj)
 
     return analysis_obj

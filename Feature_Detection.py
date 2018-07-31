@@ -904,13 +904,19 @@ class Transition(object):
             gaussian_ciu_cols = []
 
             # Reconstruct Gaussian data for ONLY the two features being considered
-            for cv in self.combined_x_axis:
+            for index, cv in enumerate(self.combined_x_axis):
                 gauss1 = self.feature1.get_gaussian_at_cv(cv)
                 gauss2 = self.feature2.get_gaussian_at_cv(cv)
-                all_params = gauss1.return_popt()
-                all_params.extend(gauss2.return_popt())
-                recon_data = Gaussian_Fitting.multi_gauss_func(dt_axis, *all_params)
-                gaussian_ciu_cols.append(recon_data)
+                if gauss1.amplitude == 0 and gauss2.amplitude == 0:
+                    # There is a gap between features where no Gaussians are fit - use raw column max data to fill it
+                    col_data = np.swapaxes(ciu_data, 0, 1)[index]
+                    gaussian_ciu_cols.append(col_data)
+                else:
+                    # At least one Gaussian was found at this CV, so use it as recon data
+                    all_params = gauss1.return_popt()
+                    all_params.extend(gauss2.return_popt())
+                    recon_data = Gaussian_Fitting.multi_gauss_func(dt_axis, *all_params)
+                    gaussian_ciu_cols.append(recon_data)
 
             y_col_data = gaussian_ciu_cols
 
