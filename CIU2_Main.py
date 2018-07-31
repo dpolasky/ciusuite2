@@ -719,14 +719,14 @@ class CIUSuite2(object):
                     if analysis_obj.raw_protein_gaussians is None:
                         messagebox.showwarning('Gaussian fitting required', 'Data in file {} does not have Gaussian fitting'
                                                                             'performed. Please run Gaussian fitting, then try '
-                                                                            'again.')
+                                                                            'again.'.format(analysis_obj.short_filename))
                         break
 
                     # Detect features in the appropriate mode
                     try:
                         analysis_obj = Feature_Detection.feature_detect_gaussians(analysis_obj, self.params_obj)
                     except ValueError:
-                        messagebox.showerror('Uneven CV Axis', 'Error: Activation axis in file {} was not evenly spaced. Please use the "Interpolate Data" button to generate an evenly spaced axis. If using Gaussian fitting mode, Gaussian fitting MUST be redone after interpolation.')
+                        messagebox.showerror('Uneven CV Axis', 'Error: Activation axis in file {} was not evenly spaced. Please use the "Interpolate Data" button to generate an evenly spaced axis. If using Gaussian fitting mode, Gaussian fitting MUST be redone after interpolation.'.format(analysis_obj.short_filename))
                         continue
                     features_list = analysis_obj.features_gaussian
                     filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
@@ -866,7 +866,7 @@ class CIUSuite2(object):
         # get classification parameters
         param_keys = [x for x in self.params_obj.params_dict.keys() if 'classif' in x]
         if self.run_param_ui('Classification Parameters', param_keys):
-            if self.params_obj.classif_3_mode == 'Gaussian':
+            if self.params_obj.classif_3_unk_mode == 'Gaussian':
                 # Ensure Gaussian features are present and prepare them for classification
                 max_num_gaussians = 0
                 for obj_list in obj_list_by_label:
@@ -938,7 +938,7 @@ class CIUSuite2(object):
             analysis_obj_list.append(analysis_obj)
 
         # check parameters
-        param_keys = [x for x in self.params_obj.params_dict.keys() if 'classif' in x]
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'unk' in x]
         if self.run_param_ui('Classification Parameters', param_keys):
             # load classification scheme file
             scheme_file = filedialog.askopenfilename(filetypes=[('Classification File', '.clf')])
@@ -946,7 +946,7 @@ class CIUSuite2(object):
                 scheme = Classification.load_scheme(scheme_file)
 
                 # ensure Gaussian features are present if requested
-                if self.params_obj.classif_3_mode == 'Gaussian':
+                if self.params_obj.classif_3_unk_mode == 'Gaussian':
                     for analysis_obj in analysis_obj_list:
                         if analysis_obj.features_gaussian is None:
                             messagebox.showerror('No Gaussian Features Fitted',
@@ -1002,7 +1002,7 @@ class CIUSuite2(object):
                     self.update_progress(analysis_obj_list.index(analysis_obj), len(analysis_obj_list))
 
                 if len(successful_objs_for_plot) > 0:
-                    Classification.save_predictions(successful_objs_for_plot, self.params_obj, scheme.selected_features, scheme.unique_labels, self.output_dir)
+                    Classification.save_predictions(successful_objs_for_plot, scheme.selected_features, scheme.unique_labels, self.output_dir)
                     scheme.plot_all_unknowns(successful_objs_for_plot, self.params_obj, self.output_dir)
                     all_transform_data = [x.classif_transformed_data for x in successful_objs_for_plot]
                     all_filenames = [x.short_filename for x in successful_objs_for_plot]

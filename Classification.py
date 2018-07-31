@@ -85,10 +85,10 @@ def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_overrid
     """
     classif_data = None
 
-    if params_obj.classif_3_mode == 'All_Data':
+    if params_obj.classif_3_unk_mode == 'All_Data':
         classif_data = analysis_obj.ciu_data
 
-    elif params_obj.classif_3_mode == 'Gaussian':
+    elif params_obj.classif_3_unk_mode == 'Gaussian':
         classif_data = []
 
         # for unknown data, num gaussians is provided (use it); for building scheme, num gaussians comes from params object (as a convenient save location)
@@ -137,7 +137,7 @@ def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_overrid
             classif_data = np.asarray(classif_data).T
 
     else:
-        print('WARNING: INVALID CLASSIFICATION MODE: {}'.format(params_obj.classif_3_mode))
+        print('WARNING: INVALID CLASSIFICATION MODE: {}'.format(params_obj.classif_3_unk_mode))
 
     return classif_data
 
@@ -510,7 +510,7 @@ def plot_crossval_scores(crossval_data, scheme_name, params_obj, outputdir):
     plt.close()
 
 
-def arrange_data_for_lda(flat_data_matrix_list, flat_label_list, features_list, flat_axes_list, flat_filenames=None, method='flat'):
+def arrange_data_for_lda(flat_data_matrix_list, flat_label_list, features_list, flat_axes_list, flat_filenames=None):
     """
     Prepare data for LDA by arranging selected CV columns (from the original matrix) into
     the desired shape. Multiple options supported at this time, will likely choose best eventually.
@@ -520,7 +520,6 @@ def arrange_data_for_lda(flat_data_matrix_list, flat_label_list, features_list, 
     :type features_list: list[CFeature]
     :param flat_axes_list: list of CV axes for each dataset in flat_data_matrix_list to enable correct indexing
     :param flat_filenames: (optional) list of filenames in same shape as flat label list. If provided, filenames are returned
-    :param method: 'flat' or 'stacked': whether to assemble features in a single list per datafile (flat) or in separate lists (stacked)
     :return: assembled raw data list, assembled labels list - ready for LDA as x, y
     """
     # actual CVs used in original scheme - must be the same in all data
@@ -528,41 +527,42 @@ def arrange_data_for_lda(flat_data_matrix_list, flat_label_list, features_list, 
 
     lda_ciu_data, lda_label_data, lda_filenames, lda_feat_cvs = [], [], [], []
 
-    if method == 'stacked':
-        # loop over each replicate of data provided
-        for data_index in range(len(flat_data_matrix_list)):
-            # loop over each feature (collision voltage) desired, saving the requested data in appropriate form
-            for index, data_cv in enumerate(cvfeats_list):
-                # get the correct index of the data_cv in the current raw data matrix
-                current_cv_axis = flat_axes_list[data_index]
-                this_cv_correct_index = (np.abs(np.asarray(current_cv_axis) - data_cv)).argmin()
+    # if method == 'stacked':
+    # loop over each replicate of data provided
+    for data_index in range(len(flat_data_matrix_list)):
+        # loop over each feature (collision voltage) desired, saving the requested data in appropriate form
+        for index, data_cv in enumerate(cvfeats_list):
+            # get the correct index of the data_cv in the current raw data matrix
+            current_cv_axis = flat_axes_list[data_index]
+            this_cv_correct_index = (np.abs(np.asarray(current_cv_axis) - data_cv)).argmin()
 
-                # use the correct index to find the raw data at this CV
-                lda_ciu_data.append(flat_data_matrix_list[data_index].T[this_cv_correct_index])
-                lda_label_data.append(flat_label_list[data_index])
-                if flat_filenames is not None:
-                    lda_filenames.append(flat_filenames[data_index])
-                lda_feat_cvs.append(data_cv)
-
-    elif method == 'flat':
-        # NEW WAY - actually worse. Will likely be deprecated
-        for data_index in range(len(flat_data_matrix_list)):
-            # for this method, there is only one label/etc per replicate - so these can be assembled outside the feature loop
+            # use the correct index to find the raw data at this CV
+            lda_ciu_data.append(flat_data_matrix_list[data_index].T[this_cv_correct_index])
             lda_label_data.append(flat_label_list[data_index])
             if flat_filenames is not None:
                 lda_filenames.append(flat_filenames[data_index])
+            lda_feat_cvs.append(data_cv)
 
-            # loop over each feature (collision voltage) desired, saving the requested data in appropriate form
-            rep_data = []
-            for index, data_cv in enumerate(cvfeats_list):
-                # get the correct index of the data_cv in the current raw data matrix
-                current_cv_axis = flat_axes_list[data_index]
-                this_cv_correct_index = (np.abs(current_cv_axis - data_cv)).argmin()
-                rep_data.extend(flat_data_matrix_list[data_index].T[this_cv_correct_index])
-
-            lda_ciu_data.append(rep_data)
-    else:
-        print('Invalid method! No LDA performed')
+    # todo: deprecated
+    # elif method == 'flat':
+    #     # NEW WAY - actually worse. Will likely be deprecated
+    #     for data_index in range(len(flat_data_matrix_list)):
+    #         # for this method, there is only one label/etc per replicate - so these can be assembled outside the feature loop
+    #         lda_label_data.append(flat_label_list[data_index])
+    #         if flat_filenames is not None:
+    #             lda_filenames.append(flat_filenames[data_index])
+    #
+    #         # loop over each feature (collision voltage) desired, saving the requested data in appropriate form
+    #         rep_data = []
+    #         for index, data_cv in enumerate(cvfeats_list):
+    #             # get the correct index of the data_cv in the current raw data matrix
+    #             current_cv_axis = flat_axes_list[data_index]
+    #             this_cv_correct_index = (np.abs(current_cv_axis - data_cv)).argmin()
+    #             rep_data.extend(flat_data_matrix_list[data_index].T[this_cv_correct_index])
+    #
+    #         lda_ciu_data.append(rep_data)
+    # else:
+    #     print('Invalid method! No LDA performed')
 
     return lda_ciu_data, lda_label_data, lda_filenames, lda_feat_cvs
 
@@ -615,7 +615,7 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
     flat_cv_axes = [x.axes[1] for label_obj_list in analysis_obj_list_by_label for x in label_obj_list]
 
     # create a concatenated array with the selected CV columns from each raw dataset
-    input_x_ciu_data, input_label_data, input_filenames, input_feats = arrange_data_for_lda(flat_ciuraw_list, flat_label_list, features_list, flat_cv_axes, flat_filename_list, method=param_obj.classif_4_data_structure)
+    input_x_ciu_data, input_label_data, input_filenames, input_feats = arrange_data_for_lda(flat_ciuraw_list, flat_label_list, features_list, flat_cv_axes, flat_filename_list)
 
     # finalize input data for LDA
     input_x_ciu_data = np.asarray(input_x_ciu_data)
@@ -665,13 +665,14 @@ def save_lda_output(transformed_data, filenames, input_feats, scheme_name, outpu
     :param output_path: directory in which to save output
     :return: void
     """
-    outputname = scheme_name + '_lda.csv'
+    outputname = scheme_name + '_LDA.csv'
     feats = input_feats
     output_final = os.path.join(output_path, outputname)
     with open(output_final, 'w') as outfile:
         num_lds = np.arange(1, len(transformed_data[0]) + 1)
+        ld_string = ','.join('LD {} (linear discriminant dimension {})'.format(x, x) for x in num_lds)
         try:
-            lineheader = 'filename, feats,' + ','.join(str(x) for x in num_lds)
+            lineheader = 'Filename,Feature (e.g. voltage),' + ld_string
             outfile.write(lineheader + '\n')
             # OLD WAY - multiple features/probabilities per class
             for index in range(len(transformed_data[:, 0])):
@@ -700,13 +701,11 @@ def save_lda_output(transformed_data, filenames, input_feats, scheme_name, outpu
         outfile.close()
 
 
-def save_predictions(list_of_analysis_objs, params_obj, features_list, class_labels, output_path):
+def save_predictions(list_of_analysis_objs, features_list, class_labels, output_path):
     """
     Save unknown data predictions to csv output file
     :param list_of_analysis_objs: list of CIUAnalysis containers with unknown data - MUST have transformed data already set
     :type list_of_analysis_objs: list[CIUAnalysisObj]
-    :param params_obj: Parameters object with param information
-    :type params_obj: Parameters
     :param features_list: list of selected Features
     :type features_list: list[CFeature]
     :param class_labels: list of labels for each class
@@ -716,11 +715,12 @@ def save_predictions(list_of_analysis_objs, params_obj, features_list, class_lab
     outputname = 'All_Unknowns_classif.csv'
     output_final = os.path.join(output_path, outputname)
     with open(output_final, 'w') as outfile:
-        header_labels = ','.join(['Prob for {}'.format(x) for x in class_labels])
-        if params_obj.classif_4_data_structure == 'flat':
-            header = 'File,Predicted Class,{}\n'.format(header_labels)
-        else:
-            header = 'File,Features,Predicted Class,{}\n'.format(header_labels)
+        header_labels = ','.join(['Probability of {}'.format(x) for x in class_labels])
+        # todo: deprecated (and below)
+        # if params_obj.classif_4_data_structure == 'flat':
+        header = 'File,Feature,Predicted Class,{}\n'.format(header_labels)
+        # else:
+        #     header = 'File,Features,Predicted Class,{}\n'.format(header_labels)
         outfile.write(header)
 
         for analysis_obj in list_of_analysis_objs:
@@ -728,27 +728,27 @@ def save_predictions(list_of_analysis_objs, params_obj, features_list, class_lab
             predict_class = analysis_obj.classif_predicted_label
             predict_prob_feat = analysis_obj.classif_probs_by_cv
             # OLD WAY
-            if params_obj.classif_4_data_structure == 'stacked':
-                # For feature-by-feature method, count the most common classification for this unknown (statistical mode)
-                counts = np.bincount(predict_class)
-                class_mode = np.argmax(counts)
-                main_lines = []
-                for index, cv in enumerate(cvs):
-                    joined_probs = ','.join([str(x) for x in predict_prob_feat[index]])
-                    line = '{},{},{},{},\n'.format(analysis_obj.short_filename, cv, predict_class[index], joined_probs)
-                    main_lines.append(line)
-                probs = ','.join(str(x) for x in analysis_obj.classif_probs_avg)
-                line2 = '{},{},{},{}, \n'.format(analysis_obj.short_filename, 'Combined', class_mode, probs)
+            # if params_obj.classif_4_data_structure == 'stacked':
+            # For feature-by-feature method, count the most common classification for this unknown (statistical mode)
+            counts = np.bincount(predict_class)
+            class_mode = np.argmax(counts)
+            main_lines = []
+            for index, cv in enumerate(cvs):
+                joined_probs = ','.join([str(x) for x in predict_prob_feat[index]])
+                line = '{},{},{},{},\n'.format(analysis_obj.short_filename, cv, predict_class[index], joined_probs)
+                main_lines.append(line)
+            probs = ','.join(str(x) for x in analysis_obj.classif_probs_avg)
+            line2 = '{},{},{},{}, \n'.format(analysis_obj.short_filename, 'Combined', class_mode, probs)
 
-                # write at the end to allow type checking to finish
-                for line in main_lines:
-                    outfile.write(line)
-                outfile.write(line2)
-            elif params_obj.classif_4_data_structure == 'flat':
-                # NEW WAY
-                probs = ','.join(str(x) for x in analysis_obj.classif_probs_avg)
-                line2 = '{},{},{}, \n'.format(analysis_obj.short_filename, analysis_obj.classif_predicted_label[0], probs)
-                outfile.write(line2)
+            # write at the end to allow type checking to finish
+            for line in main_lines:
+                outfile.write(line)
+            outfile.write(line2)
+            # elif params_obj.classif_4_data_structure == 'flat':
+            #     # NEW WAY
+            #     probs = ','.join(str(x) for x in analysis_obj.classif_probs_avg)
+            #     line2 = '{},{},{}, \n'.format(analysis_obj.short_filename, analysis_obj.classif_predicted_label[0], probs)
+            #     outfile.write(line2)
 
 
 def save_lda_output_unk(list_transformed_data, list_filenames, list_feats, output_path):
@@ -765,7 +765,7 @@ def save_lda_output_unk(list_transformed_data, list_filenames, list_feats, outpu
     features = [x.cv for x in list_feats]
     with open(output_final, 'w') as outfile:
         num_lds = np.arange(1, len(list_transformed_data[0][0])+1)
-        lineheader = 'filename, feats,' + ','.join(str(x) for x in num_lds)
+        lineheader = 'filename, feats,' + ','.join('LD {} (linear discriminant dimension {})'.format(x, x) for x in num_lds)
         outfile.write(lineheader + '\n')
         for index, (transformed_data, fname) in enumerate(zip(list_transformed_data, list_filenames)):
             for ind in range(len(transformed_data[:, 0])):
@@ -1091,7 +1091,7 @@ class ClassificationScheme(object):
         unk_ciudata = get_classif_data(unk_ciu_obj, params_obj, ufs_mode=False, num_gauss_override=self.num_gaussians)
 
         # Assemble feature data for fitting
-        unk_input_x, fake_labels, filenames, input_feats = arrange_data_for_lda([unk_ciudata], unk_label, self.selected_features, [unk_ciu_obj.axes[1]], [unk_ciu_obj.short_filename], method=params_obj.classif_4_data_structure)
+        unk_input_x, fake_labels, filenames, input_feats = arrange_data_for_lda([unk_ciudata], unk_label, self.selected_features, [unk_ciu_obj.axes[1]], [unk_ciu_obj.short_filename])
 
         # Fit/classify data according to scheme LDA and classifier
         unknown_transformed_lda = self.lda.transform(unk_input_x)
@@ -1255,8 +1255,8 @@ class DataCombination(object):
         :type params_obj: Parameters
         :return: void
         """
-        train_data_final, train_labels_final, empty_filenames, final_cvs = arrange_data_for_lda(self.training_data_tup, self.training_labels_tup, features_list, self.training_cv_axes, method=params_obj.classif_4_data_structure)
-        test_data_final, test_labels_final, empty_filenames2, final_cvs = arrange_data_for_lda(self.test_data_tup, self.test_labels_tup, features_list, self.test_cv_axes, method=params_obj.classif_4_data_structure)
+        train_data_final, train_labels_final, empty_filenames, final_cvs = arrange_data_for_lda(self.training_data_tup, self.training_labels_tup, features_list, self.training_cv_axes)
+        test_data_final, test_labels_final, empty_filenames2, final_cvs = arrange_data_for_lda(self.test_data_tup, self.test_labels_tup, features_list, self.test_cv_axes)
 
         self.training_data_final = train_data_final
         self.training_labels_string = train_labels_final
