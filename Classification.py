@@ -527,7 +527,6 @@ def arrange_data_for_lda(flat_data_matrix_list, flat_label_list, features_list, 
 
     lda_ciu_data, lda_label_data, lda_filenames, lda_feat_cvs = [], [], [], []
 
-    # if method == 'stacked':
     # loop over each replicate of data provided
     for data_index in range(len(flat_data_matrix_list)):
         # loop over each feature (collision voltage) desired, saving the requested data in appropriate form
@@ -542,27 +541,6 @@ def arrange_data_for_lda(flat_data_matrix_list, flat_label_list, features_list, 
             if flat_filenames is not None:
                 lda_filenames.append(flat_filenames[data_index])
             lda_feat_cvs.append(data_cv)
-
-    # todo: deprecated
-    # elif method == 'flat':
-    #     # NEW WAY - actually worse. Will likely be deprecated
-    #     for data_index in range(len(flat_data_matrix_list)):
-    #         # for this method, there is only one label/etc per replicate - so these can be assembled outside the feature loop
-    #         lda_label_data.append(flat_label_list[data_index])
-    #         if flat_filenames is not None:
-    #             lda_filenames.append(flat_filenames[data_index])
-    #
-    #         # loop over each feature (collision voltage) desired, saving the requested data in appropriate form
-    #         rep_data = []
-    #         for index, data_cv in enumerate(cvfeats_list):
-    #             # get the correct index of the data_cv in the current raw data matrix
-    #             current_cv_axis = flat_axes_list[data_index]
-    #             this_cv_correct_index = (np.abs(current_cv_axis - data_cv)).argmin()
-    #             rep_data.extend(flat_data_matrix_list[data_index].T[this_cv_correct_index])
-    #
-    #         lda_ciu_data.append(rep_data)
-    # else:
-    #     print('Invalid method! No LDA performed')
 
     return lda_ciu_data, lda_label_data, lda_filenames, lda_feat_cvs
 
@@ -716,19 +694,14 @@ def save_predictions(list_of_analysis_objs, features_list, class_labels, output_
     output_final = os.path.join(output_path, outputname)
     with open(output_final, 'w') as outfile:
         header_labels = ','.join(['Probability of {}'.format(x) for x in class_labels])
-        # todo: deprecated (and below)
-        # if params_obj.classif_4_data_structure == 'flat':
         header = 'File,Feature,Predicted Class,{}\n'.format(header_labels)
-        # else:
-        #     header = 'File,Features,Predicted Class,{}\n'.format(header_labels)
         outfile.write(header)
 
         for analysis_obj in list_of_analysis_objs:
             cvs = [x.cv for x in features_list]
             predict_class = analysis_obj.classif_predicted_label
             predict_prob_feat = analysis_obj.classif_probs_by_cv
-            # OLD WAY
-            # if params_obj.classif_4_data_structure == 'stacked':
+
             # For feature-by-feature method, count the most common classification for this unknown (statistical mode)
             counts = np.bincount(predict_class)
             class_mode = np.argmax(counts)
@@ -744,11 +717,6 @@ def save_predictions(list_of_analysis_objs, features_list, class_labels, output_
             for line in main_lines:
                 outfile.write(line)
             outfile.write(line2)
-            # elif params_obj.classif_4_data_structure == 'flat':
-            #     # NEW WAY
-            #     probs = ','.join(str(x) for x in analysis_obj.classif_probs_avg)
-            #     line2 = '{},{},{}, \n'.format(analysis_obj.short_filename, analysis_obj.classif_predicted_label[0], probs)
-            #     outfile.write(line2)
 
 
 def save_lda_output_unk(list_transformed_data, list_filenames, list_feats, output_path):
@@ -1212,7 +1180,7 @@ class CrossValProduct(object):
 
                 # create Train/Test DataProduct for this combination
                 current_combo = DataCombination(training_data_list, training_label_tuple, training_cv_axes, test_data_list, test_label_list, test_cv_axes)
-                current_combo.prepare_data(self.features, params_obj)
+                current_combo.prepare_data(self.features)
                 class_combo_list.append(current_combo)
 
             all_class_combo_lists.append(class_combo_list)
@@ -1247,12 +1215,10 @@ class DataCombination(object):
         self.test_data_final = []
         self.test_labels_string = []
 
-    def prepare_data(self, features_list, params_obj):
+    def prepare_data(self, features_list):
         """
         Assemble concatenated data and label arrays for the specified slices of the input data (CV columns/features)
         :param features_list: list of selected Features with cv data
-        :param params_obj: Parameters object with settings information
-        :type params_obj: Parameters
         :return: void
         """
         train_data_final, train_labels_final, empty_filenames, final_cvs = arrange_data_for_lda(self.training_data_tup, self.training_labels_tup, features_list, self.training_cv_axes)
