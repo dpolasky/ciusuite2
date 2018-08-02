@@ -12,6 +12,7 @@ import scipy.interpolate
 import os
 import Raw_Processing
 import Gaussian_Fitting
+from tkinter import messagebox
 
 # imports for type checking
 from typing import TYPE_CHECKING
@@ -458,7 +459,12 @@ def plot_features(feature_list, analysis_obj, params_obj, outputdir, filename_ap
         output_path = os.path.join(outputdir, analysis_obj.short_filename + '_features' + params_obj.plot_02_extension)
     else:
         output_path = os.path.join(outputdir, analysis_obj.short_filename + filename_append + '_features' + params_obj.plot_02_extension)
-    plt.savefig(output_path)
+
+    try:
+        plt.savefig(output_path)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_path))
+        plt.savefig(output_path)
     plt.close()
 
 
@@ -497,8 +503,15 @@ def print_features_list(feature_list, outputpath, mode, combine):
         index += 1
 
     if not combine:
-        with open(outputpath, 'w') as outfile:
-            outfile.write(outputstring)
+        try:
+            with open(outputpath, 'w') as outfile:
+                outfile.write(outputstring)
+        except PermissionError:
+            messagebox.showerror('Please Close the File Before Saving',
+                                 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(
+                                     outputpath))
+            with open(outputpath, 'w') as outfile:
+                outfile.write(outputstring)
     else:
         return outputstring
 
@@ -527,8 +540,13 @@ def save_ciu50_outputs(analysis_obj, outputpath, combine=False):
         # return the output string to be written together with many files
         return output_string
     else:
-        with open(output_name, 'w') as outfile:
-            outfile.write(output_string)
+        try:
+            with open(output_name, 'w') as outfile:
+                outfile.write(output_string)
+        except PermissionError:
+            messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_name))
+            with open(output_name, 'w') as outfile:
+                outfile.write(output_string)
 
 
 def save_ciu50_short(analysis_obj, outputpath, combine=False):
@@ -552,8 +570,13 @@ def save_ciu50_short(analysis_obj, outputpath, combine=False):
         # return the output string to be written together with many files
         return output_string
     else:
-        with open(output_name, 'w') as outfile:
-            outfile.write(output_string)
+        try:
+            with open(output_name, 'w') as outfile:
+                outfile.write(output_string)
+        except PermissionError:
+            messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_name))
+            with open(output_name, 'w') as outfile:
+                outfile.write(output_string)
 
 
 def plot_transitions(transition_list, analysis_obj, params_obj, outputdir):
@@ -622,7 +645,11 @@ def plot_transitions(transition_list, analysis_obj, params_obj, outputdir):
     # save plot to file
     filename = analysis_obj.short_filename + '_transition' + params_obj.plot_02_extension
     output_path = os.path.join(outputdir, filename)
-    plt.savefig(output_path)
+    try:
+        plt.savefig(output_path)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_path))
+        plt.savefig(output_path)
     plt.close()
 
 

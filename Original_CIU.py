@@ -6,6 +6,7 @@ with CIUAnalysisObj objects providing the primary basis for handling data.
 import numpy as np
 import os
 import scipy.interpolate
+from tkinter import messagebox
 
 from CIU_analysis_obj import CIUAnalysisObj
 from CIU_Params import Parameters
@@ -55,7 +56,11 @@ def ciu_plot(analysis_obj, params_obj, output_dir):
     plt.xticks(fontsize=params_obj.plot_13_font_size)
     plt.yticks(fontsize=params_obj.plot_13_font_size)
 
-    plt.savefig(output_path)
+    try:
+        plt.savefig(output_path)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_path))
+        plt.savefig(output_path)
     plt.close()
 
     return 'returning a value so that the mainloop doesnt stop'
@@ -128,7 +133,12 @@ def rmsd_plot(difference_matrix, axes, contour_scale, tick_scale, rtext, outputd
     plt.yticks(fontsize=params_obj.plot_13_font_size)
 
     # save and close
-    plt.savefig(os.path.join(outputdir, '{}-{}{}'.format(file1, file2, params_obj.plot_02_extension)))
+    output_path = os.path.join(outputdir, '{}-{}{}'.format(file1, file2, params_obj.plot_02_extension))
+    try:
+        plt.savefig(output_path)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_path))
+        plt.savefig(output_path)
     plt.close()
 
 
@@ -175,7 +185,12 @@ def std_dev_plot(analysis_obj, std_dev_matrix, params_obj, output_dir):
         plt.annotate(std_text, xy=(150, 10), xycoords='axes points', fontsize=params_obj.plot_13_font_size)
 
     # save and close
-    plt.savefig(os.path.join(output_dir, analysis_obj.short_filename + '_stdev.png'))
+    output_path = os.path.join(output_dir, analysis_obj.short_filename + '_stdev.png')
+    try:
+        plt.savefig(output_path)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_path))
+        plt.savefig(output_path)
     plt.close()
 
 
@@ -317,12 +332,6 @@ def delta_dt(analysis_obj):
     :rtype: CIUAnalysisObj
     :return: new CIUAnalysisObj with shifted data
     """
-    # Determine location of max in 1st CV column
-    # if analysis_obj.gauss_params is not None:
-    #     # gaussian fitting has been done, use first centroid in first CV column as center
-    #     filt_centroids = [x[2::4] for x in analysis_obj.gauss_filt_params]
-    #     centroid_xval = filt_centroids[0]
-    # else:
     # gaussian fitting not done, simply use max of first column
     first_col = analysis_obj.ciu_data[:, 0]
     index_of_max = np.argmax(first_col)
@@ -333,11 +342,6 @@ def delta_dt(analysis_obj):
     new_dt_axis = old_dt_axis - centroid_xval
     new_axes = [new_dt_axis, analysis_obj.axes[1]]
 
-    # create new CIUAnalysisObj with the new axis and return it
-    # shift_analysis_obj = CIUAnalysisObj(analysis_obj.raw_obj, analysis_obj.ciu_data, new_axes,
-    #                                     analysis_obj.gauss_params)
-    # shift_analysis_obj.params = analysis_obj.params
-    # shift_analysis_obj.raw_obj_list = analysis_obj.raw_obj_list
     analysis_obj.axes = new_axes
     return analysis_obj
 
@@ -352,24 +356,33 @@ def write_ciu_csv(save_path, ciu_data, axes=None):
     assumes the data array does not contain axes labels.
     :return: void
     """
-    with open(save_path, 'w') as outfile:
-        if axes is not None:
-            # write axes first if they're provided
-            args = ['{}'.format(x) for x in axes[1]]    # get the cv-axis now to write to the header
-            line = ','.join(args)
-            line = ',' + line
-            outfile.write(line + '\n')
+    output_string = ''
+    if axes is not None:
+        # write axes first if they're provided
+        args = ['{}'.format(x) for x in axes[1]]    # get the cv-axis now to write to the header
+        line = ','.join(args)
+        line = ',' + line
+        output_string += line + '\n'
 
-            index = 0
-            for row in ciu_data:
-                # insert the axis label at the start of each row
-                args = ['{}'.format(x) for x in row]
-                args.insert(0, str(axes[0][index]))
-                index += 1
-                line = ','.join(args)
-                outfile.write(line + '\n')
-        else:
-            # axes are included, so just write everything to file with comma separation
-            args = ['{}'.format(x) for x in ciu_data]
+        index = 0
+        for row in ciu_data:
+            # insert the axis label at the start of each row
+            args = ['{}'.format(x) for x in row]
+            args.insert(0, str(axes[0][index]))
+            index += 1
             line = ','.join(args)
-            outfile.write(line + '\n')
+            output_string += line + '\n'
+    else:
+        # axes are included, so just write everything to file with comma separation
+        args = ['{}'.format(x) for x in ciu_data]
+        line = ','.join(args)
+        output_string += line + '\n'
+
+    # save to file while catching permission errors
+    try:
+        with open(save_path, 'w') as outfile:
+            outfile.write(output_string)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(save_path))
+        with open(save_path, 'w') as outfile:
+            outfile.write(output_string)

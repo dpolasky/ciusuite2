@@ -11,6 +11,7 @@ import pickle
 import os
 import itertools
 import time
+from tkinter import messagebox
 from matplotlib.colors import ListedColormap
 from mpl_toolkits.mplot3d import Axes3D
 from sklearn.preprocessing import LabelEncoder
@@ -456,14 +457,22 @@ def save_crossval_score(crossval_data, scheme_name, outputpath):
     test_score_means = crossval_data[2]
     test_score_stds = crossval_data[3]
     outfilename = os.path.join(outputpath, scheme_name + '_crossval.csv')
-    with open(outfilename, 'w') as outfile:
-        lineheader = 'num_feats, train_score_mean, train_score_std, test_score_mean, test_score_std, \n'
-        outfile.write(lineheader)
-        for ind in range(len(train_score_means)):
-            line = '{}, {}, {}, {}, {}, \n'.format(ind+1, train_score_means[ind], train_score_stds[ind],
-                                                   test_score_means[ind], test_score_stds[ind])
-            outfile.write(line)
-        outfile.close()
+    output_string = ''
+
+    lineheader = 'num_feats, train_score_mean, train_score_std, test_score_mean, test_score_std, \n'
+    output_string += lineheader
+    for ind in range(len(train_score_means)):
+        line = '{}, {}, {}, {}, {}, \n'.format(ind+1, train_score_means[ind], train_score_stds[ind],
+                                               test_score_means[ind], test_score_stds[ind])
+        output_string += line
+
+    try:
+        with open(outfilename, 'w') as outfile:
+            outfile.write(output_string)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(outfilename))
+        with open(outfilename, 'w') as outfile:
+            outfile.write(output_string)
 
 
 def plot_crossval_scores(crossval_data, scheme_name, params_obj, outputdir):
@@ -505,8 +514,12 @@ def plot_crossval_scores(crossval_data, scheme_name, params_obj, outputdir):
     if params_obj.plot_07_show_legend:
         plt.legend(loc='best', fontsize=params_obj.plot_13_font_size)
 
-    outputname = os.path.join(outputdir, scheme_name + '_crossval' + params_obj.plot_02_extension)
-    plt.savefig(outputname)
+    output_name = os.path.join(outputdir, scheme_name + '_crossval' + params_obj.plot_02_extension)
+    try:
+        plt.savefig(output_name)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_name))
+        plt.savefig(output_name)
     plt.close()
 
 
@@ -646,37 +659,44 @@ def save_lda_output(transformed_data, filenames, input_feats, scheme_name, outpu
     outputname = scheme_name + '_LDA.csv'
     feats = input_feats
     output_final = os.path.join(output_path, outputname)
-    with open(output_final, 'w') as outfile:
-        num_lds = np.arange(1, len(transformed_data[0]) + 1)
-        ld_string = ','.join('LD {} (linear discriminant dimension {})'.format(x, x) for x in num_lds)
-        try:
-            lineheader = 'Filename,Feature (e.g. voltage),' + ld_string
-            outfile.write(lineheader + '\n')
-            # OLD WAY - multiple features/probabilities per class
-            for index in range(len(transformed_data[:, 0])):
-                fnames = str(filenames[index])
-                features = str(feats[index])
-                joined_lds = ','.join([str(x) for x in transformed_data[index]])
-                line1 = '{}, {}, {}, \n'.format(fnames, features, joined_lds)
-                outfile.write(line1)
-            # line2 = 'Explained_variance_ratio\n'
-            if explained_variance_ratio is not None:
-                joined_exp_var = ','.join([str(x) for x in explained_variance_ratio])
-                line2 = 'Explained_variance_ratio, {}, {},\n'.format(' ', joined_exp_var)
-                outfile.write(line2)
-        except IndexError:
-            lineheader = 'filename,'+','.join(str(x) for x in num_lds)
-            outfile.write(lineheader + '\n')
-            for index in range(len(transformed_data[:, 0])):
-                # NEW WAY - only one probability per class (no features)
-                fnames = str(filenames[index])
-                joined_lds = ','.join([str(x) for x in transformed_data[index]])
-                outfile.write('{}, {}, \n'.format(fnames, joined_lds))
-            if explained_variance_ratio is not None:
-                joined_exp_var = ','.join([str(x) for x in explained_variance_ratio])
-                line2 = 'Explained_variance_ratio, {},\n'.format(joined_exp_var)
-                outfile.write(line2)
-        outfile.close()
+    output_string = ''
+
+    num_lds = np.arange(1, len(transformed_data[0]) + 1)
+    ld_string = ','.join('LD {} (linear discriminant dimension {})'.format(x, x) for x in num_lds)
+    try:
+        lineheader = 'Filename,Feature (e.g. voltage),' + ld_string
+        output_string += lineheader + '\n'
+        # OLD WAY - multiple features/probabilities per class
+        for index in range(len(transformed_data[:, 0])):
+            fnames = str(filenames[index])
+            features = str(feats[index])
+            joined_lds = ','.join([str(x) for x in transformed_data[index]])
+            line1 = '{}, {}, {}, \n'.format(fnames, features, joined_lds)
+            output_string += line1
+        # line2 = 'Explained_variance_ratio\n'
+        if explained_variance_ratio is not None:
+            joined_exp_var = ','.join([str(x) for x in explained_variance_ratio])
+            line2 = 'Explained_variance_ratio, {}, {},\n'.format(' ', joined_exp_var)
+            output_string += line2
+    except IndexError:
+        lineheader = 'filename,'+','.join(str(x) for x in num_lds)
+        output_string += lineheader + '\n'
+        for index in range(len(transformed_data[:, 0])):
+            # NEW WAY - only one probability per class (no features)
+            fnames = str(filenames[index])
+            joined_lds = ','.join([str(x) for x in transformed_data[index]])
+            output_string += '{}, {}, \n'.format(fnames, joined_lds)
+        if explained_variance_ratio is not None:
+            joined_exp_var = ','.join([str(x) for x in explained_variance_ratio])
+            line2 = 'Explained_variance_ratio, {},\n'.format(joined_exp_var)
+            output_string += line2
+    try:
+        with open(output_final, 'w') as outfile:
+            outfile.write(output_string)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_final))
+        with open(output_final, 'w') as outfile:
+            outfile.write(output_string)
 
 
 def save_predictions(list_of_analysis_objs, features_list, class_labels, output_path):
@@ -692,31 +712,40 @@ def save_predictions(list_of_analysis_objs, features_list, class_labels, output_
     """
     outputname = 'All_Unknowns_classif.csv'
     output_final = os.path.join(output_path, outputname)
-    with open(output_final, 'w') as outfile:
-        header_labels = ','.join(['Probability of {}'.format(x) for x in class_labels])
-        header = 'File,Feature,Predicted Class,{}\n'.format(header_labels)
-        outfile.write(header)
+    output_string = ''
 
-        for analysis_obj in list_of_analysis_objs:
-            cvs = [x.cv for x in features_list]
-            predict_class = analysis_obj.classif_predicted_label
-            predict_prob_feat = analysis_obj.classif_probs_by_cv
+    header_labels = ','.join(['Probability of {}'.format(x) for x in class_labels])
+    header = 'File,Feature,Predicted Class,{}\n'.format(header_labels)
+    output_string += header
 
-            # For feature-by-feature method, count the most common classification for this unknown (statistical mode)
-            counts = np.bincount(predict_class)
-            class_mode = np.argmax(counts)
-            main_lines = []
-            for index, cv in enumerate(cvs):
-                joined_probs = ','.join([str(x) for x in predict_prob_feat[index]])
-                line = '{},{},{},{},\n'.format(analysis_obj.short_filename, cv, predict_class[index], joined_probs)
-                main_lines.append(line)
-            probs = ','.join(str(x) for x in analysis_obj.classif_probs_avg)
-            line2 = '{},{},{},{}, \n'.format(analysis_obj.short_filename, 'Combined', class_mode, probs)
+    for analysis_obj in list_of_analysis_objs:
+        cvs = [x.cv for x in features_list]
+        predict_class = analysis_obj.classif_predicted_label
+        predict_prob_feat = analysis_obj.classif_probs_by_cv
 
-            # write at the end to allow type checking to finish
-            for line in main_lines:
-                outfile.write(line)
-            outfile.write(line2)
+        # For feature-by-feature method, count the most common classification for this unknown (statistical mode)
+        counts = np.bincount(predict_class)
+        class_mode = np.argmax(counts)
+        main_lines = []
+        for index, cv in enumerate(cvs):
+            joined_probs = ','.join([str(x) for x in predict_prob_feat[index]])
+            line = '{},{},{},{},\n'.format(analysis_obj.short_filename, cv, predict_class[index], joined_probs)
+            main_lines.append(line)
+        probs = ','.join(str(x) for x in analysis_obj.classif_probs_avg)
+        line2 = '{},{},{},{}, \n'.format(analysis_obj.short_filename, 'Combined', class_mode, probs)
+
+        # write at the end to allow type checking to finish
+        for line in main_lines:
+            output_string += line
+        output_string += line2
+
+    try:
+        with open(output_final, 'w') as outfile:
+            outfile.write(output_string)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_final))
+        with open(output_final, 'w') as outfile:
+            outfile.write(output_string)
 
 
 def save_lda_output_unk(list_transformed_data, list_filenames, list_feats, output_path):
@@ -731,17 +760,25 @@ def save_lda_output_unk(list_transformed_data, list_filenames, list_feats, outpu
     outputname = 'output_lda_unk.csv'
     output_final = os.path.join(output_path, outputname)
     features = [x.cv for x in list_feats]
-    with open(output_final, 'w') as outfile:
-        num_lds = np.arange(1, len(list_transformed_data[0][0])+1)
-        lineheader = 'filename, feats,' + ','.join('LD {} (linear discriminant dimension {})'.format(x, x) for x in num_lds)
-        outfile.write(lineheader + '\n')
-        for index, (transformed_data, fname) in enumerate(zip(list_transformed_data, list_filenames)):
-            for ind in range(len(transformed_data[:, 0])):
-                feats = str(features[ind])
-                joined_lds = ','.join([str(x) for x in transformed_data[ind]])
-                line1 = '{}, {}, {}, \n'.format(fname, feats, joined_lds)
-                outfile.write(line1)
-        outfile.close()
+    output_string = ''
+
+    num_lds = np.arange(1, len(list_transformed_data[0][0])+1)
+    lineheader = 'filename, feats,' + ','.join('LD {} (linear discriminant dimension {})'.format(x, x) for x in num_lds)
+    output_string += lineheader + '\n'
+    for index, (transformed_data, fname) in enumerate(zip(list_transformed_data, list_filenames)):
+        for ind in range(len(transformed_data[:, 0])):
+            feats = str(features[ind])
+            joined_lds = ','.join([str(x) for x in transformed_data[ind]])
+            line1 = '{}, {}, {}, \n'.format(fname, feats, joined_lds)
+            output_string += line1
+
+    try:
+        with open(output_final, 'w') as outfile:
+            outfile.write(output_string)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_final))
+        with open(output_final, 'w') as outfile:
+            outfile.write(output_string)
 
 
 def get_unique_labels(label_list):
@@ -792,7 +829,12 @@ def plot_feature_scores(feature_list, params_obj, scheme_name, output_path):
     if params_obj.plot_07_show_legend:
         plt.legend(loc='best', fontsize=params_obj.plot_13_font_size)
 
-    plt.savefig(os.path.join(output_path, scheme_name + '_feature-scores' + params_obj.plot_02_extension))
+    output_name = os.path.join(output_path, scheme_name + '_feature-scores' + params_obj.plot_02_extension)
+    try:
+        plt.savefig(output_name)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_name))
+        plt.savefig(output_name)
     plt.close()
 
 
@@ -910,7 +952,12 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
     plt.xticks(fontsize=params_obj.plot_13_font_size)
     plt.yticks(fontsize=params_obj.plot_13_font_size)
 
-    plt.savefig(os.path.join(output_path, class_scheme.name + '_output' + params_obj.plot_02_extension))
+    output_name = os.path.join(output_path, class_scheme.name + '_output' + params_obj.plot_02_extension)
+    try:
+        plt.savefig(output_name)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_name))
+        plt.savefig(output_name)
     plt.close()
 
 

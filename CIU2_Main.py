@@ -1212,8 +1212,14 @@ def save_existing_output_string(full_output_path, string_to_save):
     :param string_to_save: string to save
     :return: void
     """
-    with open(full_output_path, 'w') as outfile:
-        outfile.write(string_to_save)
+    try:
+        with open(full_output_path, 'w') as outfile:
+            outfile.write(string_to_save)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving',
+                             'The file {} is open or being used by another program! Please close it, THEN press the OK button to retry saving'.format(full_output_path))
+        with open(full_output_path, 'w') as outfile:
+            outfile.write(string_to_save)
 
 
 def process_raw_obj(raw_obj, params_obj, short_filename=None):

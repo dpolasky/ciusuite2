@@ -21,6 +21,7 @@ import matplotlib.patches
 import lmfit
 import time
 import multiprocessing
+from tkinter import messagebox
 
 import CIU_raw
 import Raw_Processing
@@ -505,6 +506,11 @@ def plot_fit_result(current_fit, output, x_data, outputname):
         plt.title('{}V, r2: {:.3f}, score: {:.4f}, peak pens: {}'.format(current_fit.cv, current_fit.adjrsq, current_fit.score,
                                                                          ','.join(penalty_string)))
     plt.savefig(outputname)
+    try:
+        plt.savefig(outputname)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(outputname))
+        plt.savefig(outputname)
 
 
 def assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, dt_axis):
@@ -962,7 +968,12 @@ def save_fits_pdf_new(analysis_obj, params_obj, best_fit_list, outputpath):
     :return: void
     """
     gauss_name = analysis_obj.short_filename + '_GaussFits.pdf'
-    pdf_fig = matplotlib.backends.backend_pdf.PdfPages(os.path.join(outputpath, gauss_name))
+    gauss_fig = os.path.join(outputpath, gauss_name)
+    try:
+        pdf_fig = matplotlib.backends.backend_pdf.PdfPages(gauss_fig)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(gauss_fig))
+        pdf_fig = matplotlib.backends.backend_pdf.PdfPages(gauss_fig)
 
     intarray = np.swapaxes(analysis_obj.ciu_data, 0, 1)
     for cv_index in range(len(analysis_obj.axes[1])):
@@ -1057,7 +1068,12 @@ def plot_centroids(centroid_lists_by_cv, analysis_obj, params_obj, outputpath, n
 
     plt.grid('on')
     output_name = analysis_obj.short_filename + '_centroids.png'
-    plt.savefig(os.path.join(outputpath, output_name))
+    output_path = os.path.join(outputpath, output_name)
+    try:
+        plt.savefig(output_path)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_path))
+        plt.savefig(output_path)
     plt.close()
 
 
@@ -1070,26 +1086,34 @@ def save_gauss_params(analysis_obj, outputpath):
     :return: void
     """
     output_name = analysis_obj.short_filename + '_gaussians.csv'
-    with open(os.path.join(outputpath, output_name), 'w') as output:
-        # save DT information too to allow for reconstruction
-        dt_line = ','.join([str(x) for x in analysis_obj.axes[0]])
-        output.write('Drift axis:,' + dt_line + '\n')
-        output.write('# Protein Gaussians\n')
-        output.write('# CV,Amplitude,Centroid,Peak Width (FWHM)\n')
-        index = 0
-        while index < len(analysis_obj.axes[1]):
-            outputline = ','.join([gaussian.print_info() for gaussian in analysis_obj.raw_protein_gaussians[index]])
-            output.write(outputline + '\n')
-            index += 1
+    output_string = ''
 
-        if analysis_obj.raw_nonprotein_gaussians is not None:
-            index = 0
-            output.write('# Non-Protein Gaussians\n')
-            output.write('# CV,Amplitude,Centroid,Peak Width (FWHM)\n')
-            while index < len(analysis_obj.axes[1]):
-                gauss_line = ','.join([gaussian.print_info() for gaussian in analysis_obj.raw_nonprotein_gaussians[index]])
-                output.write(gauss_line + '\n')
-                index += 1
+    # save DT information too to allow for reconstruction
+    dt_line = ','.join([str(x) for x in analysis_obj.axes[0]])
+    output_string += 'Drift axis:,' + dt_line + '\n'
+    output_string += '# Protein Gaussians\n'
+    output_string += '# CV,Amplitude,Centroid,Peak Width (FWHM)\n'
+    index = 0
+    while index < len(analysis_obj.axes[1]):
+        outputline = ','.join([gaussian.print_info() for gaussian in analysis_obj.raw_protein_gaussians[index]])
+        output_string += outputline + '\n'
+        index += 1
+
+    if analysis_obj.raw_nonprotein_gaussians is not None:
+        index = 0
+        output_string += '# Non-Protein Gaussians\n'
+        output_string += '# CV,Amplitude,Centroid,Peak Width (FWHM)\n'
+        while index < len(analysis_obj.axes[1]):
+            gauss_line = ','.join([gaussian.print_info() for gaussian in analysis_obj.raw_nonprotein_gaussians[index]])
+            output_string += gauss_line + '\n'
+            index += 1
+    try:
+        with open(os.path.join(outputpath, output_name), 'w') as output:
+            output.write(output_string)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(os.path.join(outputpath, output_name)))
+        with open(os.path.join(outputpath, output_name), 'w') as output:
+            output.write(output_string)
 
 
 def reconstruct_from_fits(gaussian_lists_by_cv, axes, new_filename, params_obj):
