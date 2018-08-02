@@ -90,6 +90,7 @@ class Parameters(object):
         self.smoothing_3_iterations = None
         self.interpolate_1_axis = None
         self.interpolate_2_scaling = None
+        self.interpolate_3_onedim = None
 
         # Plotting and saving output parameters
         self.ciuplot_cmap_override = None
@@ -139,7 +140,6 @@ class Parameters(object):
 
         self.classif_2_score_dif_tol = None
         self.classif_3_unk_mode = None
-        # self.classif_4_data_structure = None
         self.classif_5_auto_featselect = None
         self.silent_clf_4_num_gauss = None
 

@@ -311,6 +311,43 @@ def interpolate_axes(analysis_obj, new_axes):
     return analysis_obj
 
 
+def interpolate_axis_1d(analysis_obj, dt_axis_bool, new_axis):
+    """
+    Interpolate an axis in one dimension iteratively across the CIU dataset. 2D interpolation is
+    recommended in most cases, but sometimes (e.g. if only one CV) isn't good
+    :param analysis_obj: data container
+    :type analysis_obj: CIUAnalysisObj
+    :param dt_axis_bool: Whether to interpolate DT axis (True) or CV axis (False)
+    :param new_axis: new axis to interpolate, taken from compute_new_axes
+    :return: updated analysis_obj with ciu_data and axes edited to new values
+    """
+    new_data = []
+    if dt_axis_bool:
+        # interpolate along the drift axis within each CV column using the new_axis provided
+        cv_col_data = analysis_obj.ciu_data.T
+        new_axes = [new_axis, analysis_obj.axes[1]]
+        for cv_col in cv_col_data:
+            interp_fn = scipy.interpolate.interp1d(analysis_obj.axes[0], cv_col)
+            new_col = interp_fn(new_axis)
+            new_data.append(new_col)
+        new_data = np.asarray(new_data).T
+    else:
+        # interpolate along the CV axis within each drift bin using the new_axis provided
+        dt_row_data = analysis_obj.ciu_data
+        new_axes = [analysis_obj.axes[0], new_axis]
+        for dt_row in dt_row_data:
+            interp_fn = scipy.interpolate.interp1d(analysis_obj.axes[1], dt_row)
+            new_row = interp_fn(new_axis)
+            new_data.append(new_row)
+        new_data = np.asarray(new_data)
+
+    # save output to analysis object and return
+    analysis_obj.axes = new_axes
+    analysis_obj.ciu_data = new_data
+    analysis_obj.refresh_data()
+    return analysis_obj
+
+
 def compute_new_axes(old_axes, interpolation_scaling, interp_cv=True, interp_dt=False):
     """
     Determine new (interpolated) axes based on the old axes and a scaling factor. Designed

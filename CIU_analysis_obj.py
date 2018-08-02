@@ -83,8 +83,6 @@ class CIUAnalysisObj(object):
         adjustments to the ciu_data (e.g. crop, interpolate, smooth, etc)
         :return:
         """
-        self.bin_spacing = self.axes[0][1] - self.axes[0][0]  # distance between two adjacent DT bins
-        self.cv_spacing = self.axes[1][1] - self.axes[1][0]  # distance between two adjacent CV columns
         self.col_maxes = np.argmax(self.ciu_data, axis=0)  # Index of maximum value in each CV column (in DT bins)
         self.col_max_dts = [self.axes[0][x] for x in self.col_maxes]
         # self.col_max_dts = [self.axes[0][0] + (x - 1) * self.bin_spacing for x in self.col_maxes]  # DT of maximum value

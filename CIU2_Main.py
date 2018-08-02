@@ -596,7 +596,17 @@ class CIUSuite2(object):
                                                            interpolation_scaling=self.params_obj.interpolate_2_scaling,
                                                            interp_cv=interp_cv,
                                                            interp_dt=interp_dt)
-                analysis_obj = Raw_Processing.interpolate_axes(analysis_obj, new_axes)
+                if not self.params_obj.interpolate_3_onedim:
+                    analysis_obj = Raw_Processing.interpolate_axes(analysis_obj, new_axes)
+                else:
+                    # 1D interpolation mode, pass the correct axis to 1D interp method
+                    if interp_dt:
+                        analysis_obj = Raw_Processing.interpolate_axis_1d(analysis_obj, interp_dt, new_axes[0])
+                    elif interp_cv:
+                        analysis_obj = Raw_Processing.interpolate_axis_1d(analysis_obj, interp_dt, new_axes[1])
+                    else:
+                        messagebox.showerror('Invalid Mode', '1D interpolation can only be performed on one axis at a time. Please select 2D interpolation for both axes or select a single axis for 1D interpolation.')
+                        break
 
                 # create a new analysis object to prevent unstable behavior with new axes
                 new_obj = CIUAnalysisObj(analysis_obj.raw_obj, analysis_obj.ciu_data, analysis_obj.axes, self.params_obj, short_filename=analysis_obj.short_filename)
