@@ -122,6 +122,7 @@ class Parameters(object):
         self.gaussian_71_max_prot_components = None
         self.gaussian_72_prot_peak_width = None
         self.gaussian_73_prot_width_tol = None
+        self.gaussian_74_shared_area_mode = None
         self.gaussian_81_min_nonprot_comps = None
         self.gaussian_82_max_nonprot_comps = None
         self.gaussian_83_nonprot_width_min = None
@@ -133,6 +134,8 @@ class Parameters(object):
         self.feature_2_min_length = None
         self.feature_3_width_tol = None
         self.feature_4_gap_tol = None
+        self.feature_5_fill_gaps = None
+        self.feature_6_allow_nongauss = None
 
         self.ciu50_1_centroiding_mode = None
         self.ciu50_3_pad_transitions_cv = None

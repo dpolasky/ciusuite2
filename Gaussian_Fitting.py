@@ -157,7 +157,7 @@ class SingleFitStats(object):
                                                     steepness=1)
             if len(self.gaussians_protein) > 1:
                 if gaussian.amplitude > params_obj.gaussian_2_int_threshold:
-                    current_penalty += compute_area_penalty(gaussian, self.gaussians_protein, self.x_data)
+                    current_penalty += compute_area_penalty(gaussian, self.gaussians_protein, self.x_data, params_obj.gaussian_74_shared_area_mode)
             peak_penalties.append(current_penalty)
 
         # add up penalties and subtract from the fit adjusted r2 to obtain final score
@@ -896,15 +896,19 @@ def compute_width_penalty(input_width, expected_width, tolerance, steepness):
         return steepness * penalized_width
 
 
-def compute_area_penalty(gaussian, list_of_gaussians, dt_axis):
+def compute_area_penalty(gaussian, list_of_gaussians, dt_axis, penalty_mode):
     """
     Shared area penalty intended to penalize peaks that are almost completely overlapped
     by others.
     :param gaussian: Gaussian object to compare agaisnt the rest of the list
     :param list_of_gaussians: all gaussians currently fit at this CV
     :param dt_axis: x axis array over which to compute overlap
+    :param penalty_mode: (string) 'strict', 'relaxed', or 'none' - determines which function to use for computing area penalties
     :return: penalty (float)
     """
+    if penalty_mode == 'none':
+        return 0
+
     # for this gaussian, compute how much area it shares with the rest of the list
     total_penalty = 0
     # for gaussian in list_of_gaussians:
@@ -919,11 +923,14 @@ def compute_area_penalty(gaussian, list_of_gaussians, dt_axis):
     max_shared_area = np.max(shared_areas)
     shared_area_ratio = max_shared_area / my_area
     if shared_area_ratio > 0.25:
-        # antibody settings: 1.5 - 1.8 * shared area ratio
-        my_penalty = (1.25 * shared_area_ratio - 0.25) ** 4
+        if penalty_mode == 'strict':
+            my_penalty = (1.25 * shared_area_ratio - 0.25) ** 4
+        elif penalty_mode == 'relaxed':
+            my_penalty = (shared_area_ratio - 0.4) ** 4
+        else:
+            print('invalid penalty mode: {}. Penalty set to 0'.format(penalty_mode))
+            my_penalty = 0
 
-        # scale penalty by area, so smaller peaks don't get overly penalized (areas often < 1)
-        # my_penalty *= (my_area * 5)
         total_penalty += my_penalty
 
     return total_penalty

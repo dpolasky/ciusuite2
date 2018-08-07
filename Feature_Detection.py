@@ -10,6 +10,7 @@ import scipy.stats
 import scipy.optimize
 import scipy.interpolate
 import os
+import math
 import Raw_Processing
 import Gaussian_Fitting
 from tkinter import messagebox
@@ -104,7 +105,7 @@ def feature_detect_gaussians(analysis_obj, params_obj):
     features = []
 
     cv_axis = analysis_obj.axes[1]
-    bin_spacings = [cv_axis[x + 1] - cv_axis[x] for x in range(len(cv_axis) - 1)]
+    bin_spacings = np.around([cv_axis[x + 1] - cv_axis[x] for x in range(len(cv_axis) - 1)], 6)
     unique_spacings = set(bin_spacings)
     if len(unique_spacings) > 1:
         # uneven CV spacing - tell user to interpolate axes and re-do gaussian fitting
@@ -124,6 +125,7 @@ def feature_detect_gaussians(analysis_obj, params_obj):
             for feature in features:
                 if feature.accept_centroid(gaussian.centroid, width_tol_dt, gaussian.cv, gap_tol_cv, cv_spacing):
                     feature.gaussians.append(gaussian)
+                    feature.cvs.append(gaussian.cv)
                     found_feature = True
                     break
 
@@ -134,45 +136,56 @@ def feature_detect_gaussians(analysis_obj, params_obj):
                 features.append(new_feature)
 
         # After protein features are done, check if any nonprotein peaks match any features that don't already have a protein peak at this CV
-        if analysis_obj.raw_nonprotein_gaussians is not None:
-            for nonprot_gaussian in analysis_obj.raw_nonprotein_gaussians[cv_index]:
-                current_cv = nonprot_gaussian.cv
-                for feature in features:
-                    protein_cvs = [x.cv for x in feature.gaussians]
-                    if current_cv not in protein_cvs:
-                        # use 2x feature standard deviation as width tolerance for non-protein peaks (95% conf lvl analogy)
-                        nonprot_width_tol = feature.get_std_dev() * 2
+        if params_obj.feature_6_allow_nongauss:
+            if analysis_obj.raw_nonprotein_gaussians is not None:
+                for nonprot_gaussian in analysis_obj.raw_nonprotein_gaussians[cv_index]:
+                    current_cv = nonprot_gaussian.cv
+                    for feature in features:
+                        protein_cvs = [x.cv for x in feature.gaussians]
+                        if current_cv not in protein_cvs:
+                            # use 2x feature standard deviation as width tolerance for non-protein peaks (95% conf lvl analogy)
+                            nonprot_width_tol = feature.get_std_dev() * 2
 
-                        # this feature does not currently have any entries at this CV value, making it available to add a non-prot peak
-                        if feature.accept_centroid(nonprot_gaussian.centroid, nonprot_width_tol, current_cv, gap_tol_cv, cv_spacing):
-                            # Change this "non-protein" Gaussian to a protein - likely misassigned
-                            nonprot_gaussian.is_protein = True
-                            feature.gaussians.append(nonprot_gaussian)
-
-    # perform a second pass to add to features that were created after the CV at which these non-protein peaks were considered
-    if analysis_obj.raw_nonprotein_gaussians is not None:
-        for cv_index, protein_gauss_list in reversed(list(enumerate(analysis_obj.raw_protein_gaussians))):
-            for nonprot_gaussian in analysis_obj.raw_nonprotein_gaussians[cv_index]:
-                current_cv = nonprot_gaussian.cv
-                for feature in features:
-                    protein_cvs = [x.cv for x in feature.gaussians]
-                    if current_cv not in protein_cvs:
-                        # use 2x feature standard deviation as width tolerance for non-protein peaks (95% conf lvl analogy)
-                        nonprot_width_tol = feature.get_std_dev() * 2
-
-                        # this feature does not currently have any entries at this CV value, making it available to add a non-prot peak
-                        if feature.accept_centroid(nonprot_gaussian.centroid, nonprot_width_tol, current_cv, gap_tol_cv, cv_spacing):
-                            # Change this "non-protein" Gaussian to a protein - likely misassigned
-                            if nonprot_gaussian not in feature.gaussians:
-                                # make sure this protein isn't already in this feature
+                            # this feature does not currently have any entries at this CV value, making it available to add a non-prot peak
+                            if feature.accept_centroid(nonprot_gaussian.centroid, nonprot_width_tol, current_cv, gap_tol_cv, cv_spacing):
+                                # Change this "non-protein" Gaussian to a protein - likely misassigned
                                 nonprot_gaussian.is_protein = True
                                 feature.gaussians.append(nonprot_gaussian)
 
+    # perform a second pass to add to features that were created after the CV at which these non-protein peaks were considered
+    if params_obj.feature_6_allow_nongauss:
+        if analysis_obj.raw_nonprotein_gaussians is not None:
+            for cv_index, protein_gauss_list in reversed(list(enumerate(analysis_obj.raw_protein_gaussians))):
+                for nonprot_gaussian in analysis_obj.raw_nonprotein_gaussians[cv_index]:
+                    current_cv = nonprot_gaussian.cv
+                    for feature in features:
+                        protein_cvs = [x.cv for x in feature.gaussians]
+                        if current_cv not in protein_cvs:
+                            # use 2x feature standard deviation as width tolerance for non-protein peaks (95% conf lvl analogy)
+                            nonprot_width_tol = feature.get_std_dev() * 2
+
+                            # this feature does not currently have any entries at this CV value, making it available to add a non-prot peak
+                            if feature.accept_centroid(nonprot_gaussian.centroid, nonprot_width_tol, current_cv, gap_tol_cv, cv_spacing):
+                                # Change this "non-protein" Gaussian to a protein - likely misassigned
+                                if nonprot_gaussian not in feature.gaussians:
+                                    # make sure this protein isn't already in this feature
+                                    nonprot_gaussian.is_protein = True
+                                    feature.gaussians.append(nonprot_gaussian)
+
+    # ensure cvs and Gaussians are sorted in ascending order (only necessary if appending non-protein peaks AND a nonprotein peak is added out of order last)
+    for feature in features:
+        feature.cvs = sorted(feature.cvs)
+        feature.gaussians = sorted(feature.gaussians, key=lambda x: x.cv)
+
     # filter features to remove 'loners' without a sufficient number of points
     filtered_features = filter_features(features, params_obj.feature_2_min_length, mode='gaussian')
-    analysis_obj.features_gaussian = filtered_features
+
+    # fill feature gaps if desired
+    if params_obj.feature_5_fill_gaps:
+        filtered_features = fill_feature_gaps(filtered_features, cv_spacing)
 
     # save filtered gaussians into analysis object as feat_protein_gaussians
+    analysis_obj.features_gaussian = filtered_features
     assigned_gaussians = gaussians_by_cv_from_feats(filtered_features, cv_axis)
     analysis_obj.feat_protein_gaussians = assigned_gaussians
 
@@ -306,6 +319,49 @@ def filter_features(features, min_feature_length, mode):
     return filtered_list
 
 
+def fill_feature_gaps(features_list, cv_spacing):
+    """
+    Assumes that any 'gaps' within features (CVs that lack a centroid within the feature, but are surrounded
+    on both sides by correct centroids) are simply missed by the data analysis and not a true lack of signal.
+    For use in Gaussian fitting mode only. Fills in the gaps by adding a
+    Gaussian at each CV in the gap corresponding to the median centroid/width/amp
+    of surrounding feature points.
+    :param features_list: list of Features in which to close gaps
+    :type features_list: list[Feature]
+    :param cv_spacing: spacing between points along CV axis
+    :return: updated features list with features edited to have gaps filled
+    :rtype: list[Feature]
+    """
+    for feature in features_list:
+        index = 1
+        while index < len(feature.cvs):
+            current_spacing = feature.cvs[index] - feature.cvs[index - 1]
+            if not math.isclose(current_spacing, cv_spacing, rel_tol=1e-5):
+                # a gap is present, fill it
+                gap_size = int(np.round(current_spacing / cv_spacing)) - 1
+                for gap_fill_index in range(0, gap_size):
+                    new_index = index + gap_fill_index
+                    new_cv = feature.cvs[index - 1] + cv_spacing * (gap_fill_index + 1)
+                    feature.cvs.insert(new_index, new_cv)
+
+                    # create a new Gaussian to append here, using data from previous 3 points along the feature
+                    if index > 3:
+                        new_centroid = np.median([x.centroid for x in feature.gaussians[index - 4: index - 1]])
+                        new_width = np.average([x.width for x in feature.gaussians[index - 4: index - 1]])
+                        new_amplitude = np.average([x.amplitude for x in feature.gaussians[index - 4: index - 1]])
+                    else:
+                        # we're early in the feature and there aren't enough previous points for a good median. Simply use the preceeding point
+                        new_centroid = feature.gaussians[index - 1].centroid
+                        new_width = feature.gaussians[index - 1].width
+                        new_amplitude = feature.gaussians[index - 1].amplitude
+
+                    new_gaussian = Gaussian_Fitting.Gaussian(new_amplitude, new_centroid, new_width, new_cv, pcov=None, protein_bool=True)
+                    feature.gaussians.insert(new_index, new_gaussian)
+
+            index += 1
+    return features_list
+
+
 def adjust_gauss_features(features_list, analysis_obj, params_obj):
     """
     Run setup method to prepare Gaussian features for transition fitting. Removes any CV values
@@ -362,22 +418,18 @@ def check_feature_order(features_list):
     :param features_list: list of Feature objects to sort
     :return: sorted features list, swapping ONLY features that are completely out of order as described above
     """
-    new_list = []
-    index = 0
+    new_list = [features_list[0]]
+    index = 1
     while index < len(features_list):
-        try:
-            if features_list[index].cvs[0] > features_list[index + 1].cvs[-1]:
-                # the start of this feature comes AFTER the end of the "next" feature - swap them
-                new_list.append(features_list[index + 1])
-                new_list.append(features_list[index])
-                index += 2
-            else:
-                new_list.append(features_list[index])
-                index += 1
-        except IndexError:
-            # final feature in the list (so features_list[index + 1] gives IndexError) - append
+        if new_list[index - 1].cvs[0] > features_list[index].cvs[-1]:
+            # the start of the previous feature comes AFTER the end of this feature - swap them
+            new_list.insert(index - 1, features_list[index])
+            new_list = check_feature_order(new_list)    # Recurse to ensure the reordered feature(s) match previous order
+        else:
+            # feature in order, add to the new list
             new_list.append(features_list[index])
-            index += 1
+        index += 1
+
     return new_list
 
 
@@ -404,20 +456,13 @@ def plot_features(feature_list, analysis_obj, params_obj, outputdir, filename_ap
     feature_index = 1
     if params_obj.feature_1_ciu50_mode == 'gaussian':
         # plot the raw data to show what was fit
-        # filt_centroids = analysis_obj.get_attribute_by_cv('centroid', True)
-        filt_centroids = []
-        for cv_sublist in analysis_obj.feat_protein_gaussians:
-            filt_centroids.append([gaussian.centroid for gaussian in cv_sublist])
-
-        for x, y in zip(analysis_obj.axes[1], filt_centroids):
-            plt.plot([x] * len(y), y, 'wo')
+        for feature in feature_list:
+            for gaussian in feature.gaussians:
+                plt.plot(gaussian.cv, gaussian.centroid, 'wo')
 
         for feature in feature_list:
             feature_x = feature.cvs
             feature_y = [feature.gauss_median_centroid for _ in feature.cvs]
-
-            # feature_x = [gaussian.cv for gaussian in feature.gaussians]
-            # feature_y = [feature.gauss_median_centroid for _ in feature.gaussians]
             lines = plt.plot(feature_x, feature_y, label='Feature {} median: {:.2f}'.format(feature_index,
                                                                                             feature.get_median()))
             feature_index += 1
@@ -747,7 +792,7 @@ class Feature(object):
         self.cv_indices = []
         self.centroids = []
         self.gauss_median_centroid = None
-        self.gaussians = []
+        self.gaussians = []     # NOT necessarily sorted in CV order
         self.gaussian_bool = gaussian_bool
 
         # attributes to handle conversion for use with Transitions. Will be set after fitting by a method
@@ -800,6 +845,20 @@ class Feature(object):
             # centroid is within the Feature's bounds, check for gaps
             nearest_cv_index = (np.abs(np.asarray(self.cvs) - collision_voltage)).argmin()
             nearest_cv = self.cvs[nearest_cv_index]
+
+            # check for duplicate at this CV
+            if nearest_cv == collision_voltage:
+                # A peak is already present at this CV. Use whichever peak is closer to nearby data as the correct one
+                nearby_median = np.median([x.centroid for x in self.gaussians[nearest_cv_index - 4: nearest_cv_index - 1]])
+                if abs(centroid - nearby_median) < abs(self.gaussians[nearest_cv_index].centroid - nearby_median):
+                    # the new peak is closer to the nearby data - replace the existing peak with this one
+                    self.gaussians.remove(self.gaussians[nearest_cv_index])
+                    self.cvs.remove(nearest_cv)
+                    return True
+                else:
+                    # the existing peak is closer - keep it
+                    return False
+
             # if collision voltage is within tolerance of the nearest CV in the feature already, return True
             return abs(collision_voltage - nearest_cv) <= cv_tol
 

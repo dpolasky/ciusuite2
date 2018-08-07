@@ -366,7 +366,10 @@ def compute_new_axes(old_axes, interpolation_scaling, interp_cv=True, interp_dt=
         cv_start = old_axes[1][0]
         cv_end = old_axes[1][-1]
         new_num_bins = (len(old_axes[1]) - 1) * interpolation_scaling + 1
-        new_cv_axis = np.linspace(cv_start, cv_end, new_num_bins)
+        new_cv_axis, step = np.linspace(cv_start, cv_end, new_num_bins, retstep=True)
+        if not step == new_cv_axis[1] - new_cv_axis[0]:
+            print('omg please dont use this interpolation value ({}) bc then I have to handle floating point'.format(step))
+        new_cv_axis = np.around(new_cv_axis, 8)     # round to avoid floating point errors
     else:
         new_cv_axis = old_axes[1]
 
@@ -376,6 +379,7 @@ def compute_new_axes(old_axes, interpolation_scaling, interp_cv=True, interp_dt=
         dt_end = old_axes[0][-1]
         new_num_bins = (len(old_axes[0]) - 1) * interpolation_scaling + 1
         new_dt_axis = np.linspace(dt_start, dt_end, new_num_bins)
+        new_dt_axis = np.around(new_dt_axis, 8)     # round to avoid floating point errors
     else:
         new_dt_axis = old_axes[0]
 
