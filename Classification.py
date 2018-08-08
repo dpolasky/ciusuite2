@@ -260,7 +260,11 @@ def univariate_feature_selection(shaped_label_list, analysis_obj_list_by_label, 
         feature = CFeature(cv, cv_index, mean_score[cv_index], std_score[cv_index])
         features.append(feature)
 
-    sorted_features = sorted(features, key=lambda x: x.mean_score, reverse=True)
+    # sort feature scores either by mean - stdev ("error mode") or just mean alone.
+    if params_obj.classif_6_ufs_use_error_mode:
+        sorted_features = sorted(features, key=lambda x: (x.mean_score - x.std_dev_score), reverse=True)
+    else:
+        sorted_features = sorted(features, key=lambda x: x.mean_score, reverse=True)
 
     unique_labels = get_unique_labels([x for label_list in shaped_label_list for x in label_list])
     scheme_name = '_'.join(unique_labels)
@@ -823,7 +827,7 @@ def plot_feature_scores(feature_list, params_obj, scheme_name, output_path):
         plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
     if params_obj.plot_08_show_axes_titles:
         plt.xlabel(params_obj.plot_09_x_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
-        plt.ylabel('-Log10(pvalues)', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        plt.ylabel('-Log10(p-value)', fontsize=params_obj.plot_13_font_size, fontweight='bold')
     plt.xticks(fontsize=params_obj.plot_13_font_size)
     plt.yticks(fontsize=params_obj.plot_13_font_size)
     if params_obj.plot_07_show_legend:

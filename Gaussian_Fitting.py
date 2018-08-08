@@ -65,7 +65,7 @@ class Gaussian(object):
     def __str__(self):
         return 'Gaussian: x0={:.2f} A={:.1f} w={:.1f} cv={}'.format(self.centroid,
                                                                     self.amplitude,
-                                                                    self.width,
+                                                                    abs(self.width),
                                                                     self.cv)
     # set repr = str for printing in lists
     __repr__ = __str__
@@ -264,7 +264,7 @@ def main_gaussian_lmfit(analysis_obj, params_obj, outputpath):
             gaussian_guess_list = guess_gauss_init(cv_col_intensities, analysis_obj.axes[0], cv, rsq_cutoff=0.99,
                                                    amp_cutoff=params_obj.gaussian_2_int_threshold)
             all_fits = iterate_lmfitting(analysis_obj.axes[0], cv_col_intensities, gaussian_guess_list, params_obj,
-                                         outputpath)
+                                         outputfolder)
             results.append(all_fits)
 
         for cv_index, cv_results in enumerate(results):
@@ -862,19 +862,34 @@ def generate_gaussians_from_popt(opt_params_list, protein_bool, cv=None, pcov=No
 def remove_low_amp(popt_list, amp_cutoff):
     """
     Helper method to remove low amplitude peaks for both protein and non-protein parameter lists
+    Also remove peaks of miniscule width, as these can result in similar behavior.
+    NOTE: the width cutoff is calculated against centroid to allow for different magnitude drift axes
+    sigma must be > 0.01 * centroid, which corresponds to a resolution of 100 * 2sqrt(2), above any
+    typical IM system today.
     :param popt_list: list of Gaussian parameters [amp1, centroid1, sigma1, amp2, centroid2, sigma2, ... ]
     :param amp_cutoff: minimum amplitude to allow
     :return: updated popt_list with low amplitude peaks removed
     """
     values_to_remove = []
     for index, value in enumerate(popt_list):
+        # amplitude screen (amplitudes are the first of 3 values)
         if index % 3 == 0:
             current_amplitude = value
             if current_amplitude < amp_cutoff:
                 values_to_remove.extend([popt_list[index], popt_list[index + 1], popt_list[index + 2]])
-    for value in values_to_remove:
-        popt_list.remove(value)
+        # width screen (widths are the third or 3 values)
+        if index % 3 == 2:
+            current_width = value
+            # compare width against centroid/100 to allow different magnitude drift axes.
+            if current_width < (popt_list[index - 1] * 0.01):
+                values_to_remove.extend([popt_list[index - 2], popt_list[index - 1], popt_list[index]])
 
+    for value in values_to_remove:
+        try:
+            popt_list.remove(value)
+        except ValueError:
+            # this value has already been removed (because it failed both amplitude and width cutoffs) - ignore
+            continue
     return popt_list
 
 

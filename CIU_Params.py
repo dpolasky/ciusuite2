@@ -133,14 +133,16 @@ class Parameters(object):
         self.feature_1_ciu50_mode = None  # gaussian or standard mode
         self.feature_2_min_length = None
         self.feature_3_width_tol = None
-        self.feature_4_gap_tol = None
+        self.feature_4_ciu50_gap_tol = None
         self.feature_5_fill_gaps = None
         self.feature_6_allow_nongauss = None
 
         self.ciu50_1_centroiding_mode = None
         self.ciu50_3_pad_transitions_cv = None
         self.feature_ciu50_2_combine_outputs = None
+        self.ciu50_5_gauss_width_adj_tol = None
 
+        self.classif_6_ufs_use_error_mode = None
         self.classif_2_score_dif_tol = None
         self.classif_3_unk_mode = None
         self.classif_5_auto_featselect = None

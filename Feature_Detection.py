@@ -60,7 +60,7 @@ def feature_detect_col_max(analysis_obj, params_obj):
     # compute width tolerance in DT units, CV gap in bins (NOT cv axis units)
     width_tol_dt = params_obj.feature_3_width_tol  # * analysis_obj.bin_spacing
     cv_spacing = analysis_obj.axes[1][1] - analysis_obj.axes[1][0]
-    gap_tol_cv = params_obj.feature_4_gap_tol * cv_spacing
+    gap_tol_cv = params_obj.feature_4_ciu50_gap_tol * cv_spacing
 
     # Search each gaussian for features it matches (based on centroid)
     for cv_index, col_max_dt in enumerate(analysis_obj.col_max_dts):
@@ -95,6 +95,9 @@ def feature_detect_gaussians(analysis_obj, params_obj):
     Uses fitted (and filtered) multi-gaussians to assign flat features to data. Should be roughly
     analogous to the changepoint detection + flat features from column maxes in CIU-50 analysis,
     but using gaussian data enables seeing all features instead only the most intense one(s).
+    Features returned will be gap-filled (if specified) and in order. They may NOT cover every CV
+    in the CV axis and they MAY include data not at column max - those need to be adjusted
+    for classification and CIU50 analysis, respectively.
     :param analysis_obj: CIUAnalysisObj with Gaussians previously fitted
     :type analysis_obj: CIUAnalysisObj
     :param params_obj: Parameters object with parameter information
@@ -114,7 +117,7 @@ def feature_detect_gaussians(analysis_obj, params_obj):
     # compute width tolerance in DT units and gap tolerance in CV units
     width_tol_dt = params_obj.feature_3_width_tol  # * analysis_obj.bin_spacing
     cv_spacing = analysis_obj.axes[1][1] - analysis_obj.axes[1][0]
-    gap_tol_cv = params_obj.feature_4_gap_tol * cv_spacing
+    gap_tol_cv = params_obj.feature_4_ciu50_gap_tol * cv_spacing
 
     # Search each protein gaussian for features it matches (based on centroid)
     for cv_index, protein_gauss_list in enumerate(analysis_obj.raw_protein_gaussians):
@@ -180,9 +183,10 @@ def feature_detect_gaussians(analysis_obj, params_obj):
     # filter features to remove 'loners' without a sufficient number of points
     filtered_features = filter_features(features, params_obj.feature_2_min_length, mode='gaussian')
 
-    # fill feature gaps if desired
+    # fill feature gaps (if specified) and check order
     if params_obj.feature_5_fill_gaps:
         filtered_features = fill_feature_gaps(filtered_features, cv_spacing)
+    filtered_features = check_feature_order(filtered_features)
 
     # save filtered gaussians into analysis object as feat_protein_gaussians
     analysis_obj.features_gaussian = filtered_features
@@ -386,10 +390,10 @@ def adjust_gauss_features(features_list, analysis_obj, params_obj):
             # check if the ciu_data column max value is appropriate for this feature at this CV
             cv_index = list(analysis_obj.axes[1]).index(cv)
             dt_diff = abs(analysis_obj.col_max_dts[cv_index] - feature.gauss_median_centroid)
-            if dt_diff < params_obj.feature_3_width_tol:
+            if dt_diff < params_obj.ciu50_5_gauss_width_adj_tol:
                 # also check if a gap has formed and exclude features after the gap if so
                 if len(final_cvs) > 0:
-                    if cv - final_cvs[-1] <= (params_obj.feature_4_gap_tol * cv_spacing):
+                    if cv - final_cvs[-1] <= (params_obj.feature_4_ciu50_gap_tol * cv_spacing):
                         # difference is within tolerances; include this CV in the adjusted feature
                         final_cvs.append(cv)
                 else:

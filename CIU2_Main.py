@@ -593,7 +593,7 @@ class CIUSuite2(object):
                 analysis_obj = load_analysis_obj(file)
                 # compute new axes
                 new_axes = Raw_Processing.compute_new_axes(old_axes=analysis_obj.axes,
-                                                           interpolation_scaling=self.params_obj.interpolate_2_scaling,
+                                                           interpolation_scaling=int(self.params_obj.interpolate_2_scaling),
                                                            interp_cv=interp_cv,
                                                            interp_dt=interp_dt)
                 if not self.params_obj.interpolate_3_onedim:
