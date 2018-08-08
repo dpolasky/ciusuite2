@@ -58,9 +58,9 @@ def feature_detect_col_max(analysis_obj, params_obj):
         print('NOTE: CV axis in file {} was not evenly spaced; Feature Detection requires even spacing. Axis has been interpolated to fit. Use "Restore Original Data" button to undo interpolation'.format(analysis_obj.short_filename))
 
     # compute width tolerance in DT units, CV gap in bins (NOT cv axis units)
-    width_tol_dt = params_obj.feature_3_width_tol  # * analysis_obj.bin_spacing
+    width_tol_dt = params_obj.feature_t2_2_width_tol  # * analysis_obj.bin_spacing
     cv_spacing = analysis_obj.axes[1][1] - analysis_obj.axes[1][0]
-    gap_tol_cv = params_obj.feature_4_ciu50_gap_tol * cv_spacing
+    gap_tol_cv = params_obj.feature_t2_3_ciu50_gap_tol * cv_spacing
 
     # Search each gaussian for features it matches (based on centroid)
     for cv_index, col_max_dt in enumerate(analysis_obj.col_max_dts):
@@ -84,7 +84,7 @@ def feature_detect_col_max(analysis_obj, params_obj):
             features.append(new_feature)
 
     # filter features to remove 'loners' without a sufficient number of points
-    filtered_features = filter_features(features, params_obj.feature_2_min_length, mode='changept')
+    filtered_features = filter_features(features, params_obj.feature_t2_1_min_length, mode='changept')
 
     analysis_obj.features_changept = filtered_features
     return analysis_obj
@@ -115,9 +115,9 @@ def feature_detect_gaussians(analysis_obj, params_obj):
         raise ValueError
 
     # compute width tolerance in DT units and gap tolerance in CV units
-    width_tol_dt = params_obj.feature_3_width_tol  # * analysis_obj.bin_spacing
+    width_tol_dt = params_obj.feature_t2_2_width_tol  # * analysis_obj.bin_spacing
     cv_spacing = analysis_obj.axes[1][1] - analysis_obj.axes[1][0]
-    gap_tol_cv = params_obj.feature_4_ciu50_gap_tol * cv_spacing
+    gap_tol_cv = params_obj.feature_t2_3_ciu50_gap_tol * cv_spacing
 
     # Search each protein gaussian for features it matches (based on centroid)
     for cv_index, protein_gauss_list in enumerate(analysis_obj.raw_protein_gaussians):
@@ -139,7 +139,7 @@ def feature_detect_gaussians(analysis_obj, params_obj):
                 features.append(new_feature)
 
         # After protein features are done, check if any nonprotein peaks match any features that don't already have a protein peak at this CV
-        if params_obj.feature_6_allow_nongauss:
+        if params_obj.feature_t2_5_gauss_allow_nongauss:
             if analysis_obj.raw_nonprotein_gaussians is not None:
                 for nonprot_gaussian in analysis_obj.raw_nonprotein_gaussians[cv_index]:
                     current_cv = nonprot_gaussian.cv
@@ -156,7 +156,7 @@ def feature_detect_gaussians(analysis_obj, params_obj):
                                 feature.gaussians.append(nonprot_gaussian)
 
     # perform a second pass to add to features that were created after the CV at which these non-protein peaks were considered
-    if params_obj.feature_6_allow_nongauss:
+    if params_obj.feature_t2_5_gauss_allow_nongauss:
         if analysis_obj.raw_nonprotein_gaussians is not None:
             for cv_index, protein_gauss_list in reversed(list(enumerate(analysis_obj.raw_protein_gaussians))):
                 for nonprot_gaussian in analysis_obj.raw_nonprotein_gaussians[cv_index]:
@@ -181,10 +181,10 @@ def feature_detect_gaussians(analysis_obj, params_obj):
         feature.gaussians = sorted(feature.gaussians, key=lambda x: x.cv)
 
     # filter features to remove 'loners' without a sufficient number of points
-    filtered_features = filter_features(features, params_obj.feature_2_min_length, mode='gaussian')
+    filtered_features = filter_features(features, params_obj.feature_t2_1_min_length, mode='gaussian')
 
     # fill feature gaps (if specified) and check order
-    if params_obj.feature_5_fill_gaps:
+    if params_obj.feature_t2_4_gauss_fill_gaps:
         filtered_features = fill_feature_gaps(filtered_features, cv_spacing)
     filtered_features = check_feature_order(filtered_features)
 
@@ -390,10 +390,10 @@ def adjust_gauss_features(features_list, analysis_obj, params_obj):
             # check if the ciu_data column max value is appropriate for this feature at this CV
             cv_index = list(analysis_obj.axes[1]).index(cv)
             dt_diff = abs(analysis_obj.col_max_dts[cv_index] - feature.gauss_median_centroid)
-            if dt_diff < params_obj.ciu50_5_gauss_width_adj_tol:
+            if dt_diff < params_obj.ciu50_t2_3_gauss_width_adj_tol:
                 # also check if a gap has formed and exclude features after the gap if so
                 if len(final_cvs) > 0:
-                    if cv - final_cvs[-1] <= (params_obj.feature_4_ciu50_gap_tol * cv_spacing):
+                    if cv - final_cvs[-1] <= (params_obj.feature_t2_3_ciu50_gap_tol * cv_spacing):
                         # difference is within tolerances; include this CV in the adjusted feature
                         final_cvs.append(cv)
                 else:
@@ -458,7 +458,7 @@ def plot_features(feature_list, analysis_obj, params_obj, outputdir, filename_ap
 
     # prepare and plot the actual Features using saved data
     feature_index = 1
-    if params_obj.feature_1_ciu50_mode == 'gaussian':
+    if params_obj.feature_t1_1_ciu50_mode == 'gaussian':
         # plot the raw data to show what was fit
         for feature in feature_list:
             for gaussian in feature.gaussians:
@@ -471,7 +471,7 @@ def plot_features(feature_list, analysis_obj, params_obj, outputdir, filename_ap
                                                                                             feature.get_median()))
             feature_index += 1
             plt.setp(lines, linewidth=3)
-    elif params_obj.feature_1_ciu50_mode == 'standard':
+    elif params_obj.feature_t1_1_ciu50_mode == 'standard':
         # plot the raw data to show what was fit
         plt.plot(analysis_obj.axes[1], analysis_obj.col_max_dts, 'wo')
 
@@ -653,11 +653,11 @@ def plot_transitions(transition_list, analysis_obj, params_obj, outputdir):
     for transition in transition_list:
         # plot markers for the max/average/median values used in fitting for reference
         for index, cv in enumerate(transition.combined_x_axis):
-            if params_obj.ciu50_1_centroiding_mode == 'max':
+            if params_obj.ciu50_t2_1_centroiding_mode == 'max':
                 plt.plot(cv, transition.combined_y_vals[index], 'wo')
-            elif params_obj.ciu50_1_centroiding_mode == 'average':
+            elif params_obj.ciu50_t2_1_centroiding_mode == 'average':
                 plt.plot(cv, transition.combined_y_avg_raw[index], 'wo')
-            elif params_obj.ciu50_1_centroiding_mode == 'median':
+            elif params_obj.ciu50_t2_1_centroiding_mode == 'median':
                 plt.plot(cv, transition.combined_y_median_raw[index], 'wo')
 
         # prepare and plot the actual transition using fitted parameters
@@ -1056,7 +1056,7 @@ class Transition(object):
             steepness_guess = -1 * steepness_guess
 
         # for interpolation of transition modes - determine transition region to interpolate
-        pad_cv = params_obj.ciu50_3_pad_transitions_cv
+        pad_cv = params_obj.ciu50_t2_2_pad_transitions_cv
         if self.feature1.end_cv_val < self.feature2.start_cv_val:
             # features do NOT overlap, go from end of first feature to start of second
             trans_start_cv = self.feature1.end_cv_val - pad_cv
@@ -1075,21 +1075,21 @@ class Transition(object):
         # interp_y_vals = self.combined_y_vals
         # interp_function_raw = None
 
-        if params_obj.ciu50_1_centroiding_mode == 'average':
+        if params_obj.ciu50_t2_1_centroiding_mode == 'average':
             # use spectral average for y-values
             interp_function_raw = scipy.interpolate.interp1d(self.combined_x_axis, self.combined_y_avg_raw)
             interp_y_vals = interp_function_raw(interp_x_vals)
-        elif params_obj.ciu50_1_centroiding_mode == 'median':
+        elif params_obj.ciu50_t2_1_centroiding_mode == 'median':
             # spectral median for y-values
             interp_function_raw = scipy.interpolate.interp1d(self.combined_x_axis, self.combined_y_median_raw)
             interp_y_vals = interp_function_raw(interp_x_vals)
 
         # Skip transition data assembly for Gaussian mode, keep standard mode unchanged
-        if params_obj.feature_1_ciu50_mode == 'gaussian':
+        if params_obj.feature_t1_1_ciu50_mode == 'gaussian':
             final_x_vals = interp_x_vals
             final_y_vals = interp_y_vals
         else:
-            if params_obj.ciu50_1_centroiding_mode == 'max':
+            if params_obj.ciu50_t2_1_centroiding_mode == 'max':
                 # no spectral centroiding
                 final_x_vals, final_y_vals = self.assemble_transition_data(interp_x_vals, interp_y_vals, trans_start_cv,
                                                                            trans_end_cv, self.feat_distance)
@@ -1178,7 +1178,7 @@ class Transition(object):
             return False
 
         feature2_cv_indices = np.arange(self.feature2.start_cv_index, self.feature2.end_cv_index)
-        width_tol_dt = params_obj.feature_3_width_tol   # * analysis_obj.bin_spacing
+        width_tol_dt = params_obj.feature_t2_2_width_tol   # * analysis_obj.bin_spacing
         for cv_index in feature2_cv_indices:
             # check if a column max is within tolerance of the feature median
             current_max_dt = analysis_obj.col_max_dts[cv_index]

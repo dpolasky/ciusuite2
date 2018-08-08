@@ -115,7 +115,7 @@ class Parameters(object):
         self.compare_3_high_contrast = None
 
         # Gaussian fitting
-        self.gaussian_1_protein_mode = None
+        self.gauss_t1_1_protein_mode = None
         self.gaussian_2_int_threshold = None
         self.gaussian_4_save_diagnostics = None
         self.gaussian_61_num_cores = None
@@ -126,21 +126,21 @@ class Parameters(object):
         self.gaussian_81_min_nonprot_comps = None
         self.gaussian_82_max_nonprot_comps = None
         self.gaussian_83_nonprot_width_min = None
-        self.gaussian_9_min_protein_amp = None
+        self.gaussian_9_nonprot_min_prot_amp = None
 
         self.reconstruct_1_mode = None
 
-        self.feature_1_ciu50_mode = None  # gaussian or standard mode
-        self.feature_2_min_length = None
-        self.feature_3_width_tol = None
-        self.feature_4_ciu50_gap_tol = None
-        self.feature_5_fill_gaps = None
-        self.feature_6_allow_nongauss = None
+        self.feature_t1_1_ciu50_mode = None  # gaussian or standard mode
+        self.feature_t2_1_min_length = None
+        self.feature_t2_2_width_tol = None
+        self.feature_t2_3_ciu50_gap_tol = None
+        self.feature_t2_4_gauss_fill_gaps = None
+        self.feature_t2_5_gauss_allow_nongauss = None
+        self.feature_t2_6_ciu50_combine_outputs = None
 
-        self.ciu50_1_centroiding_mode = None
-        self.ciu50_3_pad_transitions_cv = None
-        self.feature_ciu50_2_combine_outputs = None
-        self.ciu50_5_gauss_width_adj_tol = None
+        self.ciu50_t2_1_centroiding_mode = None
+        self.ciu50_t2_2_pad_transitions_cv = None
+        self.ciu50_t2_3_gauss_width_adj_tol = None
 
         self.classif_6_ufs_use_error_mode = None
         self.classif_2_score_dif_tol = None

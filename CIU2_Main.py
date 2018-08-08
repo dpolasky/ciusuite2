@@ -624,27 +624,37 @@ class CIUSuite2(object):
         the current list in place). Saves Gaussian diagnostics/info to file in self.output_dir
         :return: void
         """
-        param_keys = [x for x in self.params_obj.params_dict.keys() if 'gaussian' in x]
-        if self.run_param_ui('Gaussian Fitting Parameters', param_keys):
-            # Determine if a file range has been specified
-            files_to_read = self.check_file_range_entries()
-            self.progress_started()
-            print('\n**** Starting Gaussian Fitting - THIS MAY TAKE SOME TIME - the GUI will not respond until fitting is completed ****')
+        # Ask user to specify protein or nonprotein mode
+        t1_param_keys = [x for x in self.params_obj.params_dict.keys() if 'gauss_t1' in x]
+        if self.run_param_ui('Gaussian Fitting Mode', t1_param_keys):
 
-            new_file_list = []
-            for file in files_to_read:
-                analysis_obj = load_analysis_obj(file)
-                analysis_obj = Gaussian_Fitting.main_gaussian_lmfit(analysis_obj, self.params_obj, self.output_dir)
+            # Determine parameters for appropriate mode
+            if self.params_obj.gauss_t1_1_protein_mode:
+                t2_param_keys = [x for x in self.params_obj.params_dict.keys() if ('gaussian' in x and '_nonprot_' not in x)]
+            else:
+                t2_param_keys = [x for x in self.params_obj.params_dict.keys() if 'gaussian' in x]
 
-                filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
-                new_file_list.append(filename)
-                self.update_progress(files_to_read.index(file), len(files_to_read))
+            # Finally, run feature detection in the appropriate mode
+            if self.run_param_ui('Gaussian Fitting Parameters', t2_param_keys):
+                # Determine if a file range has been specified
+                files_to_read = self.check_file_range_entries()
+                self.progress_started()
+                print('\n**** Starting Gaussian Fitting - THIS MAY TAKE SOME TIME - the GUI will not respond until fitting is completed ****')
 
-            self.display_analysis_files()
+                new_file_list = []
+                for file in files_to_read:
+                    analysis_obj = load_analysis_obj(file)
+                    analysis_obj = Gaussian_Fitting.main_gaussian_lmfit(analysis_obj, self.params_obj, self.output_dir)
 
-            # prompt the user to run feature detection in Gaussian mode
-            if len(files_to_read) > 0:
-                messagebox.showinfo('Success!', 'Gaussing fitting finished successfully. Please run Feature Detection in "gaussian" mode to finalize Gaussian assignments to features (this is required for CIU50 analysis, classification, and reconstruction).')
+                    filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
+                    new_file_list.append(filename)
+                    self.update_progress(files_to_read.index(file), len(files_to_read))
+
+                self.display_analysis_files()
+
+                # prompt the user to run feature detection in Gaussian mode
+                if len(files_to_read) > 0:
+                    messagebox.showinfo('Success!', 'Gaussing fitting finished successfully. Please run Feature Detection in "gaussian" mode to finalize Gaussian assignments to features (this is required for CIU50 analysis, classification, and reconstruction).')
 
         self.progress_done()
 
@@ -714,57 +724,68 @@ class CIUSuite2(object):
         Run feature detection routine.
         :return: void
         """
-        param_keys = [x for x in self.params_obj.params_dict.keys() if 'feature' in x]
-        if self.run_param_ui('Feature Detection Parameters', param_keys):
-            files_to_read = self.check_file_range_entries()
-            self.progress_started()
-            new_file_list = []
+        # Ask user to specify standard or Gaussian mode
+        t1_param_keys = [x for x in self.params_obj.params_dict.keys() if 'feature_t1' in x]
+        if self.run_param_ui('Feature Detection Parameters', t1_param_keys):
 
-            all_outputs = 'Filename,Features Detected\n'
-            for file in files_to_read:
-                # load file
-                analysis_obj = load_analysis_obj(file)
+            # Determine feature detection parameters for appropriate mode
+            if self.params_obj.feature_t1_1_ciu50_mode == 'standard':
+                t2_param_keys = [x for x in self.params_obj.params_dict.keys() if ('feature_t2' in x and '_gauss_' not in x)]
+            else:
+                t2_param_keys = [x for x in self.params_obj.params_dict.keys() if 'feature_t2' in x]
 
-                if self.params_obj.feature_1_ciu50_mode == 'gaussian':
-                    # check to make sure the analysis_obj has Gaussian data fitted
-                    if analysis_obj.raw_protein_gaussians is None:
-                        messagebox.showwarning('Gaussian fitting required', 'Data in file {} does not have Gaussian fitting'
-                                                                            'performed. Please run Gaussian fitting, then try '
-                                                                            'again.'.format(analysis_obj.short_filename))
-                        break
+            # Finally, run feature detection in the appropriate mode
+            if self.run_param_ui('Feature Detection Parameters', t2_param_keys):
+                files_to_read = self.check_file_range_entries()
+                self.progress_started()
+                new_file_list = []
 
-                    # Detect features in the appropriate mode
-                    try:
-                        analysis_obj = Feature_Detection.feature_detect_gaussians(analysis_obj, self.params_obj)
-                    except ValueError:
-                        messagebox.showerror('Uneven CV Axis', 'Error: Activation axis in file {} was not evenly spaced. Please use the "Interpolate Data" button to generate an evenly spaced axis. If using Gaussian fitting mode, Gaussian fitting MUST be redone after interpolation.'.format(analysis_obj.short_filename))
-                        continue
-                    features_list = analysis_obj.features_gaussian
-                    filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
-                    new_file_list.append(filename)
-                else:
-                    # Detect features in the appropriate mode
-                    analysis_obj = Feature_Detection.feature_detect_col_max(analysis_obj, self.params_obj)
-                    features_list = analysis_obj.features_changept
-                    filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
-                    new_file_list.append(filename)
+                all_outputs = 'Filename,Features Detected\n'
+                for file in files_to_read:
+                    # load file
+                    analysis_obj = load_analysis_obj(file)
 
-                # save output
-                Feature_Detection.plot_features(features_list, analysis_obj, self.params_obj, self.output_dir)
-                outputpath = os.path.join(self.output_dir, analysis_obj.short_filename + '_features.csv')
-                if self.params_obj.feature_ciu50_2_combine_outputs:
-                    all_outputs += analysis_obj.short_filename
-                    all_outputs += Feature_Detection.print_features_list(features_list, outputpath, mode=self.params_obj.feature_1_ciu50_mode, combine=True)
-                else:
-                    Feature_Detection.print_features_list(features_list, outputpath,
-                                                          mode=self.params_obj.feature_1_ciu50_mode, combine=False)
-                self.update_progress(files_to_read.index(file), len(files_to_read))
+                    if self.params_obj.feature_t1_1_ciu50_mode == 'gaussian':
+                        # GAUSSIAN MODE
+                        # check to make sure the analysis_obj has Gaussian data fitted if needed
+                        if analysis_obj.raw_protein_gaussians is None:
+                            messagebox.showwarning('Gaussian fitting required', 'Data in file {} does not have Gaussian fitting'
+                                                                                'performed. Please run Gaussian fitting, then try '
+                                                                                'again.'.format(analysis_obj.short_filename))
+                            break
 
-            if self.params_obj.feature_ciu50_2_combine_outputs:
-                outputpath = os.path.join(self.output_dir, '_all-features.csv')
-                save_existing_output_string(outputpath, all_outputs)
+                        # Detect features in the appropriate mode
+                        try:
+                            analysis_obj = Feature_Detection.feature_detect_gaussians(analysis_obj, self.params_obj)
+                        except ValueError:
+                            messagebox.showerror('Uneven CV Axis', 'Error: Activation axis in file {} was not evenly spaced. Please use the "Interpolate Data" button to generate an evenly spaced axis. If using Gaussian fitting mode, Gaussian fitting MUST be redone after interpolation.'.format(analysis_obj.short_filename))
+                            continue
+                        features_list = analysis_obj.features_gaussian
+                        filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
+                        new_file_list.append(filename)
+                    else:
+                        # STANDARD MODE
+                        analysis_obj = Feature_Detection.feature_detect_col_max(analysis_obj, self.params_obj)
+                        features_list = analysis_obj.features_changept
+                        filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
+                        new_file_list.append(filename)
 
-            self.display_analysis_files()
+                    # save output
+                    Feature_Detection.plot_features(features_list, analysis_obj, self.params_obj, self.output_dir)
+                    outputpath = os.path.join(self.output_dir, analysis_obj.short_filename + '_features.csv')
+                    if self.params_obj.feature_t2_6_ciu50_combine_outputs:
+                        all_outputs += analysis_obj.short_filename
+                        all_outputs += Feature_Detection.print_features_list(features_list, outputpath, mode=self.params_obj.feature_t1_1_ciu50_mode, combine=True)
+                    else:
+                        Feature_Detection.print_features_list(features_list, outputpath,
+                                                              mode=self.params_obj.feature_t1_1_ciu50_mode, combine=False)
+                    self.update_progress(files_to_read.index(file), len(files_to_read))
+
+                if self.params_obj.feature_t2_6_ciu50_combine_outputs:
+                    outputpath = os.path.join(self.output_dir, '_all-features.csv')
+                    save_existing_output_string(outputpath, all_outputs)
+
+                self.display_analysis_files()
         self.progress_done()
 
     def on_button_ciu50_clicked(self):
@@ -773,60 +794,71 @@ class CIUSuite2(object):
         files
         :return: void
         """
-        param_keys = [x for x in self.params_obj.params_dict.keys() if 'ciu50' in x]
-        if self.run_param_ui('CIU-50 Parameters', param_keys):
-            files_to_read = self.check_file_range_entries()
-            self.progress_started()
+        # Ask user to specify standard or Gaussian mode
+        t1_param_keys = [x for x in self.params_obj.params_dict.keys() if ('_t1_' in x and '_ciu50_' in x)]
+        if self.run_param_ui('CIU50 Mode', t1_param_keys):
 
-            new_file_list = []
-            all_outputs = ''
-            short_outputs = 'Filename,CIU50 1,CIU50 2,(etc)\n'
-            filename = ''
-            combine_flag = False
-            gaussian_bool = False
-            if self.params_obj.feature_1_ciu50_mode == 'gaussian':
-                gaussian_bool = True
+            # Determine feature detection parameters for appropriate mode
+            if self.params_obj.feature_t1_1_ciu50_mode == 'standard':
+                t2_param_keys = [x for x in self.params_obj.params_dict.keys() if
+                                 ('ciu50' in x and '_t2_' in x and '_gauss_' not in x)]
+            else:
+                t2_param_keys = [x for x in self.params_obj.params_dict.keys() if ('ciu50' in x and '_t2_' in x)]
 
-            for file in files_to_read:
-                # load file
-                analysis_obj = load_analysis_obj(file)
+            # Finally, run analysis in the appropriate mode
+            if self.run_param_ui('CIU50 Analysis Parameters', t2_param_keys):
+                files_to_read = self.check_file_range_entries()
+                self.progress_started()
 
-                # Ensure features are detected for this file
-                feature_list = analysis_obj.get_features(gaussian_bool)
-                if feature_list is None:
-                    # returning False means features aren't detected for the selected mode. Warn user
-                    messagebox.showerror('No Features in File {}'.format(analysis_obj.short_filename),
-                                         message='Feature Detection has not been performed in {} mode for file {}. Please '
-                                                 'perform feature detection before CIU50 analysis.'.format(self.params_obj.feature_1_ciu50_mode, analysis_obj.short_filename))
-                    continue
+                new_file_list = []
+                all_outputs = ''
+                short_outputs = 'Filename,CIU50 1,CIU50 2,(etc)\n'
+                filename = ''
+                combine_flag = False
+                gaussian_bool = False
+                if self.params_obj.feature_t1_1_ciu50_mode == 'gaussian':
+                    gaussian_bool = True
 
-                # run CIU50 analysis
-                analysis_obj = Feature_Detection.ciu50_main(feature_list, analysis_obj, self.params_obj, outputdir=self.output_dir, gaussian_bool=gaussian_bool)
-                filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
-                new_file_list.append(filename)
+                for file in files_to_read:
+                    # load file
+                    analysis_obj = load_analysis_obj(file)
 
-                # save outputs to file in combined or stand-alone modes
-                if not self.params_obj.feature_ciu50_2_combine_outputs:
-                    Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir)
-                    Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir)
-                    combine_flag = False
-                else:
-                    file_string = os.path.basename(filename).rstrip('.ciu') + '\n'
-                    all_outputs += file_string
-                    all_outputs += Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir, combine=True)
-                    short_outputs += os.path.basename(filename).rstrip('.ciu')
-                    short_outputs += Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir, combine=True)
-                    combine_flag = True
-                self.update_progress(files_to_read.index(file), len(files_to_read))
+                    # Ensure features are detected for this file
+                    feature_list = analysis_obj.get_features(gaussian_bool)
+                    if feature_list is None:
+                        # returning False means features aren't detected for the selected mode. Warn user
+                        messagebox.showerror('No Features in File {}'.format(analysis_obj.short_filename),
+                                             message='Feature Detection has not been performed in {} mode for file {}. Please '
+                                                     'perform feature detection before CIU50 analysis.'.format(self.params_obj.feature_t1_1_ciu50_mode, analysis_obj.short_filename))
+                        continue
 
-            if combine_flag:
-                # save final combined output
-                outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_ciu50s.csv')
-                outputpath_short = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_ciu50-short.csv')
-                save_existing_output_string(outputpath, all_outputs)
-                save_existing_output_string(outputpath_short, short_outputs)
+                    # run CIU50 analysis
+                    analysis_obj = Feature_Detection.ciu50_main(feature_list, analysis_obj, self.params_obj, outputdir=self.output_dir, gaussian_bool=gaussian_bool)
+                    filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
+                    new_file_list.append(filename)
 
-            self.display_analysis_files()
+                    # save outputs to file in combined or stand-alone modes
+                    if not self.params_obj.feature_t2_6_ciu50_combine_outputs:
+                        Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir)
+                        Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir)
+                        combine_flag = False
+                    else:
+                        file_string = os.path.basename(filename).rstrip('.ciu') + '\n'
+                        all_outputs += file_string
+                        all_outputs += Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir, combine=True)
+                        short_outputs += os.path.basename(filename).rstrip('.ciu')
+                        short_outputs += Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir, combine=True)
+                        combine_flag = True
+                    self.update_progress(files_to_read.index(file), len(files_to_read))
+
+                if combine_flag:
+                    # save final combined output
+                    outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_ciu50s.csv')
+                    outputpath_short = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_ciu50-short.csv')
+                    save_existing_output_string(outputpath, all_outputs)
+                    save_existing_output_string(outputpath_short, short_outputs)
+
+                self.display_analysis_files()
         self.progress_done()
 
     def on_button_classification_supervised_clicked(self):
