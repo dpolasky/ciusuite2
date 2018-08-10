@@ -1,0 +1,589 @@
+<?xml version='1.0' encoding='utf-8'?>
+<interface>
+  <object class="tk.Toplevel" id="CIU_app_top">
+    <property name="height">200</property>
+    <property name="relief">flat</property>
+    <property name="takefocus">true</property>
+    <property name="title" translatable="yes">CIUSuite 2 Beta v1.0</property>
+    <property name="width">200</property>
+    <child>
+      <object class="ttk.Frame" id="Frame_1_top_and_params">
+        <property name="height">65</property>
+        <property name="padding">5</property>
+        <property name="relief">groove</property>
+        <property name="width">410</property>
+        <layout>
+          <property name="column">0</property>
+          <property name="propagate">False</property>
+          <property name="row">0</property>
+          <rows>
+            <row id="0">
+              <property name="pad">2</property>
+              <property name="weight">0</property>
+            </row>
+            <row id="1">
+              <property name="minsize">0</property>
+              <property name="pad">2</property>
+              <property name="weight">0</property>
+            </row>
+            <row id="2">
+              <property name="pad">2</property>
+            </row>
+            <row id="3">
+              <property name="pad">0</property>
+            </row>
+          </rows>
+        </layout>
+        <child>
+          <object class="ttk.Label" id="Title_Label">
+            <property name="font">{Arial} 16 {italic}</property>
+            <property name="text" translatable="yes">CIUSuite 2</property>
+            <layout>
+              <property name="column">0</property>
+              <property name="columnspan">4</property>
+              <property name="propagate">False</property>
+              <property name="row">0</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Button" id="Button_RawFile">
+            <property name="command">on_button_rawfile_clicked</property>
+            <property name="text" translatable="yes">Process _raw.csv files</property>
+            <layout>
+              <property name="column">0</property>
+              <property name="propagate">False</property>
+              <property name="row">1</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Button" id="Button_AnalysisFile">
+            <property name="command">on_button_analysisfile_clicked</property>
+            <property name="text" translatable="yes">Load existing analysis files</property>
+            <layout>
+              <property name="column">2</property>
+              <property name="propagate">False</property>
+              <property name="row">1</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Label" id="Label_2">
+            <property name="text" translatable="yes">                                          </property>
+            <layout>
+              <property name="column">3</property>
+              <property name="propagate">True</property>
+              <property name="row">1</property>
+            </layout>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="ttk.Frame" id="Frame_2_ciu_files">
+        <property name="height">400</property>
+        <property name="padding">5</property>
+        <property name="relief">groove</property>
+        <property name="width">200</property>
+        <layout>
+          <property name="column">0</property>
+          <property name="propagate">True</property>
+          <property name="row">1</property>
+        </layout>
+        <child>
+          <object class="tk.Text" id="Text_analysis_list">
+            <property name="autoseparators">true</property>
+            <property name="height">10</property>
+            <property name="insertborderwidth">0</property>
+            <property name="maxundo">1</property>
+            <property name="pady">0</property>
+            <property name="selectborderwidth">2</property>
+            <property name="state">normal</property>
+            <property name="tabstyle">tabular</property>
+            <property name="takefocus">false</property>
+            <property name="text" translatable="yes">(No files loaded yet)</property>
+            <property name="width">50</property>
+            <property name="wrap">none</property>
+            <layout>
+              <property name="column">0</property>
+              <property name="columnspan">3</property>
+              <property name="propagate">True</property>
+              <property name="row">1</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Label" id="Label_analysis_list">
+            <property name="cursor">arrow</property>
+            <property name="font">{Arial} 12 {}</property>
+            <property name="takefocus">false</property>
+            <property name="text" translatable="yes">CIU Files:</property>
+            <property name="underline">0</property>
+            <layout>
+              <property name="column">0</property>
+              <property name="propagate">True</property>
+              <property name="row">0</property>
+              <property name="sticky">w</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="tk.Text" id="Text_ParamsMatch">
+            <property name="font">{Calibri} 10 {}</property>
+            <property name="height">1</property>
+            <property name="state">disabled</property>
+            <property name="width">57</property>
+            <layout>
+              <property name="column">0</property>
+              <property name="propagate">True</property>
+              <property name="row">2</property>
+            </layout>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="ttk.Frame" id="Frame_3_params_print">
+        <property name="height">200</property>
+        <property name="padding">5</property>
+        <property name="width">200</property>
+        <layout>
+          <property name="column">0</property>
+          <property name="propagate">True</property>
+          <property name="row">3</property>
+        </layout>
+        <child>
+          <object class="ttk.Button" id="Button_print_params">
+            <property name="command">on_button_printparams_clicked</property>
+            <property name="text" translatable="yes">Print parameters from file(s)</property>
+            <layout>
+              <property name="column">0</property>
+              <property name="columnspan">2</property>
+              <property name="propagate">True</property>
+              <property name="row">0</property>
+              <property name="sticky">e</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Button" id="Button_change_outputdir">
+            <property name="command">on_button_changedir_clicked</property>
+            <property name="text" translatable="yes">Change output directory</property>
+            <layout>
+              <property name="column">1</property>
+              <property name="propagate">True</property>
+              <property name="row">0</property>
+              <property name="sticky">w</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Label" id="Label_outputdir">
+            <property name="text" translatable="yes">Current output directory:</property>
+            <layout>
+              <property name="column">1</property>
+              <property name="propagate">True</property>
+              <property name="row">2</property>
+              <property name="sticky">w</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="tk.Text" id="Text_outputdir">
+            <property name="height">0</property>
+            <property name="insertborderwidth">0</property>
+            <property name="insertofftime">0</property>
+            <property name="insertontime">0</property>
+            <property name="padx">1</property>
+            <property name="setgrid">false</property>
+            <property name="state">disabled</property>
+            <property name="text" translatable="yes">(No files loaded yet)</property>
+            <property name="width">50</property>
+            <layout>
+              <property name="column">1</property>
+              <property name="columnspan">1</property>
+              <property name="propagate">True</property>
+              <property name="row">3</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Button" id="Button_restore_raw">
+            <property name="command">on_button_restore_clicked</property>
+            <property name="text" translatable="yes">Restore original data</property>
+            <layout>
+              <property name="column">1</property>
+              <property name="propagate">True</property>
+              <property name="row">1</property>
+              <property name="sticky">w</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Button" id="Button_default_params">
+            <property name="command">on_button_update_param_defaults_clicked</property>
+            <property name="text" translatable="yes">Update Default Parameters to Current Values</property>
+            <layout>
+              <property name="column">1</property>
+              <property name="propagate">True</property>
+              <property name="row">1</property>
+              <property name="sticky">e</property>
+            </layout>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="ttk.Frame" id="Frame_4_num_files">
+        <property name="height">200</property>
+        <property name="padding">5</property>
+        <property name="width">200</property>
+        <layout>
+          <property name="column">0</property>
+          <property name="propagate">True</property>
+          <property name="row">2</property>
+        </layout>
+        <child>
+          <object class="ttk.Label" id="Label_start_files">
+            <property name="text" translatable="yes">(optional) Analyze files from:</property>
+            <layout>
+              <property name="column">0</property>
+              <property name="propagate">True</property>
+              <property name="row">1</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Entry" id="Entry_start_files">
+            <property name="text" translatable="yes">(first file number)</property>
+            <layout>
+              <property name="column">1</property>
+              <property name="propagate">True</property>
+              <property name="row">1</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Label" id="Label_end files">
+            <property name="font">TkDefaultFont</property>
+            <property name="text" translatable="yes">to:</property>
+            <layout>
+              <property name="column">0</property>
+              <property name="propagate">True</property>
+              <property name="row">2</property>
+              <property name="sticky">e</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Entry" id="Entry_end_files">
+            <property name="state">normal</property>
+            <property name="text" translatable="yes">(last file number)</property>
+            <property name="validate">none</property>
+            <layout>
+              <property name="column">1</property>
+              <property name="propagate">True</property>
+              <property name="row">2</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Label" id="Label_num_files">
+            <property name="text" translatable="yes">Total files loaded:</property>
+            <property name="underline">0</property>
+            <layout>
+              <property name="column">0</property>
+              <property name="propagate">True</property>
+              <property name="row">0</property>
+              <property name="sticky">e</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Entry" id="Entry_num_files">
+            <property name="state">readonly</property>
+            <property name="textvariable">string:num_files_textvar</property>
+            <layout>
+              <property name="column">1</property>
+              <property name="propagate">True</property>
+              <property name="row">0</property>
+            </layout>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="ttk.Frame" id="Frame_6_new_ciu">
+        <property name="height">200</property>
+        <property name="padding">5</property>
+        <property name="relief">groove</property>
+        <property name="width">200</property>
+        <layout>
+          <property name="column">0</property>
+          <property name="padx">5</property>
+          <property name="pady">5</property>
+          <property name="propagate">True</property>
+          <property name="row">6</property>
+          <property name="sticky">w</property>
+        </layout>
+        <child>
+          <object class="ttk.Button" id="Button_ciu_50">
+            <property name="command">on_button_ciu50_clicked</property>
+            <property name="text" translatable="yes">Fit CIU-50s</property>
+            <property name="underline">0</property>
+            <layout>
+              <property name="column">0</property>
+              <property name="propagate">True</property>
+              <property name="row">2</property>
+              <property name="sticky">w</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Button" id="Button_classification_supervised">
+            <property name="command">on_button_classification_supervised_clicked</property>
+            <property name="text" translatable="yes">Build Classification</property>
+            <layout>
+              <property name="column">2</property>
+              <property name="propagate">True</property>
+              <property name="row">1</property>
+              <property name="sticky">e</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Button" id="Button_run_gaussfit">
+            <property name="command">on_button_gaussfit_clicked</property>
+            <property name="text" translatable="yes">Gaussian fitting</property>
+            <layout>
+              <property name="column">1</property>
+              <property name="propagate">True</property>
+              <property name="row">1</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Label" id="Label_new_ciu">
+            <property name="text" translatable="yes">New CIUSuite Methods: (still under development)</property>
+            <layout>
+              <property name="column">0</property>
+              <property name="columnspan">3</property>
+              <property name="propagate">True</property>
+              <property name="row">0</property>
+              <property name="sticky">w</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Button" id="Button_feature_changept">
+            <property name="command">on_button_feature_detect_clicked</property>
+            <property name="text" translatable="yes">Feature Detection</property>
+            <layout>
+              <property name="column">0</property>
+              <property name="propagate">True</property>
+              <property name="row">1</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Button" id="Button_classif_unknown">
+            <property name="command">on_button_classify_unknown_clicked</property>
+            <property name="text" translatable="yes">Classify Unknown</property>
+            <layout>
+              <property name="column">2</property>
+              <property name="propagate">True</property>
+              <property name="row">2</property>
+              <property name="sticky">e</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Button" id="Button_gaussian_reconstruct">
+            <property name="command">on_button_gaussian_reconstruction_clicked</property>
+            <property name="text" translatable="yes">Reconstruct from Gaussians</property>
+            <layout>
+              <property name="column">1</property>
+              <property name="propagate">True</property>
+              <property name="row">2</property>
+              <property name="sticky">w</property>
+            </layout>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="ttk.Frame" id="Frame_5_old_ciu">
+        <property name="height">200</property>
+        <property name="padding">5</property>
+        <property name="relief">groove</property>
+        <property name="width">200</property>
+        <layout>
+          <property name="column">0</property>
+          <property name="padx">5</property>
+          <property name="pady">2</property>
+          <property name="propagate">True</property>
+          <property name="row">5</property>
+          <property name="sticky">w</property>
+        </layout>
+        <child>
+          <object class="ttk.Label" id="Label_old_ciusuite">
+            <property name="text" translatable="yes">Old CIUSuite Methods:</property>
+            <layout>
+              <property name="column">0</property>
+              <property name="columnspan">2</property>
+              <property name="propagate">True</property>
+              <property name="row">0</property>
+              <property name="sticky">w</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Button" id="Button_old_plot">
+            <property name="command">on_button_oldplot_clicked</property>
+            <property name="text" translatable="yes">CIU_plot</property>
+            <layout>
+              <property name="column">1</property>
+              <property name="propagate">True</property>
+              <property name="row">2</property>
+              <property name="sticky">w</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Button" id="Button_old_compare">
+            <property name="command">on_button_oldcompare_clicked</property>
+            <property name="text" translatable="yes">CIU_compare (batch)</property>
+            <layout>
+              <property name="column">0</property>
+              <property name="propagate">True</property>
+              <property name="row">2</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Button" id="Button_old_average">
+            <property name="command">on_button_oldavg_clicked</property>
+            <property name="text" translatable="yes">Average fingerprints</property>
+            <layout>
+              <property name="column">3</property>
+              <property name="propagate">True</property>
+              <property name="row">1</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Button" id="Button_old_deltadt">
+            <property name="command">on_button_olddeltadt_clicked</property>
+            <property name="text" translatable="yes">Delta DT edit</property>
+            <layout>
+              <property name="column">2</property>
+              <property name="propagate">True</property>
+              <property name="row">2</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Button" id="Button_crop">
+            <property name="command">on_button_crop_clicked</property>
+            <property name="text" translatable="yes">Crop</property>
+            <layout>
+              <property name="column">1</property>
+              <property name="propagate">True</property>
+              <property name="row">1</property>
+              <property name="sticky">w</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Button" id="Button_smooth">
+            <property name="command">on_button_smoothing_clicked</property>
+            <property name="text" translatable="yes">Add Smoothing</property>
+            <layout>
+              <property name="column">0</property>
+              <property name="propagate">True</property>
+              <property name="row">1</property>
+              <property name="sticky">w</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Button" id="Button_interpolate">
+            <property name="command">on_button_interpolate_clicked</property>
+            <property name="text" translatable="yes">Interpolate</property>
+            <layout>
+              <property name="column">2</property>
+              <property name="propagate">True</property>
+              <property name="row">1</property>
+            </layout>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="ttk.Frame" id="Frame_progress_bar">
+        <property name="height">200</property>
+        <property name="padding">0</property>
+        <property name="width">200</property>
+        <layout>
+          <property name="column">0</property>
+          <property name="propagate">True</property>
+          <property name="row">7</property>
+        </layout>
+        <child>
+          <object class="ttk.Progressbar" id="Progressbar_main">
+            <property name="length">400</property>
+            <property name="maximum">100</property>
+            <property name="mode">determinate</property>
+            <property name="orient">horizontal</property>
+            <layout>
+              <property name="column">0</property>
+              <property name="columnspan">3</property>
+              <property name="pady">2</property>
+              <property name="propagate">True</property>
+              <property name="row">1</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Entry" id="Entry_progress">
+            <property name="justify">center</property>
+            <property name="text" translatable="yes">Progress</property>
+            <property name="width">66</property>
+            <layout>
+              <property name="column">0</property>
+              <property name="columnspan">3</property>
+              <property name="propagate">True</property>
+              <property name="row">0</property>
+            </layout>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="ttk.Frame" id="Frame_1">
+        <property name="height">26</property>
+        <property name="relief">groove</property>
+        <property name="width">400</property>
+        <layout>
+          <property name="column">0</property>
+          <property name="propagate">False</property>
+          <property name="row">4</property>
+        </layout>
+        <child>
+          <object class="ttk.Button" id="Button_all_plot_options">
+            <property name="command">on_button_plot_options_clicked</property>
+            <property name="text" translatable="yes">Change Output Plot Options (all plots)</property>
+            <layout>
+              <property name="column">0</property>
+              <property name="columnspan">3</property>
+              <property name="padx">100</property>
+              <property name="propagate">False</property>
+              <property name="row">0</property>
+            </layout>
+          </object>
+        </child>
+      </object>
+    </child>
+  </object>
+</interface>
