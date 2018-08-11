@@ -153,7 +153,7 @@ def prep_gaussfeats_for_classif(features_list, analysis_obj):
     :param analysis_obj: CIUAnalysisObj with gaussian fitting and gaussian feature detect performed
     :type analysis_obj: CIUAnalysisObj
     :return: List of (Gaussian lists) sorted by CV
-    :rtype: list[list[Gaussian]] asdf
+    :rtype: list[list[Gaussian]]
     """
     # make an empty list for Gaussians at each CV
     final_gaussian_lists = [[] for _ in analysis_obj.axes[1]]
@@ -330,7 +330,15 @@ def crossval_main(analysis_obj_list_by_label, labels, outputdir, params_obj, fea
     results = []
 
     time_start = time.time()
-    for ind, feature in enumerate(features_list):
+    # optional max number of features to consider
+    if params_obj.classif_7_max_feats_for_crossval > 0:
+        max_features = params_obj.classif_7_max_feats_for_crossval
+        if max_features > len(features_list):
+            max_features = len(features_list) + 1
+    else:
+        max_features = len(features_list) + 1
+
+    for ind, feature in enumerate(features_list[:max_features]):
         print('\nNum features: {}'.format(ind+1))
         current_features_list.append(feature)
 

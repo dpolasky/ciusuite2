@@ -687,6 +687,7 @@ def gaussfunc(x, amplitude, centroid, sigma):
     :param sigma: gaussian width
     :return: y = f(x)
     """
+    # todo: add baseline? Add optional baseline?
     exponent = ((x - centroid)**2) / (2 * (sigma**2))
     y = amplitude * (np.exp(-exponent))         # using this function since our data is always normalized
     # y = amplitude/(np.sqrt(2*np.pi) * sigma) * (np.exp(-exponent))     # use this for non-normalized data
