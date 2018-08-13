@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 
 protein_prefix = 'p'
 nonprotein_prefix = 'np'
+baseline_prefix = 'b'
 
 
 class Gaussian(object):
@@ -108,16 +109,24 @@ class SingleFitStats(object):
         self.x_data = x_data
         self.y_data = y_data
         self.cv = cv
+        self.baseline_val = 0
 
         if lmfit_output is not None:
             protein_popt, nonprotein_popt = get_popt_from_lmoutput(lmfit_output, amp_cutoff)
             popt = [x for x in protein_popt]
             popt.extend(nonprotein_popt)
+
+            # Check for baseline as well, and add it to the fit if provided
+            keys = sorted(lmfit_output.best_values.keys())
+            baseline_key = [lmfit_output.best_values[key] for key in keys if key.startswith(baseline_prefix)]
+            if len(baseline_key) > 0:
+                self.baseline_val = baseline_key[0]
+
         else:
             protein_popt = popt
             nonprotein_popt = []
 
-        self.y_fit = multi_gauss_func(x_data, *popt)
+        self.y_fit = multi_gauss_func(x_data, *popt) + self.baseline_val
         self.slope, self.intercept, self.rvalue, self.pvalue, self.stderr = linregress(self.y_data, self.y_fit)
         self.adjrsq = adjrsquared(self.rvalue ** 2, len(y_data))
         # can't save LMFit output because it contains temp classes that are not pickle-able
@@ -497,7 +506,12 @@ def plot_fit_result(current_fit, output, x_data, outputname):
     model_components = output.eval_components(x=x_data)
     output.plot_fit()
     for component_name, comp_value in model_components.items():
-        plt.plot(x_data, comp_value, '--', label=component_name)
+        try:
+            plt.plot(x_data, comp_value, '--', label=component_name)
+        except ValueError:
+            # baseline component will only have a single value, so plot it at all x-axis points
+            y_data = [comp_value for _ in range(len(x_data))]
+            plt.plot(x_data, y_data, '--', label=component_name)
     plt.legend(loc='best')
     if not output.success:
         plt.title('{}V, fitting failed'.format(current_fit.cv))
@@ -532,6 +546,13 @@ def assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, dt_
     guess_index = 0
     total_num_components = num_nonprot_pks + num_prot_pks
     models_list = []
+
+    # Initialize a common baseline for all parameters if requested
+    if params_obj.gaussian_75_baseline > 0:
+        model, params = make_baseline_model(params_obj.gaussian_75_baseline)
+        models_list.append(model)
+        fit_params.update(params)
+
     # counters for numbers of each peak type left to be fitted
     nonprots_remaining = num_nonprot_pks
     prots_remaining = num_prot_pks
@@ -678,6 +699,19 @@ def make_nonprotein_model(prefix, guess_gaussian, nonprot_width_min, dt_axis):
     return model, model_params
 
 
+def make_baseline_model(guess_baseline):
+    """
+    Make a model of a flat baseline to add to all Gaussian functions in LMFit fitting.
+    :param guess_baseline: Initial baseline guess (provided by user)
+    :return: LMFit model, model parameters
+    """
+    model = lmfit.Model(baseline_func, prefix=baseline_prefix)
+    model_params = model.make_params()
+    model_params[baseline_prefix + 'baseline'].set(guess_baseline, min=1e-10, max=1.0)
+
+    return model, model_params
+
+
 def gaussfunc(x, amplitude, centroid, sigma):
     """
     Gaussian function with constraints applied for CIU data
@@ -687,12 +721,22 @@ def gaussfunc(x, amplitude, centroid, sigma):
     :param sigma: gaussian width
     :return: y = f(x)
     """
-    # todo: add baseline? Add optional baseline?
     exponent = ((x - centroid)**2) / (2 * (sigma**2))
     y = amplitude * (np.exp(-exponent))         # using this function since our data is always normalized
     # y = amplitude/(np.sqrt(2*np.pi) * sigma) * (np.exp(-exponent))     # use this for non-normalized data
 
     return y
+
+
+def baseline_func(x, baseline):
+    """
+    Flat baseline function that simply adds a set offset to the y-axis at all values of x. Separated
+    from Gaussian function so that all Gaussian components will have the same baseline.
+    :param x: input x value (not actually needed, since function does not vary with x, but included for fitting)
+    :param baseline: flat baseline offset in y direction.
+    :return: (float) baseline
+    """
+    return baseline
 
 
 def multi_gauss_func(x, *params):
@@ -1021,6 +1065,8 @@ def save_fits_pdf_new(analysis_obj, params_obj, best_fit_list, outputpath):
             gauss_fit = gaussfunc(best_fit.x_data, nonprot_gauss.amplitude, nonprot_gauss.centroid, nonprot_gauss.width)
             plt.plot(best_fit.x_data, gauss_fit, ls='--', label='Noise {}'.format(nonprot_index))
             nonprot_index += 1
+        if best_fit.baseline_val > 0:
+            plt.plot(best_fit.x_data, [best_fit.baseline_val for _ in range(len(best_fit.x_data))], ls='--', label='baseline: {:.2f}'.format(best_fit.baseline_val))
 
         # plot titles, labels, and legends
         if params_obj.plot_08_show_axes_titles:

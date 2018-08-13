@@ -123,6 +123,7 @@ class Parameters(object):
         self.gaussian_72_prot_peak_width = None
         self.gaussian_73_prot_width_tol = None
         self.gaussian_74_shared_area_mode = None
+        self.gaussian_75_baseline = None
         self.gaussian_81_min_nonprot_comps = None
         self.gaussian_82_max_nonprot_comps = None
         self.gaussian_83_nonprot_width_min = None
