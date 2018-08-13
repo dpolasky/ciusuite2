@@ -167,7 +167,13 @@ def prep_gaussfeats_for_classif(features_list, analysis_obj):
 
         for cv in feature.cvs:
             # append Gaussian(s) at this CV to the final list
-            cv_index = np.where(analysis_obj.axes[1] == cv)[0][0]
+            try:
+                cv_index = np.where(analysis_obj.axes[1] == cv)[0][0]
+            except IndexError:
+                # A gaussian had a CV that was not in the analysis object's CV axis! This should be caught elsewhere
+                print('Gaussian had CV {}, but that CV is not in the CV axis of this file (after axes were equalized across all files). It will be ignored.'.format(cv))
+                continue
+
             this_cv_gaussian = [x for x in feature.gaussians if x.cv == cv]
             final_gaussian_lists[cv_index].extend(this_cv_gaussian)
 
@@ -584,7 +590,8 @@ def lda_for_crossval(stacked_train_data, stacked_train_labels, stacked_test_data
     lda.fit(stacked_train_data, stacked_train_labels)
     train_lda = lda.transform(stacked_train_data)
     test_lda = lda.transform(stacked_test_data)
-    svm = SVC(kernel='linear', C=1, probability=True)
+    # max_iter=1000 needed to prevent occasional (and unpredictable) freezes with ridiculous iteration numbers
+    svm = SVC(kernel='linear', C=1, probability=True, max_iter=1000)
     try:
         svm.fit(train_lda, stacked_train_labels)
     except ValueError:
@@ -1005,8 +1012,7 @@ def plot_sklearn_lda_2ld(class_scheme, marker, color, label_axes):
     unique_labels = class_scheme.unique_labels
 
     for label, marker, color in zip(range(0, len(unique_labels)), marker, color):
-        plt.scatter(x=x_data[:, 0][y_values == label + 1], y=x_data[:, 1][y_values == label + 1], marker=marker, color=color, alpha=0.5, label=np.unique(unique_labels)[label])
-
+        plt.scatter(x=x_data[:, 0][y_values == label + 1], y=x_data[:, 1][y_values == label + 1], marker=marker, color=color, alpha=0.5, label=unique_labels[label])
     if label_axes:
         plt.xlabel('LD1')
         plt.ylabel('LD2')
