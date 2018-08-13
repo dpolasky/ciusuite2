@@ -547,9 +547,9 @@ def assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, dt_
     total_num_components = num_nonprot_pks + num_prot_pks
     models_list = []
 
-    # Initialize a common baseline for all parameters if requested
-    if params_obj.gaussian_75_baseline > 0:
-        model, params = make_baseline_model(params_obj.gaussian_75_baseline)
+    # Initialize a common baseline for all Gaussians if requested
+    if params_obj.gaussian_75_baseline:
+        model, params = make_baseline_model(guess_baseline=0.1)
         models_list.append(model)
         fit_params.update(params)
 
