@@ -70,7 +70,7 @@ def main_build_classification(labels, analysis_obj_list_by_label, params_obj, ou
     return constructed_scheme
 
 
-def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_override=None):
+def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_override=None, selected_cvs=None):
     """
     Initialize a classification data matrix in each analysis object in the lists according to the
     classification mode specified in the parameters object. In All_Data mode, this is simply the
@@ -82,6 +82,7 @@ def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_overrid
     :type params_obj: Parameters
     :param ufs_mode: boolean, True if using for UFS (feature selection), which requires only centroids from gaussian fitting
     :param num_gauss_override: MUST be provided for Unknown data fitting (in Gaussian mode ONLY) - the number of gaussians in the scheme being used
+    :param selected_cvs: for unknown analyses, only return the data in the specified CV columns
     :return: classification data matrix
     """
     classif_data = None
@@ -110,6 +111,10 @@ def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_overrid
         if not ufs_mode:
             # assemble matrix of gaussian data
             for gaussian_list in gaussian_list_by_cv:
+                # skip any non-selected CVs if requested (i.e. in unknown analysis mode)
+                if selected_cvs is not None:
+                    if not gaussian_list[0].cv in selected_cvs:
+                        continue
                 attributes = ['cent', 'width', 'amp']
                 num_attributes = len(attributes)
                 attribute_list = np.zeros(max_num_gaussians * num_attributes)
@@ -136,7 +141,6 @@ def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_overrid
 
                 classif_data.append(cent_list)
             classif_data = np.asarray(classif_data).T
-
     else:
         print('WARNING: INVALID CLASSIFICATION MODE: {}'.format(params_obj.classif_3_unk_mode))
 
@@ -567,7 +571,11 @@ def arrange_data_for_lda(flat_data_matrix_list, flat_label_list, features_list, 
             this_cv_correct_index = (np.abs(np.asarray(current_cv_axis) - data_cv)).argmin()
 
             # use the correct index to find the raw data at this CV
-            lda_ciu_data.append(flat_data_matrix_list[data_index].T[this_cv_correct_index])
+            test_mat = flat_data_matrix_list[data_index]
+            test_mat_t = test_mat.T
+            final = test_mat_t[this_cv_correct_index]
+            lda_ciu_data.append(final)
+            # lda_ciu_data.append(flat_data_matrix_list[data_index].T[this_cv_correct_index])
             lda_label_data.append(flat_label_list[data_index])
             if flat_filenames is not None:
                 lda_filenames.append(flat_filenames[data_index])
@@ -638,7 +646,7 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
     expl_var_r = lda.explained_variance_ratio_
 
     # build classification scheme
-    clf = SVC(kernel='linear', C=1, probability=True)
+    clf = SVC(kernel='linear', C=1, probability=True, max_iter=1000)
     clf.fit(x_lda, input_y_labels)
     y_pred = clf.predict(x_lda)
     prec_score = precision_score(input_y_labels, y_pred, pos_label=1, average='weighted')
@@ -1121,7 +1129,8 @@ class ClassificationScheme(object):
         :return: updated analysis object with prediction data saved
         :rtype: CIUAnalysisObj
         """
-        unk_ciudata = get_classif_data(unk_ciu_obj, params_obj, ufs_mode=False, num_gauss_override=self.num_gaussians)
+        feature_cvs = [x.cv for x in self.selected_features]
+        unk_ciudata = get_classif_data(unk_ciu_obj, params_obj, ufs_mode=False, num_gauss_override=self.num_gaussians, selected_cvs=feature_cvs)
 
         # Assemble feature data for fitting
         unk_input_x, fake_labels, filenames, input_feats = arrange_data_for_lda([unk_ciudata], unk_label, self.selected_features, [unk_ciu_obj.axes[1]], [unk_ciu_obj.short_filename])
