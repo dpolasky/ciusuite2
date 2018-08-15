@@ -990,6 +990,11 @@ class CIUSuite2(object):
 
                 # ensure Gaussian features are present if requested
                 if self.params_obj.classif_3_unk_mode == 'Gaussian':
+                    # make sure the scheme is in Gaussian mode, cancel classification if not
+                    if scheme.num_gaussians == 0:
+                        messagebox.showerror('Non-Gaussian Scheme Selected', 'Gaussian mode specified, but the selected classification scheme (.clf file) is NOT a Gaussian classification scheme. No analysis will be performed.')
+                        self.progress_done()
+
                     for analysis_obj in analysis_obj_list:
                         if analysis_obj.features_gaussian is None:
                             messagebox.showerror('No Gaussian Features Fitted',
@@ -997,19 +1002,13 @@ class CIUSuite2(object):
                                                  'but Gaussian Feature Detection has not been performed yet. '
                                                  'Please run Gaussian Feature Detection on all files being used'
                                                  'and try again.')
-                            # cancel the classification
-                            self.progress_done()
-                        # prepare gaussian data for classification
-                        final_gaussians = Classification.prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
-                        analysis_obj.classif_gaussfeats = final_gaussians
-                        if analysis_obj.features_gaussian is None:
-                            print(
-                                'Error: Gaussian feature classification selected, but Gaussian Feature Detection has not been performed for file {}. '
-                                'File skipped. To classify, please run Gaussian Feature Detection on this file and try again.'.format(
-                                    analysis_obj.short_filename))
-                            # skip this file
+                            # skip file
                             continue
                         else:
+                            # prepare gaussian data for classification
+                            final_gaussians = Classification.prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
+                            analysis_obj.classif_gaussfeats = final_gaussians
+
                             # make ready the gaussians (saved into analysis object and length checked)
                             skip_flag = False
                             for gaussian_list in final_gaussians:
