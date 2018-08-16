@@ -650,6 +650,7 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
     clf.fit(x_lda, input_y_labels)
     y_pred = clf.predict(x_lda)
     prec_score = precision_score(input_y_labels, y_pred, pos_label=1, average='weighted')
+    probs = clf.predict_proba(x_lda)
 
     # initialize classification scheme object and return it
     scheme = ClassificationScheme()
@@ -668,143 +669,81 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
     scheme.input_feats = input_feats
     scheme.set_name()
 
-    save_lda_output(x_lda, input_filenames, input_feats, scheme.name, output_dir, explained_variance_ratio=expl_var_r)
+    # save_lda_output(x_lda, input_filenames, input_feats, scheme.name, output_dir, explained_variance_ratio=expl_var_r)
+    x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file = [], [], [], []
+    num_feats = len(features_list)
+    index = 0
+    for filename in flat_filename_list:
+        x_lda_by_file.append(x_lda[index: index + num_feats])
+        y_pred_by_file.append(y_pred[index: index + num_feats])
+        probs_by_file.append(probs[index: index + num_feats])
+        filenames_by_file.append(filename)
+        index += num_feats
+
+    save_lda_and_predictions(scheme, x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file, output_dir, unknowns_bool=False)
     return scheme
 
 
-def save_lda_output(transformed_data, filenames, input_feats, scheme_name, output_path, explained_variance_ratio=None):
+# def save_lda_and_predictions(lda_transform_data_by_cv, predicted_class_by_cv, probs_by_cv, cv_list, filenames)
+def save_lda_and_predictions(scheme, lda_transform_data_by_file, predicted_class_by_file, probs_by_file, filenames, output_path, unknowns_bool):
     """
-    Save csv output from LDA, including transformed test data prediction accuracy scores
-    :param transformed_data:
-    :param filenames:
-    :param input_feats:
-    :param scheme_name:
-    :param explained_variance_ratio:
+    Unified CSV output method for saving classification results (data transformed along LD axes and predicted
+    classes and probabilities from the SVM). Used both when building a classification scheme and when
+    classifying unknowns.
+    :param scheme: ClassificationScheme container
+    :type scheme: ClassificationScheme
+    :param lda_transform_data_by_file: list for each input file of transformed data for each LD axis (i.e. [file1=[LD1, LD2], file2=[LD1, LD2]])
+    :param predicted_class_by_file: list of lists of predicted classes, same format as lda_transform data (except listed by each class, not each LD axis)
+    :param probs_by_file: list of lists of probabilities for each class, same format as predicted class data
+    :param filenames: list of input filenames
     :param output_path: directory in which to save output
+    :param unknowns_bool: True if saving unknown data
     :return: void
     """
-    outputname = scheme_name + '_LDA.csv'
-    feats = input_feats
-    output_final = os.path.join(output_path, outputname)
-    output_string = ''
+    if unknowns_bool:
+        outputname = os.path.join(output_path, scheme.name + '_Results-unknowns.csv')
+    else:
+        outputname = os.path.join(output_path, scheme.name + '_Results.csv')
 
-    num_lds = np.arange(1, len(transformed_data[0]) + 1)
-    ld_string = ','.join('LD {} (linear discriminant dimension {})'.format(x, x) for x in num_lds)
-    try:
-        lineheader = 'Filename,Feature (e.g. voltage),' + ld_string
-        output_string += lineheader + '\n'
-        # OLD WAY - multiple features/probabilities per class
-        for index in range(len(transformed_data[:, 0])):
-            fnames = str(filenames[index])
-            features = str(feats[index])
-            joined_lds = ','.join([str(x) for x in transformed_data[index]])
-            line1 = '{}, {}, {}, \n'.format(fnames, features, joined_lds)
-            output_string += line1
-        # line2 = 'Explained_variance_ratio\n'
-        if explained_variance_ratio is not None:
-            joined_exp_var = ','.join([str(x) for x in explained_variance_ratio])
-            line2 = 'Explained_variance_ratio, {}, {},\n'.format(' ', joined_exp_var)
-            output_string += line2
-    except IndexError:
-        lineheader = 'filename,'+','.join(str(x) for x in num_lds)
-        output_string += lineheader + '\n'
-        for index in range(len(transformed_data[:, 0])):
-            # NEW WAY - only one probability per class (no features)
-            fnames = str(filenames[index])
-            joined_lds = ','.join([str(x) for x in transformed_data[index]])
-            output_string += '{}, {}, \n'.format(fnames, joined_lds)
-        if explained_variance_ratio is not None:
-            joined_exp_var = ','.join([str(x) for x in explained_variance_ratio])
-            line2 = 'Explained_variance_ratio, {},\n'.format(joined_exp_var)
-            output_string += line2
-    try:
-        with open(output_final, 'w') as outfile:
-            outfile.write(output_string)
-    except PermissionError:
-        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_final))
-        with open(output_final, 'w') as outfile:
-            outfile.write(output_string)
+    # arrange header information
+    predict_labels = ','.join(['{} Probability'.format(x) for x in scheme.unique_labels])
+    ld_dim_list = np.arange(1, len(lda_transform_data_by_file[0][0]) + 1)
+    lda_header = ','.join('LD {} (linear discriminant dimension {})'.format(x, x) for x in ld_dim_list)
+    header = 'File,Feature,{},Class Prediction,{}\n'.format(lda_header, predict_labels)
+    output_string = header
 
+    # loop over each file and each CV ("feature")
+    for file_index in range(len(lda_transform_data_by_file)):
+        transforms_by_cv = lda_transform_data_by_file[file_index]
+        classes_by_cv = predicted_class_by_file[file_index]
+        probs_by_cv = probs_by_file[file_index]
 
-def save_predictions(list_of_analysis_objs, features_list, class_labels, output_path):
-    """
-    Save unknown data predictions to csv output file
-    :param list_of_analysis_objs: list of CIUAnalysis containers with unknown data - MUST have transformed data already set
-    :type list_of_analysis_objs: list[CIUAnalysisObj]
-    :param features_list: list of selected Features
-    :type features_list: list[CFeature]
-    :param class_labels: list of labels for each class
-    :param output_path: directory in which to save output
-    :return: void
-    """
-    outputname = 'All_Unknowns_classif.csv'
-    output_final = os.path.join(output_path, outputname)
-    output_string = ''
+        for feat_index in range(len(transforms_by_cv)):
+            ld_data = ','.join(['{:.2f}'.format(x) for x in transforms_by_cv[feat_index]])
+            class_pred = scheme.unique_labels[classes_by_cv[feat_index] - 1]
+            probs_data = ','.join(['{:.3f}'.format(x) for x in probs_by_cv[feat_index]])
 
-    header_labels = ','.join(['Probability of {}'.format(x) for x in class_labels])
-    header = 'File,Feature,Predicted Class,{}\n'.format(header_labels)
-    output_string += header
-
-    for analysis_obj in list_of_analysis_objs:
-        cvs = [x.cv for x in features_list]
-        predict_class = analysis_obj.classif_predicted_label
-        predict_prob_feat = analysis_obj.classif_probs_by_cv
-
-        # For feature-by-feature method, count the most common classification for this unknown (statistical mode)
-        counts = np.bincount(predict_class)
-        class_mode = np.argmax(counts)
-        main_lines = []
-        for index, cv in enumerate(cvs):
-            joined_probs = ','.join([str(x) for x in predict_prob_feat[index]])
-            line = '{},{},{},{},\n'.format(analysis_obj.short_filename, cv, predict_class[index], joined_probs)
-            main_lines.append(line)
-        probs = ','.join(str(x) for x in analysis_obj.classif_probs_avg)
-        line2 = '{},{},{},{}, \n'.format(analysis_obj.short_filename, 'Combined', class_mode, probs)
-
-        # write at the end to allow type checking to finish
-        for line in main_lines:
+            line = '{},{},{},{},{}\n'.format(filenames[file_index], scheme.input_feats[feat_index], ld_data, class_pred, probs_data)
             output_string += line
-        output_string += line2
 
+        # Add 'combined' probabilities at end of each file
+        class_mode = scheme.unique_labels[np.argmax(np.bincount(classes_by_cv)) - 1]
+        avg_probs = ','.join(['{:.3f}'.format(x) for x in np.average(probs_by_file[file_index], axis=0)])
+        buffer_string = ','.join(['' for _ in range(len(ld_dim_list))])     # don't write anything into LD columns
+        output_string += '{},{},{},{},{}\n'.format(filenames[file_index], 'Combined', buffer_string, class_mode, avg_probs)
+
+    # Add explained variance ratio at the end of all files
+    if scheme.explained_variance_ratio is not None:
+        joined_exp_var = ','.join(['{:.3f}'.format(x) for x in scheme.explained_variance_ratio])
+        output_string += 'Explained_variance_ratio,{},{}\n'.format(' ', joined_exp_var)
+
+    # save to file
     try:
-        with open(output_final, 'w') as outfile:
+        with open(outputname, 'w') as outfile:
             outfile.write(output_string)
     except PermissionError:
-        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_final))
-        with open(output_final, 'w') as outfile:
-            outfile.write(output_string)
-
-
-def save_lda_output_unk(list_transformed_data, list_filenames, list_feats, output_path):
-    """
-    from Suggie
-    :param list_transformed_data:
-    :param list_filenames:
-    :param list_feats:
-    :param output_path:
-    :return:
-    """
-    outputname = 'output_lda_unk.csv'
-    output_final = os.path.join(output_path, outputname)
-    features = [x.cv for x in list_feats]
-    output_string = ''
-
-    num_lds = np.arange(1, len(list_transformed_data[0][0])+1)
-    lineheader = 'filename, feats,' + ','.join('LD {} (linear discriminant dimension {})'.format(x, x) for x in num_lds)
-    output_string += lineheader + '\n'
-    for index, (transformed_data, fname) in enumerate(zip(list_transformed_data, list_filenames)):
-        for ind in range(len(transformed_data[:, 0])):
-            feats = str(features[ind])
-            joined_lds = ','.join([str(x) for x in transformed_data[ind]])
-            line1 = '{}, {}, {}, \n'.format(fname, feats, joined_lds)
-            output_string += line1
-
-    try:
-        with open(output_final, 'w') as outfile:
-            outfile.write(output_string)
-    except PermissionError:
-        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_final))
-        with open(output_final, 'w') as outfile:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(outputname))
+        with open(outputname, 'w') as outfile:
             outfile.write(output_string)
 
 
@@ -856,7 +795,7 @@ def plot_feature_scores(feature_list, params_obj, scheme_name, output_path):
     if params_obj.plot_07_show_legend:
         plt.legend(loc='best', fontsize=params_obj.plot_13_font_size)
 
-    output_name = os.path.join(output_path, scheme_name + '_feature-scores' + params_obj.plot_02_extension)
+    output_name = os.path.join(output_path, scheme_name + '_UFS' + params_obj.plot_02_extension)
     try:
         plt.savefig(output_name)
     except PermissionError:
@@ -952,7 +891,7 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
                        zs=plot_data[:, 2][y_values == label + 1],
                        # marker=marker,
                        c=color, s=40,
-                       label=np.unique(unique_labels)[label])
+                       label=unique_labels[label])
 
         if unknown_tups is not None:
             for ind, unknown_tup in enumerate(unknown_tups):
@@ -966,6 +905,10 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
         # ax.view_init(elev=20., azim=30.)
 
     # plot titles, labels, and legends
+    if params_obj.plot_08_show_axes_titles:
+        ax.set_xlabel('LD1')
+        ax.set_ylabel('LD2')
+        ax.set_zlabel('LD3')
     if params_obj.plot_12_custom_title is not None:
         plot_title = params_obj.plot_12_custom_title
         plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
@@ -976,10 +919,10 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
     if params_obj.plot_07_show_legend:
         ax.legend(loc='best')
 
-    plt.xticks(fontsize=params_obj.plot_13_font_size)
-    plt.yticks(fontsize=params_obj.plot_13_font_size)
-
-    output_name = os.path.join(output_path, class_scheme.name + '_output' + params_obj.plot_02_extension)
+    if unknown_tups is not None:
+        output_name = os.path.join(output_path, class_scheme.name + '_Results-unknowns' + params_obj.plot_02_extension)
+    else:
+        output_name = os.path.join(output_path, class_scheme.name + '_Results' + params_obj.plot_02_extension)
     try:
         plt.savefig(output_name)
     except PermissionError:
@@ -1078,30 +1021,30 @@ class ClassificationScheme(object):
     """
     def __init__(self):
         self.lda = None     # type: LinearDiscriminantAnalysis
-        self.classifier = None
-        self.classifier_type = None
-        self.name = None
-        self.params = None
-        self.final_axis_cropvals = None
-        self.classif_mode = None
-        self.classif_prec_score = None
-        self.explained_variance_ratio = None
+        self.classifier = None      # type: SVC
+        self.classifier_type = None     # string - holds classifier type information for diagnostics
+        self.name = None    # string - classifier name, usually assembled from input class names
+        self.params = None  # return of self.classier.get_params()
+        self.final_axis_cropvals = None     # final axes used in the scheme
+        self.classif_mode = None    # standard or Gaussian mode, to ensure unknowns are fit in correct mode
+        self.classif_prec_score = None  # sklearn.metrics.precision_score for the classification scheme
+        self.explained_variance_ratio = None    # list of ratios of variance explained by each LD axis
 
         self.selected_features = []     # type: List[CFeature]
         self.all_features = None    # type: List[CFeature]
 
-        self.numeric_labels = None
-        self.class_labels = None
-        self.unique_labels = None
-        self.transformed_test_data = None
-        self.test_filenames = None
-        self.input_feats = None
+        self.numeric_labels = None  # list of class labels converted to ints
+        self.class_labels = None    # list of original string class labels, with replicates
+        self.unique_labels = None   # list of original string class labels, but only 1 per class
+        self.transformed_test_data = None   # input data transformed by the final LDA
+        self.test_filenames = None  # list of filenames from input data
+        self.input_feats = None     # list of CVs used in the scheme. NOT Feature objects, just CVs
 
         # cross validation information
-        self.crossval_test_score = None
-        self.all_crossval_data = None
+        self.crossval_test_score = None     # best test accuracy score (score of the feature set chosen for final classification)
+        self.all_crossval_data = None   # list of (train_score_means, train_score_stds, test_score_means, test_score_stds) for each feature combination
 
-        self.num_gaussians = None
+        self.num_gaussians = None       # stores the max number of Gaussian found in a voltage for assembling matrices for unknowns
 
     def __str__(self):
         label_string = ','.join(self.unique_labels)

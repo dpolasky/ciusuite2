@@ -1044,11 +1044,16 @@ class CIUSuite2(object):
                     self.update_progress(analysis_obj_list.index(analysis_obj), len(analysis_obj_list))
 
                 if len(successful_objs_for_plot) > 0:
-                    Classification.save_predictions(successful_objs_for_plot, scheme.selected_features, scheme.unique_labels, self.output_dir)
+                    # Classification.save_predictions(successful_objs_for_plot, scheme.selected_features, scheme.unique_labels, self.output_dir, scheme.name)
                     scheme.plot_all_unknowns(successful_objs_for_plot, self.params_obj, self.output_dir)
+
+                    # compile all successfully fitted LDA and prediction data for output csv
                     all_transform_data = [x.classif_transformed_data for x in successful_objs_for_plot]
                     all_filenames = [x.short_filename for x in successful_objs_for_plot]
-                    Classification.save_lda_output_unk(all_transform_data, all_filenames, scheme.selected_features, self.output_dir)
+                    all_predictions = [x.classif_predicted_label for x in successful_objs_for_plot]
+                    all_probs = [x.classif_probs_by_cv for x in successful_objs_for_plot]
+                    # Classification.save_lda_output_unk(all_transform_data, all_filenames, scheme.selected_features, self.output_dir)
+                    Classification.save_lda_and_predictions(scheme, all_transform_data, all_predictions, all_probs, all_filenames, self.output_dir, True)
 
                 self.display_analysis_files()
         self.progress_done()
