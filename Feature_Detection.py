@@ -462,7 +462,7 @@ def plot_features(feature_list, analysis_obj, params_obj, outputdir, filename_ap
         # plot the raw data to show what was fit
         for feature in feature_list:
             for gaussian in feature.gaussians:
-                plt.plot(gaussian.cv, gaussian.centroid, 'wo')
+                plt.plot(gaussian.cv, gaussian.centroid, 'wo', markersize=params_obj.plot_14_dot_size, markeredgecolor='black')
 
         for feature in feature_list:
             feature_x = feature.cvs
@@ -473,7 +473,7 @@ def plot_features(feature_list, analysis_obj, params_obj, outputdir, filename_ap
             plt.setp(lines, linewidth=3)
     elif params_obj.feature_t1_1_ciu50_mode == 'standard':
         # plot the raw data to show what was fit
-        plt.plot(analysis_obj.axes[1], analysis_obj.col_max_dts, 'wo')
+        plt.plot(analysis_obj.axes[1], analysis_obj.col_max_dts, 'wo', markersize=params_obj.plot_14_dot_size, markeredgecolor='black')
 
         for feature in feature_list:
             feature_x = feature.cvs
@@ -654,11 +654,11 @@ def plot_transitions(transition_list, analysis_obj, params_obj, outputdir):
         # plot markers for the max/average/median values used in fitting for reference
         for index, cv in enumerate(transition.combined_x_axis):
             if params_obj.ciu50_t2_1_centroiding_mode == 'max':
-                plt.plot(cv, transition.combined_y_vals[index], 'wo')
+                plt.plot(cv, transition.combined_y_vals[index], 'wo', markersize=params_obj.plot_14_dot_size, markeredgecolor='black')
             elif params_obj.ciu50_t2_1_centroiding_mode == 'average':
-                plt.plot(cv, transition.combined_y_avg_raw[index], 'wo')
+                plt.plot(cv, transition.combined_y_avg_raw[index], 'wo', markersize=params_obj.plot_14_dot_size, markeredgecolor='black')
             elif params_obj.ciu50_t2_1_centroiding_mode == 'median':
-                plt.plot(cv, transition.combined_y_median_raw[index], 'wo')
+                plt.plot(cv, transition.combined_y_median_raw[index], 'wo', markersize=params_obj.plot_14_dot_size, markeredgecolor='black')
 
         # prepare and plot the actual transition using fitted parameters
         interp_x = np.linspace(x_axis[0], x_axis[len(x_axis) - 1], 200)

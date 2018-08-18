@@ -19,6 +19,8 @@ plot_10_y_title,Drift time (ms),Y-axis Title,anystring,,,,Label to display on th
 plot_11_show_title,FALSE,Use Filename as Title,string,,,True;False,If true: the filename of the .ciu file will be displayed above plots as the title. NOTE: this is overwritten by a custom title if one is provided. 
 plot_12_custom_title,None,Custom Plot Title,anystring,,,,Optional title for the plot. If provided the title will be displayed above the plot
 plot_13_font_size,16,Font Size,int,1,72,,Font size for axes ticks and labels. Also used for title if a title is used. 
+plot_14_dot_size,10,Dot Size for Applicable Plots,float,0,inf,,Size of dots displayed in plots from feature detection; CIU50; Gaussian fitting centroids; and classification outputs
+plot_15_grid_bool,TRUE,Show Grid,string,,,True;False,Whether to display a grid on Gaussian centroid output plots only. Does not apply to other plots. 
 gauss_t1_1_protein_mode,TRUE,Protein/Signal Only Mode,string,,,True;False,Whether to search and filter out noise peaks or not. In Protein only mode ('True') all peaks are assumed to be important signals and none are filtered out. In protein and noise mode ('False') both signal and noise peaks are fit to allow removal of noise peaks later. Signals/important peaks can be any analyte peak (not necessarily just protein).
 gaussian_2_int_threshold,0.05,Minimum Peak Amplitude,float,0,1,,Minimum normalized intensity at peak centroid (maximum) to allow a peak to be fit. 
 gaussian_4_save_diagnostics,FALSE,Save Gaussian Fits and Diagnostics,bool,,,True;False,Whether to save detailed Gaussian fitting information and diagnostics (true) or not (false). Diagnostic output takes some time but provides much greater detail on fitting effectiveness. 

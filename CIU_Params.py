@@ -107,6 +107,8 @@ class Parameters(object):
         self.plot_11_show_title = None
         self.plot_12_custom_title = None
         self.plot_13_font_size = None
+        self.plot_14_dot_size = None
+        self.plot_15_grid_bool = None
 
         self.output_1_save_csv = None
         self.compare_batch_1_both_dirs = None

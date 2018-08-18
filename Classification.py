@@ -516,9 +516,9 @@ def plot_crossval_scores(crossval_data, scheme_name, params_obj, outputdir):
     test_score_stds = crossval_data[3]
 
     xax = np.arange(1, len(train_score_means) + 1)
-    plt.plot(xax, train_score_means, color='blue', marker='s', label='train_score')
+    plt.plot(xax, train_score_means, color='blue', marker='s', label='train_score', markersize=params_obj.plot_14_dot_size, markeredgecolor='black')
     plt.fill_between(xax, train_score_means-train_score_stds, train_score_means+train_score_stds, color='blue', alpha=0.2)
-    plt.plot(xax, test_score_means, color='green', marker='o', label='test_score')
+    plt.plot(xax, test_score_means, color='green', marker='o', label='test_score', markersize=params_obj.plot_14_dot_size, markeredgecolor='black')
     plt.fill_between(xax, test_score_means-test_score_stds, test_score_means+test_score_stds, color='green', alpha=0.2)
 
     # plot titles, labels, and legends
@@ -777,7 +777,7 @@ def plot_feature_scores(feature_list, params_obj, scheme_name, output_path):
     std_scores = [x.std_dev_score for x in feature_list]
     cv_axis = [x.cv for x in feature_list]
 
-    plt.errorbar(x=cv_axis, y=mean_scores, yerr=std_scores, ls='none', marker='o', color='black')
+    plt.errorbar(x=cv_axis, y=mean_scores, yerr=std_scores, ls='none', marker='o', color='black', markersize=params_obj.plot_14_dot_size, markeredgecolor='black')
     plt.axhline(y=0.0, color='black', ls='--')
 
     # plot titles, labels, and legends
@@ -792,8 +792,6 @@ def plot_feature_scores(feature_list, params_obj, scheme_name, output_path):
         plt.ylabel('-Log10(p-value)', fontsize=params_obj.plot_13_font_size, fontweight='bold')
     plt.xticks(fontsize=params_obj.plot_13_font_size)
     plt.yticks(fontsize=params_obj.plot_13_font_size)
-    if params_obj.plot_07_show_legend:
-        plt.legend(loc='best', fontsize=params_obj.plot_13_font_size)
 
     output_name = os.path.join(output_path, scheme_name + '_UFS' + params_obj.plot_02_extension)
     try:
@@ -821,8 +819,9 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
         return
     fig = plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
 
-    markers = ('s', 'x', 'o', '^', 'v', 'D', '<', '>', '4', '8', 'h', 'H', '1', '2', '3', '+', '*', 'p', 'P')
-    colors = ['fuchsia', 'deepskyblue', 'mediumspringgreen', 'gray', 'cyan', 'lightgreen', 'magenta', 'yellow']
+    markers = ('s', 'o')
+    # markers = ('s', 'o', '^', 'v', 'D', '<', '>', '4', '8', 'h', 'H', '1', '2', '3', '+', '*', 'p', 'P', 'x')
+    colors = ['deepskyblue', 'orange', 'fuchsia', 'mediumspringgreen', 'gray', 'cyan', 'lightgreen', 'magenta', 'yellow']
     cmap = ListedColormap(colors[:len(class_scheme.unique_labels)])
     # decide whether the data has 1d or nds
     ax = plt.subplot(111)
@@ -843,14 +842,20 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
         z = class_scheme.classifier.predict(x_grid.ravel().reshape(-1, 1))
         z = z.reshape(x_grid.shape)
 
-        plt.contourf(x_grid, y_grid, z, alpha=0.2, cmap=cmap)
-        plot_sklearn_lda_1ld(class_scheme, markers, colors)
+        plt.contourf(x_grid, y_grid, z, alpha=0.4, cmap=cmap)
+        plot_sklearn_lda_1ld(class_scheme, markers, colors, params_obj.plot_14_dot_size)
         if params_obj.plot_08_show_axes_titles:
             plt.xlabel('LD1', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        plt.xticks(fontsize=params_obj.plot_13_font_size)
+        plt.yticks([])
         if unknown_tups is not None:
             for ind, unknown_tup in enumerate(unknown_tups):
-                plt.scatter(unknown_tup[0], np.zeros(np.shape(unknown_tup[0])), marker=markers[ind], color='black',
-                            alpha=0.5, label=unknown_tup[1])
+                if ind >= len(markers):
+                    marker = 'x'
+                else:
+                    marker = markers[ind]
+                plt.scatter(unknown_tup[0], np.zeros(np.shape(unknown_tup[0])), marker=marker, color='black',
+                            alpha=0.5, label=unknown_tup[1], s=params_obj.plot_14_dot_size ** 2 * 2, edgecolors='black')
 
     if shape_lda[1] == 2:
         x1_min, x1_max = np.floor(class_scheme.transformed_test_data[:, 0].min()), np.ceil(class_scheme.transformed_test_data[:, 0].max())
@@ -869,14 +874,21 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
         z = class_scheme.classifier.predict(np.array([x_grid_1.ravel(), x_grid_2.ravel()]).T)
         z = z.reshape(x_grid_1.shape)
 
-        plt.contourf(x_grid_1, x_grid_2, z, alpha=0.2, cmap=cmap)
-        plot_sklearn_lda_2ld(class_scheme, markers, colors, params_obj.plot_08_show_axes_titles)
+        plt.contourf(x_grid_1, x_grid_2, z, alpha=0.4, cmap=cmap)
+        plot_sklearn_lda_2ld(class_scheme, markers, colors, params_obj.plot_08_show_axes_titles, params_obj.plot_14_dot_size)
         if params_obj.plot_08_show_axes_titles:
             plt.xlabel('LD1', fontsize=params_obj.plot_13_font_size, fontweight='bold')
             plt.ylabel('LD2', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        plt.xticks(fontsize=params_obj.plot_13_font_size)
+        plt.yticks(fontsize=params_obj.plot_13_font_size)
         if unknown_tups is not None:
             for ind, unknown_tup in enumerate(unknown_tups):
-                plt.scatter(x=unknown_tup[0][:, 0], y=unknown_tup[0][:, 1], marker=markers[ind], color='black', alpha=0.5, label=unknown_tup[1])
+                if ind >= len(markers):
+                    marker = 'x'
+                else:
+                    marker = markers[ind]
+                plt.scatter(x=unknown_tup[0][:, 0], y=unknown_tup[0][:, 1], marker=marker, color='black',
+                            alpha=0.5, label=unknown_tup[1], s=params_obj.plot_14_dot_size ** 2, edgecolors='black')
 
     if shape_lda[1] == 3:
         print('NOTE: 3D plots are not fully optimized. Labels and font sizes may not be perfect.')
@@ -890,25 +902,29 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
                        ys=plot_data[:, 1][y_values == label + 1],
                        zs=plot_data[:, 2][y_values == label + 1],
                        # marker=marker,
-                       c=color, s=40,
+                       c=color, s=params_obj.plot_14_dot_size ** 2, edgecolors='black',
                        label=unique_labels[label])
 
         if unknown_tups is not None:
             for ind, unknown_tup in enumerate(unknown_tups):
+                if ind >= len(markers):
+                    marker = 'x'
+                else:
+                    marker = markers[ind]
                 ax.scatter(xs=unknown_tup[0][:, 0],
                            ys=unknown_tup[0][:, 1],
                            zs=unknown_tup[0][:, 2],
-                           marker=markers[ind], c='black',
-                           s=40, alpha=0.9, label=unknown_tup[1])
+                           marker=marker, c='black',
+                           s=params_obj.plot_14_dot_size ** 2, edgecolors='black', alpha=0.9, label=unknown_tup[1])
 
+        if params_obj.plot_08_show_axes_titles:
+            ax.set_xlabel('LD1')
+            ax.set_ylabel('LD2')
+            ax.set_zlabel('LD3')
         # EDIT THIS IF YOU WANT TO CHANGE THE ANGLE OF THE PLOT
         # ax.view_init(elev=20., azim=30.)
 
     # plot titles, labels, and legends
-    if params_obj.plot_08_show_axes_titles:
-        ax.set_xlabel('LD1')
-        ax.set_ylabel('LD2')
-        ax.set_zlabel('LD3')
     if params_obj.plot_12_custom_title is not None:
         plot_title = params_obj.plot_12_custom_title
         plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
@@ -917,7 +933,7 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
         plot_title = 'From CVs: {}'.format(cv_string)
         plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
     if params_obj.plot_07_show_legend:
-        ax.legend(loc='best')
+        ax.legend(loc='best', fontsize=params_obj.plot_13_font_size)
 
     if unknown_tups is not None:
         output_name = os.path.join(output_path, class_scheme.name + '_Results-unknowns' + params_obj.plot_02_extension)
@@ -949,41 +965,44 @@ def createtargetarray_featureselect(inputlabel):
     return np.asarray(numeric_labels), np.asarray(string_labels)
 
 
-def plot_sklearn_lda_2ld(class_scheme, marker, color, label_axes):
+def plot_sklearn_lda_2ld(class_scheme, marker, color, label_axes, dot_size):
     """
-
-    :param class_scheme:
-    :param marker:
-    :param color:
-    :param label_axes:
-    :return:
+    Scatter plot the class data onto a decision regions plot using provided colors/markers/etc
+    :param class_scheme: scheme containing data and label information
+    :param marker: list of marker styles to plot for each class
+    :param color: list of colors to plot for each class
+    :param dot_size: marker size in standard plot units (will be squared for scatter plot)
+    :param label_axes: boolean: whether to label axes
+    :return: void
     """
     x_data = class_scheme.transformed_test_data
     y_values = class_scheme.numeric_labels
     unique_labels = class_scheme.unique_labels
 
     for label, marker, color in zip(range(0, len(unique_labels)), marker, color):
-        plt.scatter(x=x_data[:, 0][y_values == label + 1], y=x_data[:, 1][y_values == label + 1], marker=marker, color=color, alpha=0.5, label=unique_labels[label])
+        plt.scatter(x=x_data[:, 0][y_values == label + 1], y=x_data[:, 1][y_values == label + 1], marker=marker, color=color,
+                    alpha=0.9, label=unique_labels[label], s=dot_size ** 2, edgecolors='black')
     if label_axes:
         plt.xlabel('LD1')
         plt.ylabel('LD2')
 
 
-def plot_sklearn_lda_1ld(class_scheme, marker, color):
+def plot_sklearn_lda_1ld(class_scheme, marker, color, dot_size):
     """
-
-    :param class_scheme:
-    :param marker:
-    :param color:
-    :return:
+    Scatter plot the class data onto a decision regions plot using provided colors/markers/etc
+    :param class_scheme: scheme containing data and label information
+    :param marker: list of marker styles to plot for each class
+    :param color: list of colors to plot for each class
+    :param dot_size: marker size in standard plot units (will be squared for scatter plot)
+    :return: void
     """
     x_data = class_scheme.transformed_test_data
     y_values = class_scheme.numeric_labels
     unique_labels = class_scheme.unique_labels
 
     for label, marker, color in zip(range(0, len(unique_labels)), marker, color):
-        plt.scatter(x=x_data[:, 0][y_values == label + 1], y=np.zeros(np.shape(x_data[:, 0][y_values == label + 1])), s=100, marker=marker, color=color,
-                    alpha=0.5, label=unique_labels[label])
+        plt.scatter(x=x_data[:, 0][y_values == label + 1], y=np.zeros(np.shape(x_data[:, 0][y_values == label + 1])), marker=marker, color=color,
+                    alpha=0.9, label=unique_labels[label], s=dot_size ** 2 * 2, edgecolors='black')
 
 
 def save_scheme(scheme, outputdir):

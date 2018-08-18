@@ -1102,14 +1102,14 @@ def plot_centroids(centroid_lists_by_cv, analysis_obj, params_obj, outputpath, n
 
     # plot centroids at each collision voltage
     for x, y in zip(analysis_obj.axes[1], centroid_lists_by_cv):
-        plt.scatter([x] * len(y), y, color='b', s=(params_obj.plot_13_font_size / 2) ** 2)
+        plt.scatter([x] * len(y), y, color='b', s=params_obj.plot_14_dot_size ** 2, edgecolors='black')
 
     # plot non-protein components in red if they are present
     nonprotein_flag = False
     if nonprotein_centroids is not None:
         for x, y in zip(analysis_obj.axes[1], nonprotein_centroids):
             try:
-                plt.scatter([x] * len(y), y, color='r', s=(params_obj.plot_13_font_size / 2) ** 2)
+                plt.scatter([x] * len(y), y, color='r', s=params_obj.plot_14_dot_size ** 2, edgecolors='black')
                 if y:
                     # only label noise peaks if they are present (if any of the lists is non-empty)
                     nonprotein_flag = True
@@ -1134,8 +1134,8 @@ def plot_centroids(centroid_lists_by_cv, analysis_obj, params_obj, outputpath, n
         if nonprotein_flag:
             handles.append(matplotlib.patches.Patch(color='r', label='Noise Centroids'))
         plt.legend(handles=handles, loc='best', fontsize=params_obj.plot_13_font_size)
-
-    plt.grid('on')
+    if params_obj.plot_15_grid_bool:
+        plt.grid('on')
     output_name = analysis_obj.short_filename + '_centroids.png'
     output_path = os.path.join(outputpath, output_name)
     try:

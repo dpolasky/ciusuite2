@@ -45,6 +45,11 @@ def ciu_plot(analysis_obj, params_obj, output_dir):
     output_path = os.path.join(output_dir, output_title + params_obj.plot_02_extension)
 
     # generate the contour plot with options specified by use
+    # levels = [x for x in range(10, 110, 1)]
+    # levels.insert(0, -1)
+    # levels = [x / 100.0 for x in levels]
+    # plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, levels=levels, cmap=params_obj.ciuplot_cmap_override)
+
     plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap=params_obj.ciuplot_cmap_override)
 
     if params_obj.plot_06_show_colorbar:
