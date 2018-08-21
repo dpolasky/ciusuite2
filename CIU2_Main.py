@@ -483,10 +483,14 @@ class CIUSuite2(object):
 
         analysis_obj_list = [load_analysis_obj(x) for x in files_to_read]
         analysis_obj_list = check_axes_and_warn(analysis_obj_list)
-        averaged_obj = Original_CIU.average_ciu(analysis_obj_list, self.params_obj, self.output_dir)
-        averaged_obj.filename = save_analysis_obj(averaged_obj, analysis_obj_list[0].params, self.output_dir,
+        averaged_obj, std_data = Original_CIU.average_ciu(analysis_obj_list, self.params_obj, self.output_dir)
+        averaged_obj.filename = save_analysis_obj(averaged_obj, self.params_obj, self.output_dir,
                                                   filename_append='_Avg')
         averaged_obj.short_filename = os.path.basename(averaged_obj.filename).rstrip('.ciu')
+
+        # plot averaged object and standard deviation
+        Original_CIU.ciu_plot(averaged_obj, self.params_obj, self.output_dir)
+        Original_CIU.std_dev_plot(averaged_obj, std_data, self.params_obj, self.output_dir)
 
         self.analysis_file_list = [averaged_obj.filename]
         self.display_analysis_files()
@@ -1054,6 +1058,7 @@ class CIUSuite2(object):
                     all_probs = [x.classif_probs_by_cv for x in successful_objs_for_plot]
                     # Classification.save_lda_output_unk(all_transform_data, all_filenames, scheme.selected_features, self.output_dir)
                     Classification.save_lda_and_predictions(scheme, all_transform_data, all_predictions, all_probs, all_filenames, self.output_dir, True)
+                    Classification.plot_probabilities(self.params_obj, scheme, all_probs, self.output_dir, unknown_bool=True)
 
                 self.display_analysis_files()
         self.progress_done()

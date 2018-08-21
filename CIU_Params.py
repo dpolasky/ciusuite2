@@ -109,6 +109,10 @@ class Parameters(object):
         self.plot_13_font_size = None
         self.plot_14_dot_size = None
         self.plot_15_grid_bool = None
+        self.plot_16_xlim_lower = None
+        self.plot_17_xlim_upper = None
+        self.plot_18_ylim_lower = None
+        self.plot_19_ylim_upper = None
 
         self.output_1_save_csv = None
         self.compare_batch_1_both_dirs = None
@@ -480,6 +484,9 @@ class ParamUI(tkinter.Toplevel):
             try:
                 entered_val = float(self.entry_vars[param_key].get())
             except ValueError:
+                if 'xlim' in param_key or 'ylim' in param_key:
+                    if self.entry_vars[param_key].get() == '' or self.entry_vars[param_key].get().strip().lower() == 'none':
+                        return True
                 return False
             return param_val_list[0] <= entered_val <= param_val_list[1]
 
@@ -512,7 +519,7 @@ class ParamUI(tkinter.Toplevel):
         for key in self.entry_vars.keys():
             parsed_val = parse_param_value(self.entry_vars[key].get())
             try:
-                if parsed_val.strip().lower() == 'none':
+                if parsed_val.strip().lower() == 'none' or parsed_val.strip() == '':
                     self.return_vals[key] = None
                 else:
                     # not a 'none' string, set it as is

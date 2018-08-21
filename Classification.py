@@ -7,6 +7,7 @@ from Gaussian_Fitting import Gaussian
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches
 import pickle
 import os
 import itertools
@@ -466,85 +467,6 @@ def peak_crossval_score_detect(test_score_means, diff_from_max):
             return index + 1, value
 
 
-def save_crossval_score(crossval_data, scheme_name, outputpath):
-    """
-    Save crossvalidation data output to file at path provided
-    :param crossval_data: tuple of (training means, training stds, test means, test stds) lists
-    :param scheme_name: (string) name of scheme for labeling purposes
-    :param outputpath: directory in which to save output
-    :return: void
-    """
-    train_score_means = crossval_data[0]
-    train_score_stds = crossval_data[1]
-    test_score_means = crossval_data[2]
-    test_score_stds = crossval_data[3]
-    outfilename = os.path.join(outputpath, scheme_name + '_crossval.csv')
-    output_string = ''
-
-    lineheader = 'num_feats, train_score_mean, train_score_std, test_score_mean, test_score_std, \n'
-    output_string += lineheader
-    for ind in range(len(train_score_means)):
-        line = '{}, {}, {}, {}, {}, \n'.format(ind+1, train_score_means[ind], train_score_stds[ind],
-                                               test_score_means[ind], test_score_stds[ind])
-        output_string += line
-
-    try:
-        with open(outfilename, 'w') as outfile:
-            outfile.write(output_string)
-    except PermissionError:
-        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(outfilename))
-        with open(outfilename, 'w') as outfile:
-            outfile.write(output_string)
-
-
-def plot_crossval_scores(crossval_data, scheme_name, params_obj, outputdir):
-    """
-    Make plots of mean and std dev scores for training and test data from cross validation.
-    :param crossval_data: tuple of (training means, training stds, test means, test stds) lists
-    :param params_obj: Parameters object with plot information
-    :type params_obj: Parameters
-    :param scheme_name: (string) name of scheme for labeling purposes
-    :param outputdir: directory in which to save output
-    :return: void
-    """
-    plt.clf()
-    plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
-
-    train_score_means = crossval_data[0]
-    train_score_stds = crossval_data[1]
-    test_score_means = crossval_data[2]
-    test_score_stds = crossval_data[3]
-
-    xax = np.arange(1, len(train_score_means) + 1)
-    plt.plot(xax, train_score_means, color='blue', marker='s', label='train_score', markersize=params_obj.plot_14_dot_size, markeredgecolor='black')
-    plt.fill_between(xax, train_score_means-train_score_stds, train_score_means+train_score_stds, color='blue', alpha=0.2)
-    plt.plot(xax, test_score_means, color='green', marker='o', label='test_score', markersize=params_obj.plot_14_dot_size, markeredgecolor='black')
-    plt.fill_between(xax, test_score_means-test_score_stds, test_score_means+test_score_stds, color='green', alpha=0.2)
-
-    # plot titles, labels, and legends
-    if params_obj.plot_12_custom_title is not None:
-        plot_title = params_obj.plot_12_custom_title
-        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
-    elif params_obj.plot_11_show_title:
-        plot_title = scheme_name
-        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
-    if params_obj.plot_08_show_axes_titles:
-        plt.xlabel('Number of Features (Collision Voltages)', fontsize=params_obj.plot_13_font_size, fontweight='bold')
-        plt.ylabel('Accuracy Ratio', fontsize=params_obj.plot_13_font_size, fontweight='bold')
-    plt.xticks(fontsize=params_obj.plot_13_font_size)
-    plt.yticks(fontsize=params_obj.plot_13_font_size)
-    if params_obj.plot_07_show_legend:
-        plt.legend(loc='best', fontsize=params_obj.plot_13_font_size)
-
-    output_name = os.path.join(outputdir, scheme_name + '_crossval' + params_obj.plot_02_extension)
-    try:
-        plt.savefig(output_name)
-    except PermissionError:
-        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_name))
-        plt.savefig(output_name)
-    plt.close()
-
-
 def arrange_data_for_lda(flat_data_matrix_list, flat_label_list, features_list, flat_axes_list, flat_filenames=None):
     """
     Prepare data for LDA by arranging selected CV columns (from the original matrix) into
@@ -681,10 +603,162 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
         index += num_feats
 
     save_lda_and_predictions(scheme, x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file, output_dir, unknowns_bool=False)
+    plot_probabilities(param_obj, scheme, probs_by_file, output_dir, unknown_bool=False)
     return scheme
 
 
-# def save_lda_and_predictions(lda_transform_data_by_cv, predicted_class_by_cv, probs_by_cv, cv_list, filenames)
+def createtargetarray_featureselect(inputlabel):
+    """
+
+    :param inputlabel:
+    :return:
+    """
+    string_labels = []
+    numeric_labels = []
+    class_index = 0
+    # encode each class as an integer in the order they are presented from the initial lists
+    for input_string in inputlabel:
+        if input_string not in string_labels:
+            class_index += 1
+        string_labels.append(input_string)
+        numeric_labels.append(class_index)
+    return np.asarray(numeric_labels), np.asarray(string_labels)
+
+
+def get_unique_labels(label_list):
+    """
+    Return a list of unique labels (i.e. without duplicates) from the provided label list
+    :param label_list: list of labels (strings)
+    :return: list of unique labels (strings)
+    """
+    unique_labels = []
+    for label in label_list:
+        if label not in unique_labels:
+            unique_labels.append(label)
+    return unique_labels
+
+
+def plot_feature_scores(feature_list, params_obj, scheme_name, output_path):
+    """
+    Plot feature score by collision voltage
+    :param feature_list: list of CFeatures
+    :type feature_list: list[CFeature]
+    :param params_obj: Parameters object with plot information
+    :type params_obj: Parameters
+    :param scheme_name: (string) name of scheme for labeling purposes
+    :param output_path: directory in which to save output
+    :return: void
+    """
+    plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
+
+    mean_scores = [x.mean_score for x in feature_list]
+    std_scores = [x.std_dev_score for x in feature_list]
+    cv_axis = [x.cv for x in feature_list]
+
+    plt.errorbar(x=cv_axis, y=mean_scores, yerr=std_scores, ls='none', marker='o', color='black', markersize=params_obj.plot_14_dot_size, markeredgecolor='black')
+    plt.axhline(y=0.0, color='black', ls='--')
+
+    # plot titles, labels, and legends
+    if params_obj.plot_12_custom_title is not None:
+        plot_title = params_obj.plot_12_custom_title
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+    elif params_obj.plot_11_show_title:
+        plot_title = scheme_name
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+    if params_obj.plot_08_show_axes_titles:
+        plt.xlabel(params_obj.plot_09_x_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        plt.ylabel('-Log10(p-value)', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+    plt.xticks(fontsize=params_obj.plot_13_font_size)
+    plt.yticks(fontsize=params_obj.plot_13_font_size)
+
+    output_name = os.path.join(output_path, scheme_name + '_UFS' + params_obj.plot_02_extension)
+    try:
+        plt.savefig(output_name)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_name))
+        plt.savefig(output_name)
+    plt.close()
+
+
+def save_crossval_score(crossval_data, scheme_name, outputpath):
+    """
+    Save crossvalidation data output to file at path provided
+    :param crossval_data: tuple of (training means, training stds, test means, test stds) lists
+    :param scheme_name: (string) name of scheme for labeling purposes
+    :param outputpath: directory in which to save output
+    :return: void
+    """
+    train_score_means = crossval_data[0]
+    train_score_stds = crossval_data[1]
+    test_score_means = crossval_data[2]
+    test_score_stds = crossval_data[3]
+    outfilename = os.path.join(outputpath, scheme_name + '_crossval.csv')
+    output_string = ''
+
+    lineheader = 'num_feats, train_score_mean, train_score_std, test_score_mean, test_score_std, \n'
+    output_string += lineheader
+    for ind in range(len(train_score_means)):
+        line = '{}, {}, {}, {}, {}, \n'.format(ind+1, train_score_means[ind], train_score_stds[ind],
+                                               test_score_means[ind], test_score_stds[ind])
+        output_string += line
+
+    try:
+        with open(outfilename, 'w') as outfile:
+            outfile.write(output_string)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(outfilename))
+        with open(outfilename, 'w') as outfile:
+            outfile.write(output_string)
+
+
+def plot_crossval_scores(crossval_data, scheme_name, params_obj, outputdir):
+    """
+    Make plots of mean and std dev scores for training and test data from cross validation.
+    :param crossval_data: tuple of (training means, training stds, test means, test stds) lists
+    :param params_obj: Parameters object with plot information
+    :type params_obj: Parameters
+    :param scheme_name: (string) name of scheme for labeling purposes
+    :param outputdir: directory in which to save output
+    :return: void
+    """
+    plt.clf()
+    plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
+
+    train_score_means = crossval_data[0]
+    train_score_stds = crossval_data[1]
+    test_score_means = crossval_data[2]
+    test_score_stds = crossval_data[3]
+
+    xax = np.arange(1, len(train_score_means) + 1)
+    plt.plot(xax, train_score_means, color='blue', marker='s', label='train_score', markersize=params_obj.plot_14_dot_size, markeredgecolor='black')
+    plt.fill_between(xax, train_score_means-train_score_stds, train_score_means+train_score_stds, color='blue', alpha=0.2)
+    plt.plot(xax, test_score_means, color='green', marker='o', label='test_score', markersize=params_obj.plot_14_dot_size, markeredgecolor='black')
+    plt.fill_between(xax, test_score_means-test_score_stds, test_score_means+test_score_stds, color='green', alpha=0.2)
+
+    # plot titles, labels, and legends
+    if params_obj.plot_12_custom_title is not None:
+        plot_title = params_obj.plot_12_custom_title
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+    elif params_obj.plot_11_show_title:
+        plot_title = scheme_name
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+    if params_obj.plot_08_show_axes_titles:
+        plt.xlabel('Number of Features (Collision Voltages)', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        plt.ylabel('Accuracy Ratio', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+    plt.xticks(fontsize=params_obj.plot_13_font_size)
+    plt.yticks(fontsize=params_obj.plot_13_font_size)
+    if params_obj.plot_07_show_legend:
+        plt.legend(loc='best', fontsize=params_obj.plot_13_font_size)
+
+    output_name = os.path.join(outputdir, scheme_name + '_crossval' + params_obj.plot_02_extension)
+    try:
+        plt.savefig(output_name)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_name))
+        plt.savefig(output_name)
+    plt.close()
+
+
 def save_lda_and_predictions(scheme, lda_transform_data_by_file, predicted_class_by_file, probs_by_file, filenames, output_path, unknowns_bool):
     """
     Unified CSV output method for saving classification results (data transformed along LD axes and predicted
@@ -747,58 +821,77 @@ def save_lda_and_predictions(scheme, lda_transform_data_by_file, predicted_class
             outfile.write(output_string)
 
 
-def get_unique_labels(label_list):
+def plot_probabilities(params_obj, scheme, class_probs_by_file, output_path, unknown_bool):
     """
-    Return a list of unique labels (i.e. without duplicates) from the provided label list
-    :param label_list: list of labels (strings)
-    :return: list of unique labels (strings)
-    """
-    unique_labels = []
-    for label in label_list:
-        if label not in unique_labels:
-            unique_labels.append(label)
-    return unique_labels
-
-
-def plot_feature_scores(feature_list, params_obj, scheme_name, output_path):
-    """
-    Plot feature score by collision voltage
-    :param feature_list: list of CFeatures
-    :type feature_list: list[CFeature]
-    :param params_obj: Parameters object with plot information
+    Generate a stacked bar graph of classification output probabilities for crossval data or unknowns.
+    Organized such that the most likely class is on top of each stacked bar, and that the probabilities
+    sum to 100%.
+    :param params_obj: parameter container with plot options
     :type params_obj: Parameters
-    :param scheme_name: (string) name of scheme for labeling purposes
-    :param output_path: directory in which to save output
+    :param scheme: Classification scheme with label information
+    :type scheme: ClassificationScheme
+    :param class_probs_by_file: list of lists of probabilities for each class (i.e. [file 1=[cv1[class1, class2, ...], cv2, ...], class 2, ...], file2, ...])
+    :param output_path: directory in which to save the plot
+    :param unknown_bool: if saving unknown data or not (to label output)
     :return: void
     """
+    plt.clf()
     plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
 
-    mean_scores = [x.mean_score for x in feature_list]
-    std_scores = [x.std_dev_score for x in feature_list]
-    cv_axis = [x.cv for x in feature_list]
+    # prepare colors and labels
+    initial_colors = ['dodgerblue', 'orange', 'fuchsia', 'forestgreen', 'gray', 'cyan', 'lightgreen', 'magenta', 'yellow']
+    colors, labels = [], []
+    for index, label in enumerate(scheme.unique_labels):
+        colors.append(initial_colors[index])
+        labels.append(label)
 
-    plt.errorbar(x=cv_axis, y=mean_scores, yerr=std_scores, ls='none', marker='o', color='black', markersize=params_obj.plot_14_dot_size, markeredgecolor='black')
-    plt.axhline(y=0.0, color='black', ls='--')
+    # Stack each class probability in the bar graph
+    for file_index in range(len(class_probs_by_file)):
+        avg_probs = np.average(class_probs_by_file[file_index], axis=0)
+        prob_class_tups = [(ind, val) for ind, val in enumerate(avg_probs)]
+        sorted_probs = sorted(prob_class_tups, key=lambda x: x[1])
+        y_offset = 0
+        bar_index = 0
+        for class_index, class_prob in sorted_probs:
+            if bar_index > 0:
+                y_offset += sorted_probs[bar_index - 1][1]
+            plt.bar(file_index, class_prob, bottom=y_offset, color=colors[class_index], width=0.6)
+            bar_index += 1
+
+    # box = ax.get_position()
+    # ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+    # ax.legend(labels, loc='center left', bbox_to_anchor=(1.2, 0.5), fontsize=params_obj.plot_13_font_size)
 
     # plot titles, labels, and legends
     if params_obj.plot_12_custom_title is not None:
         plot_title = params_obj.plot_12_custom_title
         plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
     elif params_obj.plot_11_show_title:
-        plot_title = scheme_name
+        plot_title = 'Probabilities by Class for {}'.format(scheme.name)
         plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
     if params_obj.plot_08_show_axes_titles:
-        plt.xlabel(params_obj.plot_09_x_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
-        plt.ylabel('-Log10(p-value)', fontsize=params_obj.plot_13_font_size, fontweight='bold')
-    plt.xticks(fontsize=params_obj.plot_13_font_size)
+        plt.xlabel('Sample Number', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        plt.ylabel('Probability', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+    if params_obj.plot_07_show_legend:
+        handles = []
+        for index, color in enumerate(colors):
+            patch_artist = matplotlib.patches.Patch(color=color, label=labels[index])
+            handles.append(patch_artist)
+        plt.legend(handles=handles, labels=labels, loc='center left', bbox_to_anchor=(1, 0.5), fontsize=params_obj.plot_13_font_size)
+    num_files = len(class_probs_by_file)
+    plt.xticks(np.arange(num_files), np.arange(1, num_files + 1), fontsize=params_obj.plot_13_font_size)
     plt.yticks(fontsize=params_obj.plot_13_font_size)
 
-    output_name = os.path.join(output_path, scheme_name + '_UFS' + params_obj.plot_02_extension)
+    if unknown_bool:
+        output_name = os.path.join(output_path, scheme.name + '_probs-unknown' + params_obj.plot_02_extension)
+    else:
+        output_name = os.path.join(output_path, scheme.name + '_probs' + params_obj.plot_02_extension)
+
     try:
-        plt.savefig(output_name)
+        plt.savefig(output_name, bbox_inches='tight')
     except PermissionError:
         messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_name))
-        plt.savefig(output_name)
+        plt.savefig(output_name, bbox_inches='tight')
     plt.close()
 
 
@@ -819,9 +912,11 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
         return
     fig = plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
 
-    markers = ('s', 'o')
-    # markers = ('s', 'o', '^', 'v', 'D', '<', '>', '4', '8', 'h', 'H', '1', '2', '3', '+', '*', 'p', 'P', 'x')
-    colors = ['deepskyblue', 'orange', 'fuchsia', 'mediumspringgreen', 'gray', 'cyan', 'lightgreen', 'magenta', 'yellow']
+    # markers = ('s', 'o')
+    markers = ('s', 'o', '^', 'v', 'D', '<', '>', '4', '8', 'h', 'H', '1', '2', '3', '+', '*', 'p', 'P', 'x')
+    # colors = ['deepskyblue', 'orange', 'fuchsia', 'mediumspringgreen', 'gray', 'cyan', 'lightgreen', 'magenta', 'yellow']
+    colors = ['dodgerblue', 'orange', 'fuchsia', 'forestgreen', 'gray', 'cyan', 'lightgreen', 'magenta', 'yellow']
+
     cmap = ListedColormap(colors[:len(class_scheme.unique_labels)])
     # decide whether the data has 1d or nds
     ax = plt.subplot(111)
@@ -945,24 +1040,6 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
         messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_name))
         plt.savefig(output_name)
     plt.close()
-
-
-def createtargetarray_featureselect(inputlabel):
-    """
-
-    :param inputlabel:
-    :return:
-    """
-    string_labels = []
-    numeric_labels = []
-    class_index = 0
-    # encode each class as an integer in the order they are presented from the initial lists
-    for input_string in inputlabel:
-        if input_string not in string_labels:
-            class_index += 1
-        string_labels.append(input_string)
-        numeric_labels.append(class_index)
-    return np.asarray(numeric_labels), np.asarray(string_labels)
 
 
 def plot_sklearn_lda_2ld(class_scheme, marker, color, label_axes, dot_size):
@@ -1109,8 +1186,8 @@ class ClassificationScheme(object):
         unk_ciu_obj.classif_probs_avg = pred_probs_avg
         unk_ciu_obj.classif_transformed_data = unknown_transformed_lda
 
-        unknown_plot_info = [(unknown_transformed_lda, unk_ciu_obj.short_filename)]
-        plot_classification_decision_regions(self, params_obj, output_path, unknown_tups=unknown_plot_info)
+        # unknown_plot_info = [(unknown_transformed_lda, unk_ciu_obj.short_filename)]
+        # plot_classification_decision_regions(self, params_obj, output_path, unknown_tups=unknown_plot_info)
 
         return unk_ciu_obj
 

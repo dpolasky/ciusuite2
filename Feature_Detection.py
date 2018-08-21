@@ -13,6 +13,7 @@ import os
 import math
 import Raw_Processing
 import Gaussian_Fitting
+import Original_CIU
 from tkinter import messagebox
 
 # imports for type checking
@@ -454,7 +455,8 @@ def plot_features(feature_list, analysis_obj, params_obj, outputdir, filename_ap
     plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
 
     # plot the initial CIU contour plot for reference
-    plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap=params_obj.plot_01_cmap)
+    levels = Original_CIU.get_contour_levels(analysis_obj.ciu_data)
+    plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, levels=levels, cmap=params_obj.plot_01_cmap)
 
     # prepare and plot the actual Features using saved data
     feature_index = 1
@@ -502,6 +504,22 @@ def plot_features(feature_list, analysis_obj, params_obj, outputdir, filename_ap
     plt.yticks(fontsize=params_obj.plot_13_font_size)
     if params_obj.plot_07_show_legend:
         plt.legend(loc='best', fontsize=params_obj.plot_13_font_size)
+
+    # set x/y limits if applicable, allowing for partial limits
+    if params_obj.plot_16_xlim_lower is not None:
+        if params_obj.plot_17_xlim_upper is not None:
+            plt.xlim((params_obj.plot_16_xlim_lower, params_obj.plot_17_xlim_upper))
+        else:
+            plt.xlim(xmin=params_obj.plot_16_xlim_lower)
+    elif params_obj.plot_17_xlim_upper is not None:
+        plt.xlim(xmax=params_obj.plot_17_xlim_upper)
+    if params_obj.plot_18_ylim_lower is not None:
+        if params_obj.plot_19_ylim_upper is not None:
+            plt.ylim((params_obj.plot_18_ylim_lower, params_obj.plot_19_ylim_upper))
+        else:
+            plt.ylim(ymin=params_obj.plot_18_ylim_lower)
+    elif params_obj.plot_17_xlim_upper is not None:
+        plt.ylim(ymax=params_obj.plot_19_ylim_upper)
 
     # save plot
     if filename_append is None:
@@ -646,7 +664,8 @@ def plot_transitions(transition_list, analysis_obj, params_obj, outputdir):
     plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
 
     # plot the initial CIU contour plot for reference
-    plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap=params_obj.plot_01_cmap)
+    levels = Original_CIU.get_contour_levels(analysis_obj.ciu_data)
+    plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, levels=levels, cmap=params_obj.plot_01_cmap)
 
     # plot all transitions
     transition_num = 0
@@ -672,6 +691,22 @@ def plot_transitions(transition_list, analysis_obj, params_obj, outputdir):
         trans_plot = plt.plot(interp_x, y_fit, color=trans_line_color, label='CIU50: {:.1f}, r2=: {:.2f}'.format(transition.ciu50, transition.rsq))
         plt.setp(trans_plot, linewidth=2)
         transition_num += 1
+
+    # set x/y limits if applicable, allowing for partial limits
+    if params_obj.plot_16_xlim_lower is not None:
+        if params_obj.plot_17_xlim_upper is not None:
+            plt.xlim((params_obj.plot_16_xlim_lower, params_obj.plot_17_xlim_upper))
+        else:
+            plt.xlim(xmin=params_obj.plot_16_xlim_lower)
+    elif params_obj.plot_17_xlim_upper is not None:
+        plt.xlim(xmax=params_obj.plot_17_xlim_upper)
+    if params_obj.plot_18_ylim_lower is not None:
+        if params_obj.plot_19_ylim_upper is not None:
+            plt.ylim((params_obj.plot_18_ylim_lower, params_obj.plot_19_ylim_upper))
+        else:
+            plt.ylim(ymin=params_obj.plot_18_ylim_lower)
+    elif params_obj.plot_17_xlim_upper is not None:
+        plt.ylim(ymax=params_obj.plot_19_ylim_upper)
 
     # plot titles, labels, and legends
     if params_obj.plot_12_custom_title is not None:

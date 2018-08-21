@@ -1136,7 +1136,24 @@ def plot_centroids(centroid_lists_by_cv, analysis_obj, params_obj, outputpath, n
         plt.legend(handles=handles, loc='best', fontsize=params_obj.plot_13_font_size)
     if params_obj.plot_15_grid_bool:
         plt.grid('on')
-    output_name = analysis_obj.short_filename + '_centroids.png'
+
+    # set x/y limits if applicable, allowing for partial limits
+    if params_obj.plot_16_xlim_lower is not None:
+        if params_obj.plot_17_xlim_upper is not None:
+            plt.xlim((params_obj.plot_16_xlim_lower, params_obj.plot_17_xlim_upper))
+        else:
+            plt.xlim(xmin=params_obj.plot_16_xlim_lower)
+    elif params_obj.plot_17_xlim_upper is not None:
+        plt.xlim(xmax=params_obj.plot_17_xlim_upper)
+    if params_obj.plot_18_ylim_lower is not None:
+        if params_obj.plot_19_ylim_upper is not None:
+            plt.ylim((params_obj.plot_18_ylim_lower, params_obj.plot_19_ylim_upper))
+        else:
+            plt.ylim(ymin=params_obj.plot_18_ylim_lower)
+    elif params_obj.plot_17_xlim_upper is not None:
+        plt.ylim(ymax=params_obj.plot_19_ylim_upper)
+
+    output_name = analysis_obj.short_filename + '_centroids' + params_obj.plot_02_extension
     output_path = os.path.join(outputpath, output_name)
     try:
         plt.savefig(output_path)

@@ -44,13 +44,26 @@ def ciu_plot(analysis_obj, params_obj, output_dir):
     output_title = analysis_obj.short_filename
     output_path = os.path.join(output_dir, output_title + params_obj.plot_02_extension)
 
-    # generate the contour plot with options specified by use
-    # levels = [x for x in range(10, 110, 1)]
-    # levels.insert(0, -1)
-    # levels = [x / 100.0 for x in levels]
-    # plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, levels=levels, cmap=params_obj.ciuplot_cmap_override)
+    # Generate contours. Aiming for levels of ~ 0 - 1.0 in steps of 0.01, but merge the bottom 10 levels together for easier editing.
+    levels = get_contour_levels(analysis_obj.ciu_data)
+    plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, levels=levels, cmap=params_obj.ciuplot_cmap_override)
+    # plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap=params_obj.ciuplot_cmap_override)
 
-    plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], analysis_obj.ciu_data, 100, cmap=params_obj.ciuplot_cmap_override)
+    # set x/y limits if applicable, allowing for partial limits
+    if params_obj.plot_16_xlim_lower is not None:
+        if params_obj.plot_17_xlim_upper is not None:
+            plt.xlim((params_obj.plot_16_xlim_lower, params_obj.plot_17_xlim_upper))
+        else:
+            plt.xlim(xmin=params_obj.plot_16_xlim_lower)
+    elif params_obj.plot_17_xlim_upper is not None:
+        plt.xlim(xmax=params_obj.plot_17_xlim_upper)
+    if params_obj.plot_18_ylim_lower is not None:
+        if params_obj.plot_19_ylim_upper is not None:
+            plt.ylim((params_obj.plot_18_ylim_lower, params_obj.plot_19_ylim_upper))
+        else:
+            plt.ylim(ymin=params_obj.plot_18_ylim_lower)
+    elif params_obj.plot_17_xlim_upper is not None:
+        plt.ylim(ymax=params_obj.plot_19_ylim_upper)
 
     if params_obj.plot_06_show_colorbar:
         cbar = plt.colorbar(ticks=[0, .25, .5, .75, 1])
@@ -69,6 +82,27 @@ def ciu_plot(analysis_obj, params_obj, output_dir):
     plt.close()
 
     return 'returning a value so that the mainloop doesnt stop'
+
+
+def get_contour_levels(ciu_data, merge_cutoff=10, num_contours=100):
+    """
+    Generates contours for CIU plots with the bottom 10% of data merged into a single contour for
+    easier post-processing. Detects min/max values to ensure that contours match the data.
+    :param ciu_data: analysis_obj.ciu_data - 2D numpy array of DT/CV ciu data
+    :param merge_cutoff: Percent (int) value below which to merge all contours together. Default 10% for data scaled to 100
+    :param num_contours: approximate number of contour levels to generate. Default 100
+    :return: list of ints (contour levels). Pass returned list directly to pyplot.contourf as 'levels' arg
+    """
+    possible_steps = np.asarray([0.001, 0.01, 0.1, 1, 10, 100])
+
+    max_val = int(round(np.max(ciu_data) * 100)) + 1  # +1 and -1 for max/min vals are to prevent white spots from appearing after rounding
+    min_val = int(round(np.min(ciu_data) * 100)) - 1
+    step = (max_val - min_val) / float(num_contours)      # round magnitude step to get close to 100 contours/bins total
+    step = possible_steps[(np.abs(possible_steps - step)).argmin()]
+    levels = [x for x in np.arange(merge_cutoff, max_val, step)]
+    levels.insert(0, min_val)
+    levels = [x / 100.0 for x in levels]  # convert from integers (percent) back to float (relative intensity)
+    return levels
 
 
 def rmsd_difference(data_1, data_2):
@@ -137,6 +171,22 @@ def rmsd_plot(difference_matrix, axes, contour_scale, tick_scale, rtext, outputd
     plt.xticks(fontsize=params_obj.plot_13_font_size)
     plt.yticks(fontsize=params_obj.plot_13_font_size)
 
+    # set x/y limits if applicable, allowing for partial limits
+    if params_obj.plot_16_xlim_lower is not None:
+        if params_obj.plot_17_xlim_upper is not None:
+            plt.xlim((params_obj.plot_16_xlim_lower, params_obj.plot_17_xlim_upper))
+        else:
+            plt.xlim(xmin=params_obj.plot_16_xlim_lower)
+    elif params_obj.plot_17_xlim_upper is not None:
+        plt.xlim(xmax=params_obj.plot_17_xlim_upper)
+    if params_obj.plot_18_ylim_lower is not None:
+        if params_obj.plot_19_ylim_upper is not None:
+            plt.ylim((params_obj.plot_18_ylim_lower, params_obj.plot_19_ylim_upper))
+        else:
+            plt.ylim(ymin=params_obj.plot_18_ylim_lower)
+    elif params_obj.plot_17_xlim_upper is not None:
+        plt.ylim(ymax=params_obj.plot_19_ylim_upper)
+
     # save and close
     output_path = os.path.join(outputdir, '{}-{}{}'.format(file1, file2, params_obj.plot_02_extension))
     try:
@@ -172,8 +222,26 @@ def std_dev_plot(analysis_obj, std_dev_matrix, params_obj, output_dir):
 
     # plot standard deviation contour plot, normalized to the maximum std dev observed
     max_std_dev = np.max(std_dev_matrix)
-    contour_scale = np.linspace(0, max_std_dev, 100, endpoint=True)
+    # contour_scale = np.linspace(0, max_std_dev, 100, endpoint=True)
+    cutoff = int(round(0.05 * max_std_dev * 100))   # combine lowest 5% into single contour
+    contour_scale = get_contour_levels(std_dev_matrix, merge_cutoff=cutoff)
     plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], std_dev_matrix, contour_scale, cmap=params_obj.plot_01_cmap)
+
+    # set x/y limits if applicable, allowing for partial limits
+    if params_obj.plot_16_xlim_lower is not None:
+        if params_obj.plot_17_xlim_upper is not None:
+            plt.xlim((params_obj.plot_16_xlim_lower, params_obj.plot_17_xlim_upper))
+        else:
+            plt.xlim(xmin=params_obj.plot_16_xlim_lower)
+    elif params_obj.plot_17_xlim_upper is not None:
+        plt.xlim(xmax=params_obj.plot_17_xlim_upper)
+    if params_obj.plot_18_ylim_lower is not None:
+        if params_obj.plot_19_ylim_upper is not None:
+            plt.ylim((params_obj.plot_18_ylim_lower, params_obj.plot_19_ylim_upper))
+        else:
+            plt.ylim(ymin=params_obj.plot_18_ylim_lower)
+    elif params_obj.plot_17_xlim_upper is not None:
+        plt.ylim(ymax=params_obj.plot_19_ylim_upper)
 
     # plot desired labels and legends
     if params_obj.plot_08_show_axes_titles:
@@ -224,10 +292,10 @@ def average_ciu(analysis_obj_list, params_obj, outputdir):
     averaged_obj.raw_obj_list = raw_obj_list
 
     # plot averaged object and standard deviation
-    ciu_plot(averaged_obj, params_obj, outputdir)
-    std_dev_plot(averaged_obj, std_data, params_obj, outputdir)
+    # ciu_plot(averaged_obj, params_obj, outputdir)
+    # std_dev_plot(averaged_obj, std_data, params_obj, outputdir)
 
-    return averaged_obj
+    return averaged_obj, std_data
 
 
 def interpolate_axes(axis1, axis2, num_bins):
