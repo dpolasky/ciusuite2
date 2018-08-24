@@ -8,7 +8,7 @@
     <property name="width">200</property>
     <child>
       <object class="ttk.Frame" id="Frame_1_top_and_params">
-        <property name="height">65</property>
+        <property name="height">72</property>
         <property name="padding">5</property>
         <property name="relief">groove</property>
         <property name="width">410</property>
@@ -36,7 +36,7 @@
         </layout>
         <child>
           <object class="ttk.Label" id="Title_Label">
-            <property name="font">{Arial} 16 {italic}</property>
+            <property name="font">{Arial} 20 {italic}</property>
             <property name="text" translatable="yes">CIUSuite 2</property>
             <layout>
               <property name="column">0</property>
@@ -70,11 +70,33 @@
         </child>
         <child>
           <object class="ttk.Label" id="Label_2">
-            <property name="text" translatable="yes">                                          </property>
+            <property name="text" translatable="yes">                                           </property>
             <layout>
               <property name="column">3</property>
               <property name="propagate">True</property>
               <property name="row">1</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Button" id="Button_About">
+            <property name="command">on_button_about_clicked</property>
+            <property name="text" translatable="yes">About</property>
+            <layout>
+              <property name="column">3</property>
+              <property name="propagate">True</property>
+              <property name="row">0</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Button" id="Button_Help">
+            <property name="command">on_button_help_clicked</property>
+            <property name="text" translatable="yes">Help</property>
+            <layout>
+              <property name="column">0</property>
+              <property name="propagate">True</property>
+              <property name="row">0</property>
             </layout>
           </object>
         </child>
@@ -365,7 +387,7 @@
         </child>
         <child>
           <object class="ttk.Label" id="Label_new_ciu">
-            <property name="text" translatable="yes">New CIUSuite Methods: (still under development)</property>
+            <property name="text" translatable="yes">Advanced Analyses:</property>
             <layout>
               <property name="column">0</property>
               <property name="columnspan">3</property>
@@ -428,7 +450,7 @@
         </layout>
         <child>
           <object class="ttk.Label" id="Label_old_ciusuite">
-            <property name="text" translatable="yes">Old CIUSuite Methods:</property>
+            <property name="text" translatable="yes">Basic CIU Processing:</property>
             <layout>
               <property name="column">0</property>
               <property name="columnspan">2</property>

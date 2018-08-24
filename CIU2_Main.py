@@ -1,10 +1,25 @@
 """
-Main entry point for CIUSuite 2. Designed to allow the user to choose files and perform
-processing to generate analysis objects, and process analysis objects. Probably will need
-a (very) basic GUI of some kind.
+Main entry point for CIUSuite 2 and location of all GUI handling code, along with some
+basic file operations.
+
+
+CIUSuite 2 Copyright (C) 2018 Daniel Polasky and Sugyan Dixit
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 
-# GUI test
 import pygubu
 import pygubu.widgets.simpletooltip as tooltip
 import tkinter as tk
@@ -42,12 +57,17 @@ else:
 # find resource files, allowing both with and without Vendor-raw mode
 try:
     hard_file_path_ui = os.path.join(root_dir, 'CIUSuite2.ui')
+    # test file path
+    with open(hard_file_path_ui, 'r'):
+        print('Found base UI file')
 except FileNotFoundError:
-    hard_file_path_ui = os.path.join(root_dir, 'CIUSuite2_withVendor.ui')
+    hard_file_path_ui = os.path.join(root_dir, 'CIUSuite2_Vendor.ui')
 hard_params_file = os.path.join(root_dir, 'CIU2_param_info.csv')
 hard_crop_ui = os.path.join(root_dir, 'Crop_vals.ui')
 hard_agilent_ext_path = os.path.join(root_dir, os.path.join('Agilent_Extractor', 'MIDAC_CIU_Extractor.exe'))
 hard_tooltips_file = os.path.join(root_dir, 'tooltips.txt')
+help_file = os.path.join(root_dir, 'CIUSuite2_Manual.pdf')
+about_file = os.path.join(root_dir, 'README.txt')
 
 
 class CIUSuite2(object):
@@ -72,6 +92,8 @@ class CIUSuite2(object):
         self.mainwindow.protocol('WM_DELETE_WINDOW', self.on_close_window)
 
         callbacks = {
+            'on_button_help_clicked': self.on_button_help_clicked,
+            'on_button_about_clicked': self.on_button_about_clicked,
             'on_button_rawfile_clicked': self.on_button_rawfile_clicked,
             'on_button_analysisfile_clicked': self.on_button_analysisfile_clicked,
             'on_button_vendor_raw_clicked': self.on_button_vendor_raw_clicked,
@@ -132,6 +154,20 @@ class CIUSuite2(object):
         tooltip_dict = parse_tooltips_file(hard_tooltips_file)
         for tip_key, tip_value in tooltip_dict.items():
             tooltip.create(self.builder.get_object(tip_key), tip_value)
+
+    def on_button_help_clicked(self):
+        """
+        Open the manual
+        :return: void
+        """
+        subprocess.Popen(help_file, shell=True)
+
+    def on_button_about_clicked(self):
+        """
+        Open the license/about information file
+        :return: void
+        """
+        subprocess.Popen(about_file, shell=True)
 
     def on_button_rawfile_clicked(self):
         """
@@ -1189,11 +1225,12 @@ class CIUSuite2(object):
             if vendor_type == 'agilent':
                 # Call Agilent extractor using the directory chosen by the user for output
                 raw_dir = filedialog.askdirectory(title='Choose directory in which to save _raw.csv files from Agilent data')
-                agilent_args = hard_agilent_ext_path + ' ' + raw_dir
+                agilent_args = '{} "{}"'.format(hard_agilent_ext_path, raw_dir)
                 completed_proc = subprocess.run(agilent_args)
 
                 if not completed_proc.returncode == 0:
                     messagebox.showerror('Data Extraction Error', 'Error: Agilent Data Extraction Failed. Returning.')
+                    self.progress_done()
                     return
 
                 # first, edit file CV headers since we can't get that information from the Agilent raw library
