@@ -1233,11 +1233,18 @@ class CIUSuite2(object):
                     self.progress_done()
                     return
 
-                # first, edit file CV headers since we can't get that information from the Agilent raw library
-                # raw_files = [os.path.join(raw_dir, x) for x in os.listdir(raw_dir) if x.endswith('_raw.csv')]
+                # Ask user for the extracted files
                 raw_files = filedialog.askopenfilenames(title='Choose the extracted files to analyze', initialdir=raw_dir, filetypes=[('_raw.csv', '_raw.csv')])
                 cv_headers, parsing_success = [], False
-                original_header = Raw_Data_Import.get_header(raw_files[0])
+
+                # first, edit file CV headers since we can't get that information from the Agilent raw library
+                try:
+                    original_header = Raw_Data_Import.get_header(raw_files[0])
+                except IndexError:
+                    # no files selected by the user (cancel). Return to mainloop
+                    self.progress_done()
+                    return
+
                 while not parsing_success:
                     cv_headers, parsing_success = Raw_Data_Import.ask_input_cv_data(original_header)
 
