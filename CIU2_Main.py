@@ -39,10 +39,14 @@ if getattr(sys, 'frozen', False):
 else:
     root_dir = os.path.dirname(__file__)
 
-hard_file_path_ui = os.path.join(root_dir, 'CIUSuite2.ui')
+# find resource files, allowing both with and without Vendor-raw mode
+try:
+    hard_file_path_ui = os.path.join(root_dir, 'CIUSuite2.ui')
+except FileNotFoundError:
+    hard_file_path_ui = os.path.join(root_dir, 'CIUSuite2_withVendor.ui')
 hard_params_file = os.path.join(root_dir, 'CIU2_param_info.csv')
 hard_crop_ui = os.path.join(root_dir, 'Crop_vals.ui')
-hard_agilent_ext_path = os.path.join(root_dir, os.path.join('Agilent_RawExtractor', 'MIDAC_CIU_Extractor.exe'))
+hard_agilent_ext_path = os.path.join(root_dir, os.path.join('Agilent_Extractor', 'MIDAC_CIU_Extractor.exe'))
 hard_tooltips_file = os.path.join(root_dir, 'tooltips.txt')
 
 
