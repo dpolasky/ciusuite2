@@ -323,6 +323,8 @@ def parse_params_file(params_file):
                             param_dict[splits[0].strip()] = True
                         elif value.lower() in ['false', 'f', 'no', 'n']:
                             param_dict[splits[0].strip()] = False
+                        elif value == '':
+                            param_dict[splits[0].strip()] = None
                         else:
                             param_dict[splits[0].strip()] = splits[1].strip()
 
