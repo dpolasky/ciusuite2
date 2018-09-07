@@ -65,6 +65,7 @@ except FileNotFoundError:
 hard_params_file = os.path.join(root_dir, 'CIU2_param_info.csv')
 hard_crop_ui = os.path.join(root_dir, 'Crop_vals.ui')
 hard_agilent_ext_path = os.path.join(root_dir, os.path.join('Agilent_Extractor', 'MIDAC_CIU_Extractor.exe'))
+hard_twimextract_path = os.path.join(root_dir, 'TWIMExtract', 'jars', 'TWIMExtract.jar')
 hard_tooltips_file = os.path.join(root_dir, 'tooltips.txt')
 help_file = os.path.join(root_dir, 'CIUSuite2_Manual.pdf')
 about_file = os.path.join(root_dir, 'README.txt')
@@ -1252,9 +1253,20 @@ class CIUSuite2(object):
                     Raw_Data_Import.read_agilent_and_correct(raw_file, cv_headers)
 
             elif vendor_type == 'waters':
-                # todo: implement?
+                # todo: test
+                raw_dir = filedialog.askdirectory(title='Choose directory in which to save _raw.csv files from Agilent data')
+                # waters_args = '{} "{}"'.format(hard_agilent_ext_path, raw_dir)
+                # todo: update TWIMExtract to accept a single arg on command line to specify raw directory
+                waters_args = 'java -jar {} {}'.format(hard_twimextract_path, raw_dir)
+                completed_proc = subprocess.run(waters_args)
+
+                if not completed_proc.returncode == 0:
+                    messagebox.showerror('Data Extraction Error', 'Error: Waters Data Extraction Failed. Returning.')
+                    self.progress_done()
+                    return
+
                 # raw_dir = ''
-                raw_files = []
+                raw_files = filedialog.askopenfilenames(title='Choose the extracted files to analyze', initialdir=raw_dir, filetypes=[('_raw.csv', '_raw.csv')])
 
             else:
                 print('invalid vendor')
