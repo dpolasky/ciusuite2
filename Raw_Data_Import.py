@@ -7,6 +7,8 @@ DP
 from PyQt5 import QtWidgets
 import sys
 import os
+import shutil
+import subprocess
 import numpy as np
 import tkinter
 from tkinter import messagebox
@@ -57,44 +59,116 @@ def check_data(file_list, accepted_endings):
     # no problems found, return True
     return True
 
-# def run_extractor(input_path, output_path, mode_int, func_num=None, range_path=None, rule_bool=None, combine_bool=None):
-#     """
-#     Run the tool with specified arguments (after formatting them, combining to 1 string, and adding the tool dir)
-#     :param input_path: Full path to the input .raw folder to extract from
-#     :param output_path: Full path to directory in which to place output file(s)
-#     :param mode_int: 0 = RT, 1 = DT, 2 = MZ. Dimension to save upon extraction
-#     :param func_num: Function number of file to analyze. If not supplied, defaults to extracting all functions
-#     :param range_path: OPTIONAL. Full path to the range file to use to extract. If not specified, full range used
-#     :param rule_bool: OPTIONAL. 'true' or 'false'. If true, program will expect range_arg to point to a .rul file
-#     :param combine_bool: OPTIONAL. 'true' or 'false'. If true, outputs from the same raw file will be combined
-#     :return: none
-#     """
-#     # format arguments that are present. If range/rule/combine are not supplied, do not pass anything
-#     input_path = '-i "' + input_path + '"'    # use quotes to allow spaces/etc in filenames
-#     output_path = '-o "' + output_path + '"'
-#     mode_int = '-m ' + str(mode_int)
-#     if func_num is not None:
-#         func_num = '-f ' + str(func_num)
-#     else:
-#         func_num = ''
-#     if range_path is not None:
-#         range_path = '-r "' + range_path + '"'
-#     else:
-#         range_path = ''
-#     if rule_bool is not None:
-#         rule_bool = '-rulemode ' + rule_bool
-#     else:
-#         rule_bool = ''
-#     if combine_bool is not None:
-#         combine_bool = '-combinemode ' + combine_bool
-#     else:
-#         combine_bool = ''
-#
-#     arg_list = [tool_arg, input_path, output_path, mode_int, func_num, range_path, rule_bool, combine_bool]
-#     arg_fmt = ['{}'.format(x) for x in arg_list]
-#     args = ' '.join(arg_fmt)
-#     # print(args)
-#     subprocess.run(args)
+
+def twimex_single_range(range_info, raw_files, save_dir, extractor_path):
+    """
+    Use TWIMExtract to extract _raw.csv files for a single set of range information for all raw files specified.
+    Uses DT mode extraction and combines each output from the file to generate _raw.csv files that are ready for
+    CIUSuit2 import
+    :param range_info: list of [range_name, mz_low, mz_high, rt_low, rt_high, dt_low, dt_high] in m/z, mins, bins, respectively
+    :param raw_files: list of paths from which to extract raw data (.raw folders)
+    :param save_dir: directory in which to save _raw.csv output
+    :param extractor_path: full system path to TWIMExtract.jar
+    :return: list of filenames extracted
+    """
+    # Write rangefile into temp dir
+    # todo: test
+    temp_dir = os.path.join(save_dir, 'temp')
+    if not os.path.exists(temp_dir):
+        os.makedirs(temp_dir)
+
+    range_path = write_rangefile(range_info, temp_dir)
+    dt_mode = 1
+
+    for raw_file in raw_files:
+        # Method to write output file given the splits array from a line in the template file
+        run_extractor(extractor_path, raw_file, temp_dir, mode_int=dt_mode, range_path=range_path, combine_bool=True)
+
+    # Get the extracted files, move them to the new directory, and return a list of filepaths for further analysis
+    extracted_files = os.listdir(temp_dir)
+    extracted_files = [x for x in extracted_files if x.endswith('_raw.csv')]
+    final_filepaths = []
+    for ext_file in extracted_files:
+        new_path = os.path.join(save_dir, os.path.basename(ext_file))
+        os.rename(ext_file, new_path)
+        final_filepaths.append(new_path)
+
+    # empty the temp directory and return final filepaths for further analysis
+    shutil.rmtree(temp_dir, ignore_errors=True)
+    return final_filepaths
+
+
+def write_rangefile(info, outputdir):
+    """
+    Create a range file using the information provided in the info list
+    :param info: List of range info. 0 = rangename; 1,2 = m/z start, end; 3,4 = RT start, end; 5,6 = DT start, end
+    :param outputdir: directory in which to save output
+    :return: void
+    """
+    output_path = os.path.join(outputdir, info[0] + '.txt')
+
+    # Constants for writing range file index names
+    mzstart_text = 'MZ_start_(m/z): '
+    mzend_text = 'MZ_end_(m/z): '
+    rtstart_text = 'RT_start_(minutes):'
+    rtend_text = 'RT_end_(minutes): '
+    dtstart_text = 'DT_start_(bins): '
+    dtend_text = 'DT_end_(bins): '
+
+    with open(output_path, 'w') as rangefile:
+        rangefile.write(mzstart_text + str(info[1]) + '\n')
+        rangefile.write(mzend_text + str(info[2]) + '\n')
+        rangefile.write(rtstart_text + str(info[3]) + '\n')
+        rangefile.write(rtend_text + str(info[4]) + '\n')
+        rangefile.write(dtstart_text + str(info[5]) + '\n')
+        rangefile.write(dtend_text + str(info[6]))
+
+    return output_path
+
+
+def run_extractor(ext_path, input_path, output_path, mode_int, func_num=None, range_path=None, rule_bool=None, combine_bool=None):
+    """
+    Run the tool with specified arguments (after formatting them, combining to 1 string, and adding the tool dir)
+    :param ext_path: full system path to TWIMExtract.jar
+    :param input_path: Full path to the input .raw folder to extract from
+    :param output_path: Full path to directory in which to place output file(s)
+    :param mode_int: 0 = RT, 1 = DT, 2 = MZ. Dimension to save upon extraction
+    :param func_num: Function number of file to analyze. If not supplied, defaults to extracting all functions
+    :param range_path: OPTIONAL. Full path to the range file to use to extract. If not specified, full range used
+    :param rule_bool: OPTIONAL. 'true' or 'false'. If true, program will expect range_arg to point to a .rul file
+    :param combine_bool: OPTIONAL. 'true' or 'false'. If true, outputs from the same raw file will be combined
+    :return: none
+    """
+    # format arguments that are present. If range/rule/combine are not supplied, do not pass anything
+    input_path = '-i "' + input_path + '"'    # use quotes to allow spaces/etc in filenames
+    output_path = '-o "' + output_path + '"'
+    mode_int = '-m ' + str(mode_int)
+    if func_num is not None:
+        func_num = '-f ' + str(func_num)
+    else:
+        func_num = ''
+    if range_path is not None:
+        range_path = '-r "' + range_path + '"'
+    else:
+        range_path = ''
+    if rule_bool is not None:
+        rule_bool = '-rulemode ' + rule_bool
+    else:
+        rule_bool = ''
+    if combine_bool is not None:
+        combine_bool = '-combinemode ' + combine_bool
+    else:
+        combine_bool = ''
+
+    tool_arg = 'java -jar {}'.format(ext_path)
+    arg_list = [tool_arg, input_path, output_path, mode_int, func_num, range_path, rule_bool, combine_bool]
+    arg_fmt = ['{}'.format(x) for x in arg_list]
+    args = ' '.join(arg_fmt)
+    # print(args)
+    subprocess.run(args)
+    # todo: add clean root folder (in TWIMEx, NOT the temp dir for the CSv files)
+    # make sure not to delete the hdc.bin type stuff (right?)
+
 
 
 # test for Agilent runner stuff
@@ -228,6 +302,25 @@ def run_header_ui(original_header_list):
         return None
 
 
+def run_twimex_ui():
+    """
+    Run the TWIMExRangeUI grpahical menu
+    :return: void
+    """
+    range_ui = TWIMExRangeUI()
+
+    # prevent users from hitting multiple windows simultaneously
+    range_ui.grab_set()
+    range_ui.wait_window()
+    range_ui.grab_release()
+
+    # Only update parameters if the user clicked 'okay' (didn't click cancel or close the window)
+    if range_ui.return_code == 0:
+        return range_ui.return_vals
+    else:
+        return None
+
+
 class HeaderUI(tkinter.Toplevel):
     """
     Graphical menu for editing Agilent headers
@@ -313,11 +406,102 @@ class HeaderUI(tkinter.Toplevel):
         self.destroy()
 
 
+class TWIMExRangeUI(tkinter.Toplevel):
+    """
+    Graphical menu manually inputting a single range file for TWIMExtract-based CIU data extraction
+    """
+    range_headers = ['Range Name', 'm/z Min', 'm/z Max', 'Retention/scan time Min', 'Retention/scan time Max', 'Drift time Min', 'Drift time Max']
+
+    def __init__(self):
+        """
+        Initialize the graphical menu with one line for each value in the range file
+        """
+        tkinter.Toplevel.__init__(self)
+        self.title('Enter the Range Information')
+        self.return_code = -2
+
+        # return values = list of header values
+        self.return_vals = []
+        self.entry_vars = []
+        self.labels = []
+
+        # display a label (name) and entry (value) for each part of the original header
+        row = 1
+        labels_frame = ttk.Frame(self, relief='raised', padding='2 2 2 2')
+        labels_frame.grid(column=0, row=0)
+        ttk.Label(labels_frame, text='Enter the data range to extract. Generally, this describes ONE charge state of one analyte\n\n***NOTE: for batch processing and more options, please run TWIMExtract directly***\n(TWIMExtract can be found in <your CIUSuite 2 install folder>/TWIMExtract)').grid(row=0, column=0, sticky='e', columnspan=2)
+        for header_string in TWIMExRangeUI.range_headers:
+            entry_var = tkinter.StringVar()
+            self.labels.append(header_string)
+            # display the original header and an entry box for the new value
+            ttk.Label(labels_frame, text=header_string).grid(row=row, column=0, sticky='e')
+            ttk.Entry(labels_frame, textvariable=entry_var, width=25).grid(row=row, column=1)
+
+            self.entry_vars.append(entry_var)
+            row += 1
+
+        # Finally, add 'okay' and 'cancel' buttons to the bottom of the dialog
+        button_frame = ttk.Frame(self, padding='5 5 5 5')
+        button_frame.grid(column=0, row=1)
+        ttk.Button(button_frame, text='Cancel', command=self.cancel_button_click).grid(row=0, column=0, sticky='w')
+        ttk.Label(button_frame, text='                           ').grid(row=0, column=1)
+        ttk.Button(button_frame, text='OK', command=self.ok_button_click).grid(row=0, column=2, sticky='e')
+
+    def ok_button_click(self):
+        """
+        When the user clicks 'OK', confirm that all values are valid and if so, close the window.
+        If not, prompt for corrective action. First entry (name) can be any string aside from empty, other
+        values must be floats.
+        All values are saved into self.return_vals to be retrieved in the run_header_ui method
+        :return: void
+        """
+        fail_vals = []
+        name_entry = self.entry_vars[0].get()
+        if len(name_entry) == 0:
+            fail_vals.append((self.labels[0], name_entry))
+
+        for index, entry_var in enumerate(self.entry_vars[1:]):
+            entry_string = entry_var.get()
+            try:
+                self.return_vals.append(float(entry_string))
+            except ValueError:
+                fail_vals.append((self.labels[index], entry_string))
+
+        if len(fail_vals) == 0:
+            # no params failed, so close window and update parameter values
+            self.return_code = 0
+            self.on_close_window()
+        else:
+            # some parameters failed. Tell the user which ones and keep the window open
+            error_string = 'The following entry(s) have inappropriate (non-number) values:\n'
+            for fail_tup in fail_vals:
+                error_string += 'entry {}: {}\n'.format(fail_tup[0], fail_tup[1])
+            messagebox.showwarning(title='Entry Error', message=error_string)
+            return
+
+    def cancel_button_click(self):
+        """
+        Close the window and return without updating any parameter values
+        :return: void
+        """
+        self.return_code = -1
+        self.on_close_window()
+
+    def on_close_window(self):
+        """
+        Close the window
+        :return: void
+        """
+        self.quit()
+        self.destroy()
+
+
 if __name__ == '__main__':
     # testing
     # raw_dialog = FileDialog()
-    raw_file_dirs = get_data()
-    print(raw_file_dirs)
-
+    # raw_file_dirs = get_data()
+    # print(raw_file_dirs)
     #
-    mypath = r"C:\Users\Dan-7000\Desktop\AgilentCIU_memfixed\release\MIDAC_CIU_Extractor.exe"
+    # #
+    # mypath = r"C:\Users\Dan-7000\Desktop\AgilentCIU_memfixed\release\MIDAC_CIU_Extractor.exe"
+    run_twimex_ui()
