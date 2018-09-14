@@ -13,6 +13,7 @@ import numpy as np
 import tkinter
 from tkinter import messagebox
 from tkinter import ttk
+CONFIG_FILE = 'config.txt'  # config file for saving last directory for fancy filedialog
 
 
 # File chooser for raw data, created after extensive searching on stack overflow
@@ -21,25 +22,55 @@ class FileDialog(QtWidgets.QFileDialog):
     Generate a directory-only filechooser, as both Waters and Agilent raw data comes in folders
     rather than files
     """
-    def __init__(self, *args):
+    def __init__(self, input_dir, *args):
         QtWidgets.QFileDialog.__init__(self, *args)
         self.setOption(self.DontUseNativeDialog, True)
         self.setFileMode(self.DirectoryOnly)
+        self.setDirectory(input_dir)
 
         self.tree = self.findChild(QtWidgets.QTreeView)
         self.tree.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
 
 
-def get_data():
+def get_last_dir(config_file):
+    """
+    parse the config file for the last directory used, to use as the initial directory when
+    opening the file chooser.
+    :param config_file: text file with a single directory (full system path) and nothing else
+    :return: (string) directory path
+    """
+    with open(config_file, 'r') as config:
+        line = config.readline()
+        return line
+
+
+def save_config(config_file, new_base_dir):
+    """
+    Update the config file with a new directory name
+    :param config_file: file path to update
+    :param new_base_dir: information to save in the config file
+    :return: void
+    """
+    with open(config_file, 'w') as config:
+        config.write(new_base_dir)
+
+
+def get_data(config_file):
     """
     Run the QtWidget directory mode filedialog and return filelist generated
-    :return: List of directories chosen
+    :param config_file: path to the config file with the initial directory for the file chooser
+    :return: list of strings of full system folder paths to the folders chosen, updated input_dir
     """
+    input_dir = get_last_dir(config_file)
+
     app = QtWidgets.QApplication(sys.argv)
-    dialog = FileDialog()
-    dialog.show()
+    ex = FileDialog(input_dir)
+    ex.show()
     app.exec_()
-    files = dialog.selectedFiles()
+    files = ex.selectedFiles()
+
+    new_base_dir = os.path.dirname(files[0])
+    save_config(config_file, new_base_dir)
     return files
 
 
@@ -89,8 +120,9 @@ def twimex_single_range(range_info, raw_files, save_dir, extractor_path):
     extracted_files = [x for x in extracted_files if x.endswith('_raw.csv')]
     final_filepaths = []
     for ext_file in extracted_files:
+        old_path = os.path.join(temp_dir, ext_file)
         new_path = os.path.join(save_dir, os.path.basename(ext_file))
-        os.rename(ext_file, new_path)
+        os.replace(old_path, new_path)
         final_filepaths.append(new_path)
 
     # empty the temp directory and return final filepaths for further analysis
@@ -140,23 +172,43 @@ def run_extractor(ext_path, input_path, output_path, mode_int, func_num=None, ra
     :return: none
     """
     # format arguments that are present. If range/rule/combine are not supplied, do not pass anything
-    input_path = '-i "' + input_path + '"'    # use quotes to allow spaces/etc in filenames
-    output_path = '-o "' + output_path + '"'
-    mode_int = '-m ' + str(mode_int)
+    # input_path = '-i "' + input_path + '"'  # use quotes to allow spaces/etc in filenames
+    # output_path = '-o "' + output_path + '"'
+    # mode_int = '-m ' + str(mode_int)
+    # if func_num is not None:
+    #     func_num = '-f ' + str(func_num)
+    # else:
+    #     func_num = ''
+    # if range_path is not None:
+    #     range_path = '-r "' + range_path + '"'
+    # else:
+    #     range_path = ''
+    # if rule_bool is not None:
+    #     rule_bool = '-rulemode ' + rule_bool
+    # else:
+    #     rule_bool = ''
+    # if combine_bool is not None:
+    #     combine_bool = '-combinemode ' + combine_bool
+    # else:
+    #     combine_bool = ''
+
+    input_path = '-i "{}"'.format(input_path)    # use quotes to allow spaces/etc in filenames
+    output_path = '-o "{}"'.format(output_path)
+    mode_int = '-m {}'.format(mode_int)
     if func_num is not None:
-        func_num = '-f ' + str(func_num)
+        func_num = '-f {}'.format(func_num)
     else:
         func_num = ''
     if range_path is not None:
-        range_path = '-r "' + range_path + '"'
+        range_path = '-r "{}"'.format(range_path)
     else:
         range_path = ''
     if rule_bool is not None:
-        rule_bool = '-rulemode ' + rule_bool
+        rule_bool = '-rulemode {}'.format(rule_bool)
     else:
         rule_bool = ''
     if combine_bool is not None:
-        combine_bool = '-combinemode ' + combine_bool
+        combine_bool = '-combinemode {}'.format(combine_bool)
     else:
         combine_bool = ''
 
@@ -164,11 +216,7 @@ def run_extractor(ext_path, input_path, output_path, mode_int, func_num=None, ra
     arg_list = [tool_arg, input_path, output_path, mode_int, func_num, range_path, rule_bool, combine_bool]
     arg_fmt = ['{}'.format(x) for x in arg_list]
     args = ' '.join(arg_fmt)
-    # print(args)
     subprocess.run(args)
-    # todo: add clean root folder (in TWIMEx, NOT the temp dir for the CSv files)
-    # make sure not to delete the hdc.bin type stuff (right?)
-
 
 
 # test for Agilent runner stuff
@@ -257,17 +305,6 @@ def ask_input_cv_data(original_header):
         return output_cvs, True
     else:
         return [], False
-
-    # splits = input_string.split(',')
-    # for split in splits:
-    #     try:
-    #         cv = float(split.strip())
-    #         output_cvs.append(cv)
-    #     except ValueError:
-    #         messagebox.showerror('Error Parsing Value', 'Value {} could not be parsed to a number. Please remove any non-number characters and try again')
-    #         return [], False
-    #
-    # return output_cvs, True
 
 
 def get_header(filename):
@@ -410,7 +447,8 @@ class TWIMExRangeUI(tkinter.Toplevel):
     """
     Graphical menu manually inputting a single range file for TWIMExtract-based CIU data extraction
     """
-    range_headers = ['Range Name', 'm/z Min', 'm/z Max', 'Retention/scan time Min', 'Retention/scan time Max', 'Drift time Min', 'Drift time Max']
+    range_headers = ['Output File Name', 'm/z Min', 'm/z Max', 'Retention/scan time Min', 'Retention/scan time Max', 'Drift Bin Min', 'Drift Bin Max']
+    range_defaults = ['', '', '', 0, 100, 1, 200]
 
     def __init__(self):
         """
@@ -430,8 +468,9 @@ class TWIMExRangeUI(tkinter.Toplevel):
         labels_frame = ttk.Frame(self, relief='raised', padding='2 2 2 2')
         labels_frame.grid(column=0, row=0)
         ttk.Label(labels_frame, text='Enter the data range to extract. Generally, this describes ONE charge state of one analyte\n\n***NOTE: for batch processing and more options, please run TWIMExtract directly***\n(TWIMExtract can be found in <your CIUSuite 2 install folder>/TWIMExtract)').grid(row=0, column=0, sticky='e', columnspan=2)
-        for header_string in TWIMExRangeUI.range_headers:
+        for index, header_string in enumerate(TWIMExRangeUI.range_headers):
             entry_var = tkinter.StringVar()
+            entry_var.set(TWIMExRangeUI.range_defaults[index])
             self.labels.append(header_string)
             # display the original header and an entry box for the new value
             ttk.Label(labels_frame, text=header_string).grid(row=row, column=0, sticky='e')
@@ -456,10 +495,15 @@ class TWIMExRangeUI(tkinter.Toplevel):
         :return: void
         """
         fail_vals = []
+
+        # Parse the range name
         name_entry = self.entry_vars[0].get()
         if len(name_entry) == 0:
             fail_vals.append((self.labels[0], name_entry))
+        else:
+            self.return_vals.append(name_entry)
 
+        # Parse the range values
         for index, entry_var in enumerate(self.entry_vars[1:]):
             entry_string = entry_var.get()
             try:
@@ -467,6 +511,7 @@ class TWIMExRangeUI(tkinter.Toplevel):
             except ValueError:
                 fail_vals.append((self.labels[index], entry_string))
 
+        # Check for any improper values
         if len(fail_vals) == 0:
             # no params failed, so close window and update parameter values
             self.return_code = 0

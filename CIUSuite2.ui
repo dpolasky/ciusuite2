@@ -69,16 +69,6 @@
           </object>
         </child>
         <child>
-          <object class="ttk.Label" id="Label_2">
-            <property name="text" translatable="yes">                                           </property>
-            <layout>
-              <property name="column">3</property>
-              <property name="propagate">True</property>
-              <property name="row">1</property>
-            </layout>
-          </object>
-        </child>
-        <child>
           <object class="ttk.Button" id="Button_About">
             <property name="command">on_button_about_clicked</property>
             <property name="text" translatable="yes">About</property>
@@ -97,6 +87,17 @@
               <property name="column">0</property>
               <property name="propagate">True</property>
               <property name="row">0</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="ttk.Button" id="Button_Extract_Raw">
+            <property name="command">on_button_vendor_raw_clicked</property>
+            <property name="text" translatable="yes">Extract Vendor Raw Data</property>
+            <layout>
+              <property name="column">3</property>
+              <property name="propagate">True</property>
+              <property name="row">1</property>
             </layout>
           </object>
         </child>

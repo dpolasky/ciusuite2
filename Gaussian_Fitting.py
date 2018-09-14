@@ -307,11 +307,11 @@ def main_gaussian_lmfit(analysis_obj, params_obj, outputpath):
 
     # save output
     save_fits_pdf_new(analysis_obj, params_obj, best_fits_by_cv, outputpath)
-    save_gauss_params(analysis_obj, outputpath)
+    combined_output = save_gauss_params(analysis_obj, outputpath, combine=params_obj.gaussian_5_combine_outputs)
     plot_time = time.time() - start_time - fit_time
     print('plotting/pdf output done in {:.2f} s'.format(plot_time))
 
-    return analysis_obj
+    return analysis_obj, combined_output
 
 
 def guess_gauss_init(ciu_col, dt_axis, cv, rsq_cutoff, amp_cutoff):
@@ -1163,18 +1163,20 @@ def plot_centroids(centroid_lists_by_cv, analysis_obj, params_obj, outputpath, n
     plt.close()
 
 
-def save_gauss_params(analysis_obj, outputpath):
+def save_gauss_params(analysis_obj, outputpath, combine=False):
     """
     Save all gaussian information to file
     :param analysis_obj: container with gaussian fits to save
     :type analysis_obj: CIUAnalysisObj
     :param outputpath: directory in which to save output
+    :param combine: whether to return the string to be combined with other files (True) or save this file without combining (False)
     :return: void
     """
     output_name = analysis_obj.short_filename + '_gaussians.csv'
     output_string = ''
 
     # save DT information too to allow for reconstruction
+    output_string += '# {}'.format(analysis_obj.short_filename)
     dt_line = ','.join([str(x) for x in analysis_obj.axes[0]])
     output_string += 'Drift axis:,' + dt_line + '\n'
     output_string += '# Protein Gaussians\n'
@@ -1190,16 +1192,23 @@ def save_gauss_params(analysis_obj, outputpath):
         output_string += '# Non-Protein Gaussians\n'
         output_string += '# CV,Amplitude,Centroid,Peak Width (FWHM)\n'
         while index < len(analysis_obj.axes[1]):
-            gauss_line = ','.join([gaussian.print_info() for gaussian in analysis_obj.raw_nonprotein_gaussians[index]])
-            output_string += gauss_line + '\n'
+            if len(analysis_obj.raw_nonprotein_gaussians[index]) > 0:
+                gauss_line = ','.join([gaussian.print_info() for gaussian in analysis_obj.raw_nonprotein_gaussians[index]])
+                output_string += gauss_line + '\n'
             index += 1
-    try:
-        with open(os.path.join(outputpath, output_name), 'w') as output:
-            output.write(output_string)
-    except PermissionError:
-        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(os.path.join(outputpath, output_name)))
-        with open(os.path.join(outputpath, output_name), 'w') as output:
-            output.write(output_string)
+
+    if combine:
+        output_string += '\n'
+        return output_string
+    else:
+        try:
+            with open(os.path.join(outputpath, output_name), 'w') as output:
+                output.write(output_string)
+        except PermissionError:
+            messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(os.path.join(outputpath, output_name)))
+            with open(os.path.join(outputpath, output_name), 'w') as output:
+                output.write(output_string)
+        return ''
 
 
 def reconstruct_from_fits(gaussian_lists_by_cv, axes, new_filename, params_obj):

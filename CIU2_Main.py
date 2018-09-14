@@ -54,14 +54,7 @@ if getattr(sys, 'frozen', False):
 else:
     root_dir = os.path.dirname(__file__)
 
-# find resource files, allowing both with and without Vendor-raw mode
-try:
-    hard_file_path_ui = os.path.join(root_dir, 'CIUSuite2.ui')
-    # test file path
-    with open(hard_file_path_ui, 'r'):
-        print('Found base UI file')
-except FileNotFoundError:
-    hard_file_path_ui = os.path.join(root_dir, 'CIUSuite2_Vendor.ui')
+hard_file_path_ui = os.path.join(root_dir, 'CIUSuite2.ui')
 hard_params_file = os.path.join(root_dir, 'CIU2_param_info.csv')
 hard_crop_ui = os.path.join(root_dir, 'Crop_vals.ui')
 hard_agilent_ext_path = os.path.join(root_dir, os.path.join('Agilent_Extractor', 'MIDAC_CIU_Extractor.exe'))
@@ -178,14 +171,23 @@ class CIUSuite2(object):
         # clear analysis list
         self.analysis_file_list = []
         raw_files = self.open_files(filetype=[('_raw.csv', '_raw.csv')])
-        if len(raw_files) > 0:
+        self.load_raw_files(raw_files)
+
+    def load_raw_files(self, raw_filepaths):
+        """
+        Helper method for loading _raw.csv files. Created since the code is accessed by multiple
+        other methods - used for modularity
+        :param raw_filepaths: list of full system path strings to _raw.csv files to load
+        :return: void
+        """
+        if len(raw_filepaths) > 0:
             # Ask user for smoothing input
             plot_keys = [x for x in self.params_obj.params_dict.keys() if 'smoothing' in x]
             if self.run_param_ui('Initial Smoothing Parameters', plot_keys):
                 self.progress_started()
 
                 # run raw processing
-                for raw_file in raw_files:
+                for raw_file in raw_filepaths:
                     try:
                         raw_obj = Raw_Processing.get_data(raw_file)
                     except ValueError as err:
@@ -194,7 +196,7 @@ class CIUSuite2(object):
                     analysis_obj = process_raw_obj(raw_obj, self.params_obj)
                     analysis_filename = save_analysis_obj(analysis_obj, self.params_obj, os.path.dirname(raw_obj.filepath))
                     self.analysis_file_list.append(analysis_filename)
-                    self.update_progress(raw_files.index(raw_file), len(raw_files))
+                    self.update_progress(raw_filepaths.index(raw_file), len(raw_filepaths))
 
                 # update the list of analysis files to display
                 self.display_analysis_files()
@@ -687,13 +689,27 @@ class CIUSuite2(object):
                 print('\n**** Starting Gaussian Fitting - THIS MAY TAKE SOME TIME - the GUI will not respond until fitting is completed ****')
 
                 new_file_list = []
+                all_output = ''
                 for file in files_to_read:
                     analysis_obj = load_analysis_obj(file)
-                    analysis_obj = Gaussian_Fitting.main_gaussian_lmfit(analysis_obj, self.params_obj, self.output_dir)
+                    analysis_obj, csv_output = Gaussian_Fitting.main_gaussian_lmfit(analysis_obj, self.params_obj, self.output_dir)
+                    all_output += csv_output
 
                     filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
                     new_file_list.append(filename)
                     self.update_progress(files_to_read.index(file), len(files_to_read))
+
+                if self.params_obj.gaussian_5_combine_outputs:
+                    outputpath = os.path.join(self.output_dir, 'All_gaussians.csv')
+                    try:
+                        with open(outputpath, 'w') as output:
+                            output.write(all_output)
+                    except PermissionError:
+                        messagebox.showerror('Please Close the File Before Saving',
+                                             'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(
+                                                 outputpath))
+                        with open(os.path.join(outputpath, outputpath), 'w') as output:
+                            output.write(all_output)
 
                 self.display_analysis_files()
 
@@ -1223,7 +1239,7 @@ class CIUSuite2(object):
         if self.run_param_ui('Which Vendor Raw Data Type to Extract?', param_keys):
             vendor_type = self.params_obj.vendor_1_type
 
-            if vendor_type == 'agilent':
+            if vendor_type == 'Agilent':
                 # Call Agilent extractor using the directory chosen by the user for output
                 raw_dir = filedialog.askdirectory(title='Choose directory in which to save _raw.csv files from Agilent data')
                 agilent_args = '{} "{}"'.format(hard_agilent_ext_path, raw_dir)
@@ -1252,57 +1268,21 @@ class CIUSuite2(object):
                 for raw_file in raw_files:
                     Raw_Data_Import.read_agilent_and_correct(raw_file, cv_headers)
 
-            elif vendor_type == 'waters':
-                # todo: test
-                raw_dir = filedialog.askdirectory(title='Choose directory in which to save _raw.csv files from Agilent data')
-                # waters_args = '{} "{}"'.format(hard_agilent_ext_path, raw_dir)
-                # todo: update TWIMExtract to accept a single arg on command line to specify raw directory
-                waters_args = 'java -jar {} {}'.format(hard_twimextract_path, raw_dir)
-                completed_proc = subprocess.run(waters_args)
+            elif vendor_type == 'Waters':
+                raw_vendor_files = Raw_Data_Import.get_data(Raw_Data_Import.CONFIG_FILE)
 
-                if not completed_proc.returncode == 0:
-                    messagebox.showerror('Data Extraction Error', 'Error: Waters Data Extraction Failed. Returning.')
-                    self.progress_done()
-                    return
-
-                # raw_dir = ''
-                raw_files = filedialog.askopenfilenames(title='Choose the extracted files to analyze', initialdir=raw_dir, filetypes=[('_raw.csv', '_raw.csv')])
+                # Run basic extraction method, which contains the option to open TWIMExtract if more complex extractions required
+                range_vals = Raw_Data_Import.run_twimex_ui()
+                raw_dir = filedialog.askdirectory(title='Choose directory in which to save extracted _raw.csv files')
+                raw_files = Raw_Data_Import.twimex_single_range(range_vals, raw_vendor_files, raw_dir, hard_twimextract_path)
 
             else:
                 print('invalid vendor')
+                raw_files = []
                 return
 
-            # clear analysis list
-            self.analysis_file_list = []
-            # raw_files = [os.path.join(raw_dir, x) for x in os.listdir(raw_dir) if x.endswith('_raw.csv')]
-            if len(raw_files) > 0:
-                # Ask user for smoothing input
-                plot_keys = [x for x in self.params_obj.params_dict.keys() if 'smoothing' in x]
-                if self.run_param_ui('Initial Smoothing Parameters', plot_keys):
-                    self.progress_started()
-
-                    # run raw processing
-                    for raw_file in raw_files:
-                        try:
-                            raw_obj = Raw_Processing.get_data(raw_file)
-                        except ValueError as err:
-                            messagebox.showerror('Data Import Error',
-                                                 message='{}{}. Problem: {}. Press OK to continue'.format(*err.args))
-                            continue
-                        analysis_obj = process_raw_obj(raw_obj, self.params_obj)
-                        analysis_filename = save_analysis_obj(analysis_obj, self.params_obj,
-                                                              os.path.dirname(raw_obj.filepath))
-                        self.analysis_file_list.append(analysis_filename)
-                        self.update_progress(raw_files.index(raw_file), len(raw_files))
-
-                    # update the list of analysis files to display
-                    self.display_analysis_files()
-
-                    # update directory to match the loaded files
-                    if not self.output_dir_override:
-                        self.output_dir = os.path.dirname(self.analysis_file_list[0])
-                        self.update_dir_entry()
-        self.progress_done()
+            # Finally, load the provided raw files
+            self.load_raw_files(raw_files)
 
 
 # ****** CIU Main I/O methods ******
