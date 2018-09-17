@@ -13,7 +13,6 @@ import numpy as np
 import tkinter
 from tkinter import messagebox
 from tkinter import ttk
-CONFIG_FILE = 'config.txt'  # config file for saving last directory for fancy filedialog
 
 
 # File chooser for raw data, created after extensive searching on stack overflow
@@ -32,36 +31,13 @@ class FileDialog(QtWidgets.QFileDialog):
         self.tree.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
 
 
-def get_last_dir(config_file):
-    """
-    parse the config file for the last directory used, to use as the initial directory when
-    opening the file chooser.
-    :param config_file: text file with a single directory (full system path) and nothing else
-    :return: (string) directory path
-    """
-    with open(config_file, 'r') as config:
-        line = config.readline()
-        return line
-
-
-def save_config(config_file, new_base_dir):
-    """
-    Update the config file with a new directory name
-    :param config_file: file path to update
-    :param new_base_dir: information to save in the config file
-    :return: void
-    """
-    with open(config_file, 'w') as config:
-        config.write(new_base_dir)
-
-
-def get_data(config_file):
+def get_data(input_dir):
     """
     Run the QtWidget directory mode filedialog and return filelist generated
-    :param config_file: path to the config file with the initial directory for the file chooser
+    :param input_dir: path to the initial directory for the file chooser
     :return: list of strings of full system folder paths to the folders chosen, updated input_dir
     """
-    input_dir = get_last_dir(config_file)
+    # input_dir = get_last_dir(input_dir)
 
     app = QtWidgets.QApplication(sys.argv)
     ex = FileDialog(input_dir)
@@ -69,8 +45,6 @@ def get_data(config_file):
     app.exec_()
     files = ex.selectedFiles()
 
-    new_base_dir = os.path.dirname(files[0])
-    save_config(config_file, new_base_dir)
     return files
 
 
@@ -103,7 +77,6 @@ def twimex_single_range(range_info, raw_files, save_dir, extractor_path):
     :return: list of filenames extracted
     """
     # Write rangefile into temp dir
-    # todo: test
     temp_dir = os.path.join(save_dir, 'temp')
     if not os.path.exists(temp_dir):
         os.makedirs(temp_dir)
@@ -111,8 +84,9 @@ def twimex_single_range(range_info, raw_files, save_dir, extractor_path):
     range_path = write_rangefile(range_info, temp_dir)
     dt_mode = 1
 
-    for raw_file in raw_files:
+    for index, raw_file in enumerate(raw_files):
         # Method to write output file given the splits array from a line in the template file
+        print('Starting TWIMExtract run {} of {}. NOTE: Extraction may take some time!'.format(index + 1, len(raw_files)))
         run_extractor(extractor_path, raw_file, temp_dir, mode_int=dt_mode, range_path=range_path, combine_bool=True)
 
     # Get the extracted files, move them to the new directory, and return a list of filepaths for further analysis
@@ -172,72 +146,35 @@ def run_extractor(ext_path, input_path, output_path, mode_int, func_num=None, ra
     :return: none
     """
     # format arguments that are present. If range/rule/combine are not supplied, do not pass anything
-    # input_path = '-i "' + input_path + '"'  # use quotes to allow spaces/etc in filenames
-    # output_path = '-o "' + output_path + '"'
-    # mode_int = '-m ' + str(mode_int)
-    # if func_num is not None:
-    #     func_num = '-f ' + str(func_num)
-    # else:
-    #     func_num = ''
-    # if range_path is not None:
-    #     range_path = '-r "' + range_path + '"'
-    # else:
-    #     range_path = ''
-    # if rule_bool is not None:
-    #     rule_bool = '-rulemode ' + rule_bool
-    # else:
-    #     rule_bool = ''
-    # if combine_bool is not None:
-    #     combine_bool = '-combinemode ' + combine_bool
-    # else:
-    #     combine_bool = ''
-
-    input_path = '-i "{}"'.format(input_path)    # use quotes to allow spaces/etc in filenames
-    output_path = '-o "{}"'.format(output_path)
-    mode_int = '-m {}'.format(mode_int)
+    input_arg = '-i "{}"'.format(input_path)    # use quotes to allow spaces/etc in filenames
+    output_arg = '-o "{}"'.format(output_path)
+    mode_arg = '-m {}'.format(mode_int)
     if func_num is not None:
-        func_num = '-f {}'.format(func_num)
+        func_arg = '-f {}'.format(func_num)
     else:
-        func_num = ''
+        func_arg = ''
     if range_path is not None:
-        range_path = '-r "{}"'.format(range_path)
+        range_arg = '-r "{}"'.format(range_path)
     else:
-        range_path = ''
+        range_arg = ''
     if rule_bool is not None:
-        rule_bool = '-rulemode {}'.format(rule_bool)
+        rule_arg = '-rulemode {}'.format(rule_bool)
     else:
-        rule_bool = ''
+        rule_arg = ''
     if combine_bool is not None:
-        combine_bool = '-combinemode {}'.format(combine_bool)
+        combine_arg = '-combinemode {}'.format(combine_bool)
     else:
-        combine_bool = ''
+        combine_arg = ''
 
     tool_arg = 'java -jar {}'.format(ext_path)
-    arg_list = [tool_arg, input_path, output_path, mode_int, func_num, range_path, rule_bool, combine_bool]
+    arg_list = [tool_arg, input_arg, output_arg, mode_arg, func_arg, range_arg, rule_arg, combine_arg]
     arg_fmt = ['{}'.format(x) for x in arg_list]
     args = ' '.join(arg_fmt)
-    subprocess.run(args)
 
-
-# test for Agilent runner stuff
-# def run_agilent_extractor(extractor_path):
-#     """
-#     Run the Agilent extractor program (GUI mode) and return the folder path(s) with generated CIU files to be
-#     assembled and loaded.
-#     ** this part is actually super easy - the key is figuring out how to get the output from the extractor into
-#     CIUSuite 2 and/or get a list of files written from the extractor to open with CIUSuite 2. **
-#     *** USE AGILENT_EXT_RUNNER.PY AS A BASE FOR THIS - it has things set up perfectly for running command line,
-#     and would be a good basis for running the GUI. Even if the GUI is run, the output will still need to be
-#     edited to put the CV header in (for now), so doing any fancier doesn't make sense until that's fixed.
-#     :param extractor_path: Full system path to the extractor tool
-#     :return:
-#     """
-#
-#     completed_proc = subprocess.run(extractor_path)
-#
-#     if completed_proc.returncode == 0:
-#         # process finished successfully
-#         print('yay!')
+    completed_proc = subprocess.run(args)
+    if not completed_proc.returncode == 0:
+        # process finished successfully
+        print('Error in extraction for file {} with range file {}. Data NOT extracted. Check that this is a Waters raw data file and that appropriate range values were provided.'.format(input_path, range_path))
 
 
 def read_agilent_and_correct(filename, cv_axis_to_use, overwrite=True):

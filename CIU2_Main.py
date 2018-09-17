@@ -205,7 +205,7 @@ class CIUSuite2(object):
                 if not self.output_dir_override:
                     self.output_dir = os.path.dirname(self.analysis_file_list[0])
                     self.update_dir_entry()
-            self.progress_done()
+        self.progress_done()
 
     def on_button_analysisfile_clicked(self):
         """
@@ -1269,17 +1269,21 @@ class CIUSuite2(object):
                     Raw_Data_Import.read_agilent_and_correct(raw_file, cv_headers)
 
             elif vendor_type == 'Waters':
-                raw_vendor_files = Raw_Data_Import.get_data(Raw_Data_Import.CONFIG_FILE)
+                raw_vendor_files = Raw_Data_Import.get_data(self.params_obj.silent_filechooser_dir)
+                # save the location of the files into the params obj for convenient future reference
+                update_dict = {'silent_filechooser_dir': os.path.dirname(raw_vendor_files[0])}
+                CIU_Params.update_specific_param_vals(update_dict, hard_params_file)
 
                 # Run basic extraction method, which contains the option to open TWIMExtract if more complex extractions required
                 range_vals = Raw_Data_Import.run_twimex_ui()
                 raw_dir = filedialog.askdirectory(title='Choose directory in which to save extracted _raw.csv files')
+
+                self.progress_started()
                 raw_files = Raw_Data_Import.twimex_single_range(range_vals, raw_vendor_files, raw_dir, hard_twimextract_path)
 
             else:
-                print('invalid vendor')
+                print('Invalid vendor, no files loaded')
                 raw_files = []
-                return
 
             # Finally, load the provided raw files
             self.load_raw_files(raw_files)

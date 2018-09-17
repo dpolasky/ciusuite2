@@ -159,6 +159,7 @@ class Parameters(object):
 
         # Raw data import parameters
         self.vendor_1_type = None
+        self.silent_filechooser_dir = None
 
     def set_params(self, params_dict):
         """
@@ -288,6 +289,49 @@ def update_param_csv(params_obj, params_filepath):
 
     except FileNotFoundError:
         print('Error: parameters file {} not found! Default values not changed'.format(params_filepath))
+
+
+def update_specific_param_vals(dict_of_updates, params_filepath):
+    """
+    Same as updating param csv with method above, but only updates specified key/value pairs (in the
+    dict_of_updates) and leaves the rest of the param file unchanged
+    :param dict_of_updates: dictionary of key/value pairs to update. Values should be the new value to save
+    :param params_filepath: full system path to params csv file to save
+    :return: void
+    """
+    try:
+        edited_lines = []
+        with open(params_filepath, 'r') as pfile:
+            lines = list(pfile)
+            for line in lines:
+                # skip headers and blank lines
+                if line.startswith('#') or line.startswith('\n'):
+                    edited_lines.append(line)
+                    continue
+                splits = line.rstrip('\n').split(',')
+
+                # Update ONLY the value field (splits[1]) and save the new line
+                current_key = splits[0].strip()
+                try:
+                    if current_key in dict_of_updates.keys():
+                        new_value = str(dict_of_updates[current_key])
+                    else:
+                        # not a key to edit, keep value unchanged
+                        new_value = splits[1].strip()
+                except KeyError:
+                    new_value = splits[1].strip()
+                    print('Error: parameter {} not found, default unchanged').format(current_key)
+                splits[1] = new_value
+                new_line = ','.join(splits) + '\n'
+                edited_lines.append(new_line)
+
+        # write the updated information back to the file (overwrite old file)
+        with open(params_filepath, 'w') as pfile:
+            for line in edited_lines:
+                pfile.write(line)
+
+    except FileNotFoundError:
+        print('Error: parameters file {} not found! Values not updated'.format(params_filepath))
 
 
 def parse_params_file(params_file):
