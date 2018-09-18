@@ -54,9 +54,9 @@ if getattr(sys, 'frozen', False):
 else:
     root_dir = os.path.dirname(__file__)
 
-hard_file_path_ui = os.path.join(root_dir, 'CIUSuite2.ui')
+hard_file_path_ui = os.path.join(root_dir, 'UI', 'CIUSuite2.ui')
 hard_params_file = os.path.join(root_dir, 'CIU2_param_info.csv')
-hard_crop_ui = os.path.join(root_dir, 'Crop_vals.ui')
+hard_crop_ui = os.path.join(root_dir, 'UI', 'Crop_vals.ui')
 hard_agilent_ext_path = os.path.join(root_dir, os.path.join('Agilent_Extractor', 'MIDAC_CIU_Extractor.exe'))
 hard_twimextract_path = os.path.join(root_dir, 'TWIMExtract', 'jars', 'TWIMExtract.jar')
 hard_tooltips_file = os.path.join(root_dir, 'tooltips.txt')
@@ -1287,6 +1287,7 @@ class CIUSuite2(object):
 
             # Finally, load the provided raw files
             self.load_raw_files(raw_files)
+        self.progress_done()
 
 
 # ****** CIU Main I/O methods ******
