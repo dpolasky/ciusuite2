@@ -1,4 +1,7 @@
 """
+This file is part of CIUSuite 2
+Copyright (C) 2018 Daniel Polasky
+
 Module with updated versions of the original CIUSuite modules to preserve (and improve)
 functionality of the original CIUSuite. Designed to operate in the framework of CIUSuite2,
 with CIUAnalysisObj objects providing the primary basis for handling data.

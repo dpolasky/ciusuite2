@@ -1,4 +1,7 @@
 """
+This file is part of CIUSuite 2
+Copyright (C) 2018 Daniel Polasky
+
 Methods for raw data pre-processing (smoothing, interpolation, etc) for CIU-type data
 Author: Dan Polasky
 Date: 10/6/2017

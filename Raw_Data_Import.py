@@ -1,4 +1,7 @@
 """
+This file is part of CIUSuite 2
+Copyright (C) 2018 Daniel Polasky
+
 Module for raw (instrument vendor) data import into CIUSuite2. Currently includes Waters
 and Agilent handling based on TWIMExtract and MIDAC, respectively.
 2/1/2018

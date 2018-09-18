@@ -1,4 +1,7 @@
 """
+This file is part of CIUSuite 2
+Copyright (C) 2018 Daniel Polasky
+
 Module for feature detection. Relies on CIUAnalysisObj from Gaussian fitting module
 Author: DP
 Date: 10/10/2017

@@ -1,4 +1,7 @@
 """
+This file is part of CIUSuite 2
+Copyright (C) 2018 Daniel Polasky
+
 Raw data object for CIU-type analyses.
 Author: Dan Polasky
 Date: 10/6/2017

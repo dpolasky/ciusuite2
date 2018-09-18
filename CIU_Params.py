@@ -1,4 +1,7 @@
 """
+This file is part of CIUSuite 2
+Copyright (C) 2018 Daniel Polasky
+
 Module for Parameter object to hold parameter information in analysis objects and associated
 parameter UI, etc
 """

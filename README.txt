@@ -14,6 +14,7 @@ of Gas-phase Unfolding Data." Anal. Chem. 2018. In press.
 
 CIUSuite 2
 Copyright (C) 2018 Daniel Polasky and Sugyan Dixit
+Graphical Interface designed by Sarah Fantin
 
 License Notice:
     This program is free software: you can redistribute it and/or modify

@@ -1,4 +1,7 @@
 """
+This file is part of CIUSuite 2
+Copyright (C) 2018 Daniel Polasky and Sugyan Dixit
+
 Gaussian fitting module for CIUSuite 2
 author: DP
 date: 10/10/2017

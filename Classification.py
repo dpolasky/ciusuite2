@@ -1,4 +1,7 @@
 """
+This file is part of CIUSuite 2
+Copyright (C) 2018 Daniel Polasky and Sugyan Dixit
+
 Module for classification schemes for CIU data groups
 Authors: Dan Polasky, Sugyan Dixit
 Date: 1/11/2018
