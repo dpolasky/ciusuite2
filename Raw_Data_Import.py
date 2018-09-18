@@ -40,13 +40,15 @@ def get_data(input_dir):
     :param input_dir: path to the initial directory for the file chooser
     :return: list of strings of full system folder paths to the folders chosen, updated input_dir
     """
-    # input_dir = get_last_dir(input_dir)
-
     app = QtWidgets.QApplication(sys.argv)
     ex = FileDialog(input_dir)
     ex.show()
     app.exec_()
     files = ex.selectedFiles()
+
+    # return empty list if user hits 'cancel' button
+    if ex.result() == 0:
+        files = []
 
     return files
 
@@ -169,7 +171,7 @@ def run_extractor(ext_path, input_path, output_path, mode_int, func_num=None, ra
     else:
         combine_arg = ''
 
-    tool_arg = 'java -jar {}'.format(ext_path)
+    tool_arg = 'java -jar "{}"'.format(ext_path)
     arg_list = [tool_arg, input_arg, output_arg, mode_arg, func_arg, range_arg, rule_arg, combine_arg]
     arg_fmt = ['{}'.format(x) for x in arg_list]
     args = ' '.join(arg_fmt)

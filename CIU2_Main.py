@@ -51,14 +51,16 @@ matplotlib.use('Agg')
 # Load resource file paths, supporting both live code and code bundled by PyInstaller
 if getattr(sys, 'frozen', False):
     root_dir = sys._MEIPASS
+    program_data_dir = os.path.join(os.environ['ALLUSERSPROFILE'], 'CIUSuite2')
 else:
     root_dir = os.path.dirname(__file__)
+    program_data_dir = root_dir
 
+hard_params_file = os.path.join(program_data_dir, 'CIU2_param_info.csv')
+hard_twimextract_path = os.path.join(program_data_dir, 'TWIMExtract', 'jars', 'TWIMExtract.jar')
 hard_file_path_ui = os.path.join(root_dir, 'UI', 'CIUSuite2.ui')
-hard_params_file = os.path.join(root_dir, 'CIU2_param_info.csv')
 hard_crop_ui = os.path.join(root_dir, 'UI', 'Crop_vals.ui')
 hard_agilent_ext_path = os.path.join(root_dir, os.path.join('Agilent_Extractor', 'MIDAC_CIU_Extractor.exe'))
-hard_twimextract_path = os.path.join(root_dir, 'TWIMExtract', 'jars', 'TWIMExtract.jar')
 hard_tooltips_file = os.path.join(root_dir, 'tooltips.txt')
 help_file = os.path.join(root_dir, 'CIUSuite2_Manual.pdf')
 about_file = os.path.join(root_dir, 'README.txt')
@@ -1268,25 +1270,36 @@ class CIUSuite2(object):
                 for raw_file in raw_files:
                     Raw_Data_Import.read_agilent_and_correct(raw_file, cv_headers)
 
+                # Finally, load the provided raw files
+                self.load_raw_files(raw_files)
+
             elif vendor_type == 'Waters':
+                # get raw data folders (because Waters saves data in folders)
                 raw_vendor_files = Raw_Data_Import.get_data(self.params_obj.silent_filechooser_dir)
-                # save the location of the files into the params obj for convenient future reference
-                update_dict = {'silent_filechooser_dir': os.path.dirname(raw_vendor_files[0])}
-                CIU_Params.update_specific_param_vals(update_dict, hard_params_file)
 
-                # Run basic extraction method, which contains the option to open TWIMExtract if more complex extractions required
-                range_vals = Raw_Data_Import.run_twimex_ui()
-                raw_dir = filedialog.askdirectory(title='Choose directory in which to save extracted _raw.csv files')
+                if len(raw_vendor_files) > 0:
+                    # save the location of the files into the params obj for convenient future reference
+                    update_dict = {'silent_filechooser_dir': os.path.dirname(raw_vendor_files[0])}
+                    CIU_Params.update_specific_param_vals(update_dict, hard_params_file)
 
-                self.progress_started()
-                raw_files = Raw_Data_Import.twimex_single_range(range_vals, raw_vendor_files, raw_dir, hard_twimextract_path)
+                    # Run basic extraction method, which contains the option to open TWIMExtract if more complex extractions required
+                    range_vals = Raw_Data_Import.run_twimex_ui()
+                    if range_vals is not None:
+                        # choose directory in which to save output
+                        raw_dir = filedialog.askdirectory(title='Choose directory in which to save extracted _raw.csv files')
+                        if raw_dir is not '':
+                            self.progress_started()
+                            raw_files = Raw_Data_Import.twimex_single_range(range_vals, raw_vendor_files, raw_dir, hard_twimextract_path)
+
+                            if len(raw_files) > 0:
+                                # Finally, load the provided raw files
+                                self.load_raw_files(raw_files)
+                            else:
+                                print('Error: no raw files found! Check the chosen save directory')
 
             else:
                 print('Invalid vendor, no files loaded')
-                raw_files = []
 
-            # Finally, load the provided raw files
-            self.load_raw_files(raw_files)
         self.progress_done()
 
 
