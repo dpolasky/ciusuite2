@@ -3,3 +3,11 @@
 
 # compiled python files
 *.pyc
+
+# TWIMExtract files
+*_1DDT.txt
+*_1DMZ.txt
+*_1DRT.txt
+*.1dDT
+*.1dMZ
+*.1dRT

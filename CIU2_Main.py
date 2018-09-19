@@ -21,7 +21,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import pygubu
-import pygubu.widgets.simpletooltip as tooltip
 import tkinter as tk
 from tkinter import filedialog
 from tkinter import simpledialog
@@ -41,6 +40,7 @@ import Gaussian_Fitting
 import Feature_Detection
 import Classification
 import Raw_Data_Import
+import SimpleToolTip
 
 # Set global matplotlib params for good figure layouts and a non-interactive backend
 import matplotlib
@@ -100,7 +100,6 @@ class CIUSuite2(object):
             'on_button_oldplot_clicked': self.on_button_oldplot_clicked,
             'on_button_oldcompare_clicked': self.on_button_oldcompare_clicked,
             'on_button_oldavg_clicked': self.on_button_oldavg_clicked,
-            'on_button_olddeltadt_clicked': self.on_button_olddeltadt_clicked,
             'on_button_crop_clicked': self.on_button_crop_clicked,
             'on_button_interpolate_clicked': self.on_button_interpolate_clicked,
             'on_button_restore_clicked': self.on_button_restore_clicked,
@@ -149,7 +148,7 @@ class CIUSuite2(object):
         """
         tooltip_dict = parse_tooltips_file(hard_tooltips_file)
         for tip_key, tip_value in tooltip_dict.items():
-            tooltip.create(self.builder.get_object(tip_key), tip_value)
+            SimpleToolTip.create(self.builder.get_object(tip_key), tip_value)
 
     def on_button_help_clicked(self):
         """
@@ -185,10 +184,12 @@ class CIUSuite2(object):
         if len(raw_filepaths) > 0:
             # Ask user for smoothing input
             plot_keys = [x for x in self.params_obj.params_dict.keys() if 'smoothing' in x]
-            if self.run_param_ui('Initial Smoothing Parameters', plot_keys):
+            param_success, param_dict = self.run_param_ui('Initial Smoothing Parameters', plot_keys)
+            if param_success:
                 self.progress_started()
 
                 # run raw processing
+                analysis_filenames = []
                 for raw_file in raw_filepaths:
                     try:
                         raw_obj = Raw_Processing.get_data(raw_file)
@@ -196,12 +197,12 @@ class CIUSuite2(object):
                         messagebox.showerror('Data Import Error', message='{}{}. Problem: {}. Press OK to continue'.format(*err.args))
                         continue
                     analysis_obj = process_raw_obj(raw_obj, self.params_obj)
-                    analysis_filename = save_analysis_obj(analysis_obj, self.params_obj, os.path.dirname(raw_obj.filepath))
-                    self.analysis_file_list.append(analysis_filename)
+                    analysis_filename = save_analysis_obj(analysis_obj, param_dict, os.path.dirname(raw_obj.filepath))
+                    analysis_filenames.append(analysis_filename)
                     self.update_progress(raw_filepaths.index(raw_file), len(raw_filepaths))
 
                 # update the list of analysis files to display
-                self.display_analysis_files()
+                self.display_analysis_files(analysis_filenames)
 
                 # update directory to match the loaded files
                 if not self.output_dir_override:
@@ -215,8 +216,7 @@ class CIUSuite2(object):
         :return:
         """
         analysis_files = self.open_files(filetype=[('CIU files', '.ciu')])
-        self.analysis_file_list = analysis_files
-        self.display_analysis_files()
+        self.display_analysis_files(analysis_files)
 
         # update directory to match the loaded files
         try:
@@ -228,17 +228,21 @@ class CIUSuite2(object):
             return
 
         # check if parameters in loaded files match the current Parameter object
-        self.check_params()
+        # self.check_params()
 
-    def display_analysis_files(self):
+    def display_analysis_files(self, files_to_display):
         """
         Write analysis filenames to the main text window and update associated controls. References
         self.analysis_list for filenames
+        :param files_to_display: list of strings (full system paths to file location)
         :return: void
         """
+        # update the internal analysis file list
+        self.analysis_file_list = files_to_display
+
         displaystring = ''
         index = 1
-        for file in self.analysis_file_list:
+        for file in files_to_display:
             displaystring += '{}: {}\n'.format(index, os.path.basename(file).rstrip('.ciu'))
             index += 1
 
@@ -247,10 +251,9 @@ class CIUSuite2(object):
         self.builder.get_object('Text_analysis_list').insert(tk.INSERT, displaystring)
 
         # update total file number counter
-        # self.builder.get_object('Entry_num_files').textvariable.set(str(len(self.analysis_file_list)))
         self.builder.get_object('Entry_num_files').config(state=tk.NORMAL)
         self.builder.get_object('Entry_num_files').delete(0, tk.END)
-        self.builder.get_object('Entry_num_files').insert(0, str(len(self.analysis_file_list)))
+        self.builder.get_object('Entry_num_files').insert(0, str(len(files_to_display)))
         self.builder.get_object('Entry_num_files').config(state=tk.DISABLED)
 
     def on_button_restore_clicked(self):
@@ -261,7 +264,8 @@ class CIUSuite2(object):
         :return: void
         """
         plot_keys = [x for x in self.params_obj.params_dict.keys() if 'smoothing' in x]
-        if self.run_param_ui('Initial Smoothing on Restored Data', plot_keys):
+        param_success, param_dict = self.run_param_ui('Initial Smoothing on Restored Data', plot_keys)
+        if param_success:
             files_to_read = self.check_file_range_entries()
             output_files = []
             self.progress_started()
@@ -271,11 +275,11 @@ class CIUSuite2(object):
 
                 # update parameters and re-process raw data
                 new_obj = process_raw_obj(analysis_obj.raw_obj, self.params_obj, short_filename=analysis_obj.short_filename)
-                filename = save_analysis_obj(new_obj, self.params_obj, outputdir=self.output_dir)
+                filename = save_analysis_obj(new_obj, param_dict, outputdir=self.output_dir)
                 output_files.append(filename)
                 self.update_progress(files_to_read.index(analysis_file), len(files_to_read))
 
-            self.display_analysis_files()
+            self.display_analysis_files(output_files)
         self.progress_done()
 
     def on_button_printparams_clicked(self):
@@ -357,6 +361,7 @@ class CIUSuite2(object):
                                       params_obj=self.params_obj,
                                       key_list=list_of_param_keys,
                                       param_descripts_file=hard_params_file)
+        param_ui.lift()
         param_ui.grab_set()     # prevent users from hitting multiple windows simultaneously
         param_ui.wait_window()
         param_ui.grab_release()
@@ -365,8 +370,8 @@ class CIUSuite2(object):
         if param_ui.return_code == 0:
             return_vals = param_ui.refresh_values()
             self.params_obj.set_params(return_vals)
-            return True
-        return False
+            return True, return_vals
+        return False, None
 
     def on_button_plot_options_clicked(self):
         """
@@ -383,15 +388,22 @@ class CIUSuite2(object):
         :return: void (saves to output dir)
         """
         plot_keys = [x for x in self.params_obj.params_dict.keys() if 'ciuplot_cmap_override' in x]
-        if self.run_param_ui('Plot parameters', plot_keys):
+        param_success, param_dict = self.run_param_ui('Plot parameters', plot_keys)
+        if param_success:
             # Determine if a file range has been specified
             files_to_read = self.check_file_range_entries()
             self.progress_started()
+            updated_filelist = []
             for analysis_file in files_to_read:
                 analysis_obj = load_analysis_obj(analysis_file)
                 Original_CIU.ciu_plot(analysis_obj, self.params_obj, self.output_dir)
                 self.update_progress(files_to_read.index(analysis_file), len(files_to_read))
 
+                # save analysis obj to ensure that parameter changes are noted correctly
+                filename = save_analysis_obj(analysis_obj, param_dict, outputdir=self.output_dir)
+                updated_filelist.append(filename)
+
+            self.display_analysis_files(updated_filelist)
         self.progress_done()
 
     def on_button_oldcompare_clicked(self):
@@ -410,8 +422,9 @@ class CIUSuite2(object):
                 return
 
             # run parameter dialog for comparison
-            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x and 'batch' not in x]
-            if self.run_param_ui('Plot parameters', batch_keys):
+            param_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x and 'batch' not in x]
+            param_success, param_dict = self.run_param_ui('Plot parameters', param_keys)
+            if param_success:
                 rmsd_print_list = ['File 1, File 2, RMSD (%)']
 
                 # load all files and check axes for comparison
@@ -424,6 +437,7 @@ class CIUSuite2(object):
 
                 # compare each CIU analysis object against the standard
                 index = 0
+                updated_filelist = []
                 for compare_obj in compare_objs:
                     rmsd = Original_CIU.compare_basic_raw(std_obj, compare_obj, self.params_obj, self.output_dir)
                     printstring = '{},{},{:.2f}'.format(std_obj.short_filename,
@@ -433,24 +447,40 @@ class CIUSuite2(object):
                     index += 1
                     self.update_progress(compare_objs.index(compare_obj), len(compare_objs))
 
+                # save analysis objs to ensure that parameter changes are noted correctly
+                for analysis_obj in all_objs:
+                    filename = save_analysis_obj(analysis_obj, param_dict, outputdir=self.output_dir)
+                    updated_filelist.append(filename)
+                self.display_analysis_files(updated_filelist)
+
         if len(files_to_read) == 2:
             # Direct compare between two files
-            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x and 'batch' not in x]
-            if self.run_param_ui('Plot parameters', batch_keys):
+            param_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x and 'batch' not in x]
+            param_success, param_dict = self.run_param_ui('Plot parameters', param_keys)
+            if param_success:
                 ciu1 = load_analysis_obj(files_to_read[0])
                 ciu2 = load_analysis_obj(files_to_read[1])
                 updated_obj_list = check_axes_and_warn([ciu1, ciu2])
                 Original_CIU.compare_basic_raw(updated_obj_list[0], updated_obj_list[1], self.params_obj, self.output_dir)
 
+                # save analysis objs to ensure that parameter changes are noted correctly
+                updated_filelist = []
+                for analysis_obj in updated_obj_list:
+                    filename = save_analysis_obj(analysis_obj, param_dict, outputdir=self.output_dir)
+                    updated_filelist.append(filename)
+                self.display_analysis_files(updated_filelist)
+
         elif len(files_to_read) > 2:
-            batch_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x]
-            if self.run_param_ui('Plot parameters', batch_keys):
+            param_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x]
+            param_success, param_dict = self.run_param_ui('Plot parameters', param_keys)
+            if param_success:
                 rmsd_print_list = ['File 1, File 2, RMSD (%)']
                 # batch compare - compare all against all.
                 f1_index = 0
                 loaded_files = [load_analysis_obj(x) for x in files_to_read]
                 loaded_files = check_axes_and_warn(loaded_files)
 
+                updated_filelist = []
                 for analysis_obj in loaded_files:
                     # don't compare the file against itself
                     skip_index = loaded_files.index(analysis_obj)
@@ -473,8 +503,13 @@ class CIUSuite2(object):
                         printstring = '{},{},{:.2f}'.format(ciu1.short_filename, ciu2.short_filename, rmsd)
                         rmsd_print_list.append(printstring)
                         f2_index += 1
+
+                        filename = save_analysis_obj(analysis_obj, param_dict, outputdir=self.output_dir)
+                        updated_filelist.append(filename)
+
                     f1_index += 1
                     self.update_progress(loaded_files.index(analysis_obj), len(loaded_files))
+                    self.display_analysis_files(updated_filelist)
 
                 # print output to csv
                 with open(os.path.join(self.output_dir, 'batch_RMSDs.csv'), 'w') as rmsd_file:
@@ -487,10 +522,9 @@ class CIUSuite2(object):
         Reprocess raw data with new smoothing (and interpolation?) parameters
         :return: void
         """
-        title = 'Smoothing Parameters'
-        key_list = [x for x in self.params_obj.params_dict.keys() if 'smoothing' in x]
-        # key_list = ['smoothing_1_method']
-        if self.run_param_ui(title, key_list):
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'smoothing' in x]
+        param_success, param_dict = self.run_param_ui('Smoothing Parameters', param_keys)
+        if param_success:
             files_to_read = self.check_file_range_entries()
             self.progress_started()
             new_file_list = []
@@ -499,7 +533,7 @@ class CIUSuite2(object):
                 analysis_obj = load_analysis_obj(file)
                 analysis_obj = Raw_Processing.smooth_main(analysis_obj, self.params_obj)
                 analysis_obj.refresh_data()
-                filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
+                filename = save_analysis_obj(analysis_obj, param_dict, outputdir=self.output_dir)
                 new_file_list.append(filename)
 
                 # also save _raw.csv output if desired
@@ -508,8 +542,7 @@ class CIUSuite2(object):
                     Original_CIU.write_ciu_csv(save_path, analysis_obj.ciu_data, analysis_obj.axes)
                 self.update_progress(files_to_read.index(file), len(files_to_read))
 
-            self.analysis_file_list = new_file_list
-            self.display_analysis_files()
+            self.display_analysis_files(new_file_list)
         self.progress_done()
 
     def on_button_oldavg_clicked(self):
@@ -529,7 +562,7 @@ class CIUSuite2(object):
         analysis_obj_list = [load_analysis_obj(x) for x in files_to_read]
         analysis_obj_list = check_axes_and_warn(analysis_obj_list)
         averaged_obj, std_data = Original_CIU.average_ciu(analysis_obj_list, self.params_obj, self.output_dir)
-        averaged_obj.filename = save_analysis_obj(averaged_obj, self.params_obj, self.output_dir,
+        averaged_obj.filename = save_analysis_obj(averaged_obj, {}, self.output_dir,
                                                   filename_append='_Avg')
         averaged_obj.short_filename = os.path.basename(averaged_obj.filename).rstrip('.ciu')
 
@@ -537,36 +570,8 @@ class CIUSuite2(object):
         Original_CIU.ciu_plot(averaged_obj, self.params_obj, self.output_dir)
         Original_CIU.std_dev_plot(averaged_obj, std_data, self.params_obj, self.output_dir)
 
-        self.analysis_file_list = [averaged_obj.filename]
-        self.display_analysis_files()
-        self.progress_done()
-
-    def on_button_olddeltadt_clicked(self):
-        """
-        Edit files to a delta DT axis. x-axis will be adjusted so that the maximum y-value
-        in the first column of the 2D CIU matrix (or first centroid if gaussian fitting
-        has been performed) will be set to an x-value of 0, and all other x-values will
-        be adjusted accordingly.
-        :return: saves new .ciu file
-        """
-        # Determine if a file range has been specified
-        files_to_read = self.check_file_range_entries()
-        self.progress_started()
-
-        new_file_list = []
-        for file in files_to_read:
-            analysis_obj = load_analysis_obj(file)
-            shifted_obj = Original_CIU.delta_dt(analysis_obj)
-            newfile = save_analysis_obj(shifted_obj, analysis_obj.params, filename_append='_delta', outputdir=self.output_dir)
-            new_file_list.append(newfile)
-            # also save _raw.csv output if desired
-            if self.params_obj.output_1_save_csv:
-                save_path = file.rstrip('.ciu') + '_delta_raw.csv'
-                Original_CIU.write_ciu_csv(save_path, shifted_obj.ciu_data, shifted_obj.axes)
-            self.update_progress(files_to_read.index(file), len(files_to_read))
-
-        self.analysis_file_list = new_file_list
-        self.display_analysis_files()
+        # self.analysis_file_list = [averaged_obj.filename]
+        self.display_analysis_files([averaged_obj.filename])
         self.progress_done()
 
     def on_button_crop_clicked(self):
@@ -603,12 +608,11 @@ class CIUSuite2(object):
                 new_obj = Raw_Processing.crop(analysis_obj, crop_vals)
                 new_obj.refresh_data()
                 new_obj.crop_vals = crop_vals
-                newfile = save_analysis_obj(new_obj, new_obj.params, outputdir=self.output_dir)
+                newfile = save_analysis_obj(new_obj, {}, outputdir=self.output_dir)
                 new_file_list.append(newfile)
                 self.update_progress(loaded_files.index(analysis_obj), len(loaded_files))
 
-            self.analysis_file_list = new_file_list
-            self.display_analysis_files()
+            self.display_analysis_files(new_file_list)
         else:
             messagebox.showwarning('No Files Selected', 'Please select files before performing cropping/interpolation')
         self.progress_done()
@@ -621,7 +625,8 @@ class CIUSuite2(object):
         :return: void
         """
         param_keys = [x for x in self.params_obj.params_dict.keys() if 'interpolate' in x]
-        if self.run_param_ui('Interpolation Parameters', param_keys):
+        param_success, param_dict = self.run_param_ui('Interpolation Parameters', param_keys)
+        if param_success:
             # Determine if a file range has been specified
             files_to_read = self.check_file_range_entries()
             self.progress_started()
@@ -660,11 +665,11 @@ class CIUSuite2(object):
                 # create a new analysis object to prevent unstable behavior with new axes
                 new_obj = CIUAnalysisObj(analysis_obj.raw_obj, analysis_obj.ciu_data, analysis_obj.axes, self.params_obj, short_filename=analysis_obj.short_filename)
 
-                filename = save_analysis_obj(new_obj, self.params_obj, outputdir=self.output_dir)
+                filename = save_analysis_obj(new_obj, param_dict, outputdir=self.output_dir)
                 new_file_list.append(filename)
                 self.update_progress(files_to_read.index(file), len(files_to_read))
 
-            self.display_analysis_files()
+            self.display_analysis_files(new_file_list)
         self.progress_done()
 
     def on_button_gaussfit_clicked(self):
@@ -675,8 +680,8 @@ class CIUSuite2(object):
         """
         # Ask user to specify protein or nonprotein mode
         t1_param_keys = [x for x in self.params_obj.params_dict.keys() if 'gauss_t1' in x]
-        if self.run_param_ui('Gaussian Fitting Mode', t1_param_keys):
-
+        t1_param_success, t1_param_dict = self.run_param_ui('Gaussian Fitting Mode', t1_param_keys)
+        if t1_param_success:
             # Determine parameters for appropriate mode
             if self.params_obj.gauss_t1_1_protein_mode:
                 t2_param_keys = [x for x in self.params_obj.params_dict.keys() if ('gaussian' in x and '_nonprot_' not in x)]
@@ -684,7 +689,8 @@ class CIUSuite2(object):
                 t2_param_keys = [x for x in self.params_obj.params_dict.keys() if 'gaussian' in x]
 
             # Finally, run feature detection in the appropriate mode
-            if self.run_param_ui('Gaussian Fitting Parameters', t2_param_keys):
+            t2_param_success, t2_param_dict = self.run_param_ui('Gaussian Fitting Parameters', t2_param_keys)
+            if t2_param_success:
                 # Determine if a file range has been specified
                 files_to_read = self.check_file_range_entries()
                 self.progress_started()
@@ -697,7 +703,8 @@ class CIUSuite2(object):
                     analysis_obj, csv_output = Gaussian_Fitting.main_gaussian_lmfit(analysis_obj, self.params_obj, self.output_dir)
                     all_output += csv_output
 
-                    filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
+                    t2_param_dict.update(t1_param_dict)
+                    filename = save_analysis_obj(analysis_obj, t2_param_dict, outputdir=self.output_dir)
                     new_file_list.append(filename)
                     self.update_progress(files_to_read.index(file), len(files_to_read))
 
@@ -713,11 +720,11 @@ class CIUSuite2(object):
                         with open(os.path.join(outputpath, outputpath), 'w') as output:
                             output.write(all_output)
 
-                self.display_analysis_files()
+                self.display_analysis_files(new_file_list)
 
                 # prompt the user to run feature detection in Gaussian mode
                 if len(files_to_read) > 0:
-                    messagebox.showinfo('Success!', 'Gaussing fitting finished successfully. Please run Feature Detection in "gaussian" mode to finalize Gaussian assignments to features (this is required for CIU50 analysis, classification, and reconstruction).')
+                    messagebox.showinfo('Success!', 'Gaussing fitting finished successfully. Please run Feature Detection in "gaussian" mode to finalize Gaussian assignments to features (this is required for CIU50 analysis, classification, and reconstruction).').lift()
 
         self.progress_done()
 
@@ -729,7 +736,8 @@ class CIUSuite2(object):
         """
 
         param_keys = [x for x in self.params_obj.params_dict.keys() if 'reconstruct' in x]
-        if self.run_param_ui('Gaussian Reconstruction Parameters', param_keys):
+        param_success, param_dict = self.run_param_ui('Gaussian Reconstruction Parameters', param_keys)
+        if param_success:
             files_to_read = self.check_file_range_entries()
             self.progress_started()
             new_file_list = []
@@ -744,7 +752,7 @@ class CIUSuite2(object):
                         # load Gaussian information and generate a CIUAnalysisObj
                         gaussians_by_cv, axes = Gaussian_Fitting.parse_gaussian_list_from_file(template_file)
                         new_analysis_obj = Gaussian_Fitting.reconstruct_from_fits(gaussians_by_cv, axes, os.path.basename(template_file).rstrip('.csv'), self.params_obj)
-                        filename = save_analysis_obj(new_analysis_obj, self.params_obj, outputdir=self.output_dir)
+                        filename = save_analysis_obj(new_analysis_obj, param_dict, outputdir=self.output_dir)
 
                         # also save an _raw.csv file with the generated data
                         Original_CIU.write_ciu_csv(os.path.join(self.output_dir, new_analysis_obj.short_filename + '_raw.csv'),
@@ -767,8 +775,10 @@ class CIUSuite2(object):
 
                     # If gaussian data exists, perform the analysis
                     final_gausslists, final_axes = Gaussian_Fitting.check_recon_for_crop(analysis_obj.feat_protein_gaussians, analysis_obj.axes)
-                    new_obj = Gaussian_Fitting.reconstruct_from_fits(final_gausslists, final_axes, analysis_obj.short_filename, self.params_obj)
-                    filename = save_analysis_obj(new_obj, self.params_obj, outputdir=self.output_dir)
+
+                    # Save a new analysis object constructed from the fits. NOTE: saves previous objects parameter information for reference
+                    new_obj = Gaussian_Fitting.reconstruct_from_fits(final_gausslists, final_axes, analysis_obj.short_filename, analysis_obj.params)
+                    filename = save_analysis_obj(new_obj, param_dict, outputdir=self.output_dir)
 
                     # also save an _raw.csv file with the generated data
                     Original_CIU.write_ciu_csv(os.path.join(self.output_dir, new_obj.short_filename + '_raw.csv'),
@@ -778,8 +788,7 @@ class CIUSuite2(object):
                     new_file_list.append(filename)
                     self.update_progress(files_to_read.index(file), len(files_to_read))
 
-            self.analysis_file_list = new_file_list
-            self.display_analysis_files()
+            self.display_analysis_files(new_file_list)
         self.progress_done()
 
     def on_button_feature_detect_clicked(self):
@@ -789,8 +798,9 @@ class CIUSuite2(object):
         """
         # Ask user to specify standard or Gaussian mode
         t1_param_keys = [x for x in self.params_obj.params_dict.keys() if 'feature_t1' in x]
-        if self.run_param_ui('Feature Detection Parameters', t1_param_keys):
+        t1_param_success, t1_param_dict = self.run_param_ui('Feature Detection Mode', t1_param_keys)
 
+        if t1_param_success:
             # Determine feature detection parameters for appropriate mode
             if self.params_obj.feature_t1_1_ciu50_mode == 'standard':
                 t2_param_keys = [x for x in self.params_obj.params_dict.keys() if ('feature_t2' in x and '_gauss_' not in x)]
@@ -798,7 +808,9 @@ class CIUSuite2(object):
                 t2_param_keys = [x for x in self.params_obj.params_dict.keys() if 'feature_t2' in x]
 
             # Finally, run feature detection in the appropriate mode
-            if self.run_param_ui('Feature Detection Parameters', t2_param_keys):
+            t2_param_success, t2_param_dict = self.run_param_ui('Feature Detection Parameters', t2_param_keys)
+            if t2_param_success:
+                t2_param_dict.update(t1_param_dict)
                 files_to_read = self.check_file_range_entries()
                 self.progress_started()
                 new_file_list = []
@@ -824,13 +836,13 @@ class CIUSuite2(object):
                             messagebox.showerror('Uneven CV Axis', 'Error: Activation axis in file {} was not evenly spaced. Please use the "Interpolate Data" button to generate an evenly spaced axis. If using Gaussian fitting mode, Gaussian fitting MUST be redone after interpolation.'.format(analysis_obj.short_filename))
                             continue
                         features_list = analysis_obj.features_gaussian
-                        filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
+                        filename = save_analysis_obj(analysis_obj, t2_param_dict, outputdir=self.output_dir)
                         new_file_list.append(filename)
                     else:
                         # STANDARD MODE
                         analysis_obj = Feature_Detection.feature_detect_col_max(analysis_obj, self.params_obj)
                         features_list = analysis_obj.features_changept
-                        filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
+                        filename = save_analysis_obj(analysis_obj, t2_param_dict, outputdir=self.output_dir)
                         new_file_list.append(filename)
 
                     # save output
@@ -848,7 +860,7 @@ class CIUSuite2(object):
                     outputpath = os.path.join(self.output_dir, '_all-features.csv')
                     save_existing_output_string(outputpath, all_outputs)
 
-                self.display_analysis_files()
+                self.display_analysis_files(new_file_list)
         self.progress_done()
 
     def on_button_ciu50_clicked(self):
@@ -859,8 +871,9 @@ class CIUSuite2(object):
         """
         # Ask user to specify standard or Gaussian mode
         t1_param_keys = [x for x in self.params_obj.params_dict.keys() if ('_t1_' in x and '_ciu50_' in x)]
-        if self.run_param_ui('CIU50 Mode', t1_param_keys):
+        t1_param_success, t1_param_dict = self.run_param_ui('CIU50 Mode', t1_param_keys)
 
+        if t1_param_success:
             # Determine feature detection parameters for appropriate mode
             if self.params_obj.feature_t1_1_ciu50_mode == 'standard':
                 t2_param_keys = [x for x in self.params_obj.params_dict.keys() if
@@ -869,7 +882,9 @@ class CIUSuite2(object):
                 t2_param_keys = [x for x in self.params_obj.params_dict.keys() if ('ciu50' in x and '_t2_' in x)]
 
             # Finally, run analysis in the appropriate mode
-            if self.run_param_ui('CIU50 Analysis Parameters', t2_param_keys):
+            t2_param_success, t2_param_dict = self.run_param_ui('CIU50 Parameters', t2_param_keys)
+            if t2_param_success:
+                t2_param_dict.update(t1_param_dict)
                 files_to_read = self.check_file_range_entries()
                 self.progress_started()
 
@@ -897,7 +912,7 @@ class CIUSuite2(object):
 
                     # run CIU50 analysis
                     analysis_obj = Feature_Detection.ciu50_main(feature_list, analysis_obj, self.params_obj, outputdir=self.output_dir, gaussian_bool=gaussian_bool)
-                    filename = save_analysis_obj(analysis_obj, self.params_obj, outputdir=self.output_dir)
+                    filename = save_analysis_obj(analysis_obj, t2_param_dict, outputdir=self.output_dir)
                     new_file_list.append(filename)
 
                     # save outputs to file in combined or stand-alone modes
@@ -921,7 +936,7 @@ class CIUSuite2(object):
                     save_existing_output_string(outputpath, all_outputs)
                     save_existing_output_string(outputpath_short, short_outputs)
 
-                self.display_analysis_files()
+                self.display_analysis_files(new_file_list)
         self.progress_done()
 
     def on_button_classification_supervised_clicked(self):
@@ -971,7 +986,8 @@ class CIUSuite2(object):
 
         # get classification parameters
         param_keys = [x for x in self.params_obj.params_dict.keys() if 'classif' in x]
-        if self.run_param_ui('Classification Parameters', param_keys):
+        param_success, param_dict = self.run_param_ui('Classification Parameters', param_keys)
+        if param_success:
             if self.params_obj.classif_3_unk_mode == 'Gaussian':
                 # Ensure Gaussian features are present and prepare them for classification
                 max_num_gaussians = 0
@@ -1045,7 +1061,8 @@ class CIUSuite2(object):
 
         # check parameters
         param_keys = [x for x in self.params_obj.params_dict.keys() if 'unk' in x]
-        if self.run_param_ui('Classification Parameters', param_keys):
+        param_success, param_dict = self.run_param_ui('Unknown Classification Parameters', param_keys)
+        if param_success:
             # load classification scheme file
             scheme_file = filedialog.askopenfilename(filetypes=[('Classification File', '.clf')])
             if not scheme_file == '':
@@ -1098,12 +1115,14 @@ class CIUSuite2(object):
 
                 # analyze unknowns using the scheme and save outputs
                 successful_objs_for_plot = []
+                new_filename_list = []
                 for analysis_obj in analysis_obj_list:
                     # Finally, perform the classification and save outputs
                     analysis_obj = scheme.classify_unknown(analysis_obj, self.params_obj, self.output_dir)
-                    # analysis_obj.classif_predicted_outputs = prediction_outputs
-                    successful_objs_for_plot.append(analysis_obj)
+                    filename = save_analysis_obj(analysis_obj, param_dict, self.output_dir)
+                    new_filename_list.append(filename)
 
+                    successful_objs_for_plot.append(analysis_obj)
                     self.update_progress(analysis_obj_list.index(analysis_obj), len(analysis_obj_list))
 
                 if len(successful_objs_for_plot) > 0:
@@ -1119,7 +1138,7 @@ class CIUSuite2(object):
                     Classification.save_lda_and_predictions(scheme, all_transform_data, all_predictions, all_probs, all_filenames, self.output_dir, True)
                     Classification.plot_probabilities(self.params_obj, scheme, all_probs, self.output_dir, unknown_bool=True)
 
-                self.display_analysis_files()
+                self.display_analysis_files(new_filename_list)
         self.progress_done()
 
     def check_params(self):
@@ -1238,7 +1257,8 @@ class CIUSuite2(object):
         :return: void
         """
         param_keys = [x for x in self.params_obj.params_dict.keys() if 'vendor' in x]
-        if self.run_param_ui('Which Vendor Raw Data Type to Extract?', param_keys):
+        param_success, param_dict = self.run_param_ui('Which Vendor Raw Data Type to Extract?', param_keys)
+        if param_success:
             vendor_type = self.params_obj.vendor_1_type
 
             if vendor_type == 'Agilent':
@@ -1420,47 +1440,34 @@ def parse_tooltips_file(tooltips_file):
         print('params file not found!')
 
 
-def update_params_in_obj(analysis_obj, params_obj):
-    """
-    Save the provided parameters object over the analysis_obj's current parameters object
-    :param analysis_obj: CIUAnalysisObj object
-    :param params_obj: Parameters object
-    :type params_obj: Parameters
-    :rtype: CIUAnalysisObj
-    :return: updated analysis_obj
-    """
-    analysis_obj.params = params_obj
-    return analysis_obj
-
-
-def save_analysis_obj(analysis_obj, params_obj, outputdir, filename_append=''):
+def save_analysis_obj(analysis_obj, params_dict, outputdir, filename_append=''):
     """
     Pickle the CIUAnalysisObj for later retrieval
     :param analysis_obj: CIUAnalysisObj to save
     :type analysis_obj: CIUAnalysisObj
-    :param params_obj: Parameters object to update/save with the analysis object
-    :type params_obj: Parameters
+    :param params_dict: Dict with specific params to update in the analysis object's parameters object.
+    For new analysis objects, save the full dict from CIU2Main.params_obj
+    :type params_dict: dict
     :param filename_append: Addtional filename to append to the raw_obj name (e.g. 'AVG')
     :param outputdir:  directory in which to save.
     :return: full path to save location
     """
     file_extension = '.ciu'
 
-    # update parameters
-    analysis_obj.params = params_obj
+    # update parameters with only those changed in the current analysis (or all params for new analysis objects)
+    analysis_obj.params.set_params(params_dict)
+    # analysis_obj.params = update_params_in_obj(analysis_obj, params_dict)
 
-    # if outputdir is not None:
+    # Generate filename and short filename and save to object
     if analysis_obj.short_filename is None:
         filename = os.path.basename(analysis_obj.raw_obj.filename.rstrip('_raw.csv'))
     else:
         filename = analysis_obj.short_filename
     picklefile = os.path.join(outputdir, filename + filename_append + file_extension)
-    # else:
-    #     picklefile = os.path.join(os.path.dirname(analysis_obj.raw_obj.filepath),
-    #                               analysis_obj.raw_obj.filename.rstrip('_raw.csv') + filename_append + file_extension)
-
     analysis_obj.filename = picklefile
     analysis_obj.short_filename = os.path.basename(picklefile.rstrip('.ciu'))
+
+    # Save the .ciu file and return the final filename
     try:
         with open(picklefile, 'wb') as pkfile:
             pickle.dump(analysis_obj, pkfile)

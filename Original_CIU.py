@@ -261,7 +261,7 @@ def std_dev_plot(analysis_obj, std_dev_matrix, params_obj, output_dir):
         plt.annotate(std_text, xy=(150, 10), xycoords='axes points', fontsize=params_obj.plot_13_font_size)
 
     # save and close
-    output_path = os.path.join(output_dir, analysis_obj.short_filename + '_stdev.png')
+    output_path = os.path.join(output_dir, analysis_obj.short_filename + '_stdev' + params_obj.plot_02_extension)
     try:
         plt.savefig(output_path)
     except PermissionError:

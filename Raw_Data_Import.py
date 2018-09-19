@@ -8,6 +8,7 @@ and Agilent handling based on TWIMExtract and MIDAC, respectively.
 DP
 """
 from PyQt5 import QtWidgets
+from PyQt5 import QtCore
 import sys
 import os
 import shutil
@@ -26,6 +27,7 @@ class FileDialog(QtWidgets.QFileDialog):
     """
     def __init__(self, input_dir, *args):
         QtWidgets.QFileDialog.__init__(self, *args)
+        self.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
         self.setOption(self.DontUseNativeDialog, True)
         self.setFileMode(self.DirectoryOnly)
         self.setDirectory(input_dir)
@@ -268,6 +270,7 @@ def run_header_ui(original_header_list):
     :return: list of floats - return values from the HeaderUI, or None if the user canceled or something failed
     """
     header_ui = HeaderUI(original_header_list)
+    header_ui.lift()
 
     # prevent users from hitting multiple windows simultaneously
     header_ui.grab_set()
@@ -287,6 +290,7 @@ def run_twimex_ui():
     :return: void
     """
     range_ui = TWIMExRangeUI()
+    range_ui.lift()
 
     # prevent users from hitting multiple windows simultaneously
     range_ui.grab_set()

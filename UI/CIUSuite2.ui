@@ -27,7 +27,7 @@
           </object>
         </child>
         <child>
-          <object class="ttk.Button" id="Button_About">
+          <object class="ttk.Button" id="Button_about">
             <property name="command">on_button_about_clicked</property>
             <property name="text" translatable="yes">About</property>
             <layout>
@@ -40,7 +40,7 @@
           </object>
         </child>
         <child>
-          <object class="ttk.Button" id="Button_Help">
+          <object class="ttk.Button" id="Button_help">
             <property name="command">on_button_help_clicked</property>
             <property name="text" translatable="yes">Help</property>
             <layout>
@@ -711,7 +711,8 @@ Original Data</property>
                 <property name="compound">left</property>
                 <property name="image">build.png</property>
                 <property name="text" translatable="yes">   Build
-   Scheme</property>
+   Classification
+   Method</property>
                 <property name="width">5</property>
                 <layout>
                   <property name="column">1</property>
@@ -730,7 +731,7 @@ Original Data</property>
                 <property name="compound">left</property>
                 <property name="image">unknown.png</property>
                 <property name="text" translatable="yes">  Classify
-  Unknown</property>
+  Unknown(s)</property>
                 <property name="width">5</property>
                 <layout>
                   <property name="column">1</property>
