@@ -196,7 +196,13 @@ class CIUSuite2(object):
                     except ValueError as err:
                         messagebox.showerror('Data Import Error', message='{}{}. Problem: {}. Press OK to continue'.format(*err.args))
                         continue
-                    analysis_obj = process_raw_obj(raw_obj, self.params_obj)
+
+                    try:
+                        analysis_obj = process_raw_obj(raw_obj, self.params_obj)
+                    except ValueError:
+                        # all 0's in raw data - skip this file an notify the user
+                        messagebox.showerror('Empty raw data file!', 'The raw file {} is empty (no intensity values > 0) and will NOT be loaded. Press OK to continue.'.format(os.path.basename(raw_file)))
+                        continue
                     analysis_filename = save_analysis_obj(analysis_obj, param_dict, os.path.dirname(raw_obj.filepath))
                     analysis_filenames.append(analysis_filename)
                     self.update_progress(raw_filepaths.index(raw_file), len(raw_filepaths))
@@ -206,8 +212,9 @@ class CIUSuite2(object):
 
                 # update directory to match the loaded files
                 if not self.output_dir_override:
-                    self.output_dir = os.path.dirname(self.analysis_file_list[0])
-                    self.update_dir_entry()
+                    if len(self.analysis_file_list) > 1:
+                        self.output_dir = os.path.dirname(self.analysis_file_list[0])
+                        self.update_dir_entry()
         self.progress_done()
 
     def on_button_analysisfile_clicked(self):
@@ -274,7 +281,14 @@ class CIUSuite2(object):
                 analysis_obj = load_analysis_obj(analysis_file)
 
                 # update parameters and re-process raw data
-                new_obj = process_raw_obj(analysis_obj.raw_obj, self.params_obj, short_filename=analysis_obj.short_filename)
+                try:
+                    new_obj = process_raw_obj(analysis_obj.raw_obj, self.params_obj, short_filename=analysis_obj.short_filename)
+                except ValueError:
+                    # all 0's in raw data - skip this file an notify the user
+                    messagebox.showerror('Empty raw data file!', 'The raw data in file {} is empty (no intensity values > 0) and will NOT be loaded. Press OK to continue.'.format(analysis_obj.short_filename))
+                    continue
+
+                # new_obj = process_raw_obj(analysis_obj.raw_obj, self.params_obj, short_filename=analysis_obj.short_filename)
                 filename = save_analysis_obj(new_obj, param_dict, outputdir=self.output_dir)
                 output_files.append(filename)
                 self.update_progress(files_to_read.index(analysis_file), len(files_to_read))
@@ -724,8 +738,7 @@ class CIUSuite2(object):
 
                 # prompt the user to run feature detection in Gaussian mode
                 if len(files_to_read) > 0:
-                    messagebox.showinfo('Success!', 'Gaussing fitting finished successfully. Please run Feature Detection in "gaussian" mode to finalize Gaussian assignments to features (this is required for CIU50 analysis, classification, and reconstruction).').lift()
-
+                    messagebox.showinfo('Success!', 'Gaussing fitting finished successfully. Please run Feature Detection in "gaussian" mode to finalize Gaussian assignments to features (this is required for CIU50 analysis, classification, and reconstruction).')
         self.progress_done()
 
     def on_button_gaussian_reconstruct_clicked(self):
@@ -1353,7 +1366,12 @@ def process_raw_obj(raw_obj, params_obj, short_filename=None):
     :param short_filename: filename to save into the new object (e.g. if reconstructing)
     :rtype: CIUAnalysisObj
     :return: CIUAnalysisObj with processed data
+    :raises: ValueError
     """
+    # check for empty raw data and don't initialize object if empty
+    if max(raw_obj.rawdata) == 0:
+        raise ValueError
+
     # normalize data and save axes information
     norm_data = Raw_Processing.normalize_by_col(raw_obj.rawdata)
     axes = (raw_obj.dt_axis, raw_obj.cv_axis)
