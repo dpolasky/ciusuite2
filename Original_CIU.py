@@ -114,20 +114,21 @@ def get_contour_levels(ciu_data, merge_cutoff=10, num_contours=100):
     return levels
 
 
-def rmsd_difference(data_1, data_2):
-    """
-    Compute overall RMSD for the comparison of two matrices
-    :param data_1: matrix 1 (numpy.ndarray)
-    :param data_2: matrix 2 (numpy.ndarray) - MUST be same shape as matrix 1
-    :return: difference matrix (ndarray), rmsd (float) in percent
-    """
-    data_1[data_1 < 0.1] = 0
-    num_entries_1 = np.count_nonzero(data_1)
-    data_2[data_2 < 0.1] = 0
-    num_entries_2 = np.count_nonzero(data_2)
-    dif = data_1 - data_2
-    rmsd = ((np.sum(dif ** 2) / (num_entries_1 + num_entries_2)) ** 0.5) * 100
-    return dif, rmsd
+# todo: deprecated
+# def rmsd_difference(data_1, data_2):
+#     """
+#     Compute overall RMSD for the comparison of two matrices
+#     :param data_1: matrix 1 (numpy.ndarray)
+#     :param data_2: matrix 2 (numpy.ndarray) - MUST be same shape as matrix 1
+#     :return: difference matrix (ndarray), rmsd (float) in percent
+#     """
+#     data_1[data_1 < 0.1] = 0
+#     num_entries_1 = np.count_nonzero(data_1)
+#     data_2[data_2 < 0.1] = 0
+#     num_entries_2 = np.count_nonzero(data_2)
+#     dif = data_1 - data_2
+#     rmsd = ((np.sum(dif ** 2) / (num_entries_1 + num_entries_2)) ** 0.5) * 100
+#     return dif, rmsd
 
 
 def rmsd_difference_new(data_mat_list, noise_cutoff):
@@ -248,7 +249,7 @@ def rmsd_plot(difference_matrix, axes, rtext, outputdir, params_obj,
     plt.close()
 
 
-def std_dev_plot(analysis_obj, std_dev_matrix, params_obj, output_dir):
+def std_dev_plot(analysis_obj, std_dev_matrix, pairwise_rmsds, params_obj, output_dir):
     """
     Plot the original CIUSuite-style standard deviation plot from averaged fingerprints
     :param analysis_obj: Averaged analysis object (for axes and filename)
@@ -256,6 +257,7 @@ def std_dev_plot(analysis_obj, std_dev_matrix, params_obj, output_dir):
     :param std_dev_matrix: standard deviation data in same shape as analysis_obj.ciu_data
     :param params_obj: Parameters information
     :type params_obj: Parameters
+    :param pairwise_rmsds: list of pairwise RMSD values from replicate analyses for plot annotation. Set to [] to ignore
     :param output_dir: directory in which to save output
     :return: void
     """
@@ -268,12 +270,11 @@ def std_dev_plot(analysis_obj, std_dev_matrix, params_obj, output_dir):
         plot_title = params_obj.plot_12_custom_title
         plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
     elif params_obj.plot_11_show_title:
-        plot_title = analysis_obj.short_filename
+        plot_title = analysis_obj.short_filename + ' Replicate Standard Deviation Plot'
         plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
 
     # plot standard deviation contour plot, normalized to the maximum std dev observed
     max_std_dev = np.max(std_dev_matrix)
-    # contour_scale = np.linspace(0, max_std_dev, 100, endpoint=True)
     cutoff = int(round(0.05 * max_std_dev * 100))   # combine lowest 5% into single contour
     contour_scale = get_contour_levels(std_dev_matrix, merge_cutoff=cutoff)
     plt.contourf(analysis_obj.axes[1], analysis_obj.axes[0], std_dev_matrix, contour_scale, cmap=params_obj.plot_01_cmap)
@@ -305,7 +306,8 @@ def std_dev_plot(analysis_obj, std_dev_matrix, params_obj, output_dir):
         cbar = plt.colorbar(ticks=colorbar_scale, format='%.2f')
         cbar.ax.tick_params(labelsize=params_obj.plot_13_font_size)
     if params_obj.plot_07_show_legend:
-        std_text = 'Max std deviation: {:.2f}'.format(max_std_dev)
+        mean_rmsd = np.mean(pairwise_rmsds)
+        std_text = 'Average Pairwise RMSD: {:.2f}'.format(mean_rmsd)
         plt.annotate(std_text, xy=(150, 10), xycoords='axes points', fontsize=params_obj.plot_13_font_size)
 
     # save and close
@@ -318,17 +320,15 @@ def std_dev_plot(analysis_obj, std_dev_matrix, params_obj, output_dir):
     plt.close()
 
 
-def average_ciu(analysis_obj_list, params_obj, outputdir):
+def average_ciu(analysis_obj_list, compare_int_cutoff):
     """
     Generate and save replicate object (a CIUAnalysisObj with averaged ciu_data and a list
     of raw_objs) that can be used for further analysis
     :param analysis_obj_list: list of CIUAnalysisObj's to average
     :type analysis_obj_list: list[CIUAnalysisObj]
-    :param params_obj: Parameters object with param info
-    :type params_obj: Parameters
-    :param outputdir: directory in which to save output .ciu file
+    :param compare_int_cutoff: Intensity cutoff for RMSD comparisons
     :rtype: CIUAnalysisObj
-    :return: averaged analysis object
+    :return: averaged analysis object, standard deviation matrix, and replicate rmsd
     """
     raw_obj_list = []
     ciu_data_list = []
@@ -342,11 +342,75 @@ def average_ciu(analysis_obj_list, params_obj, outputdir):
     averaged_obj = CIUAnalysisObj(raw_obj_list[0], avg_data, analysis_obj_list[0].axes, analysis_obj_list[0].params)
     averaged_obj.raw_obj_list = raw_obj_list
 
-    # plot averaged object and standard deviation
-    # ciu_plot(averaged_obj, params_obj, outputdir)
-    # std_dev_plot(averaged_obj, std_data, params_obj, outputdir)
+    # compute replicate RMSD
+    dif, rep_rmsd = rmsd_difference_new([x.ciu_data for x in analysis_obj_list], compare_int_cutoff)
 
-    return averaged_obj, std_data
+    return averaged_obj, std_data, rep_rmsd
+
+
+def get_pairwise_rmsds(analysis_obj_list, params_obj):
+    """
+    Helper method to compute pairwise RMSD values for each replicate in an averaging analysis. Also
+    generates strings for saving to CSV.
+    :param analysis_obj_list: list of analysis objects being averaged
+    :type analysis_obj_list: list[CIUAnalysisObj]
+    :param params_obj: parameter container
+    :type params_obj: Parameters
+    :return: list of RMSD values (floats), list of RMSD strings
+    """
+    f1_index = 0
+    rmsd_strings = ''
+    rmsds = []
+    for analysis_obj in analysis_obj_list:
+        f2_index = 0
+        while f2_index < len(analysis_obj_list):
+            # skip reverse and self comparisons
+            if f2_index >= f1_index:
+                f2_index += 1
+                continue
+
+            rmsd = compare_basic_raw(analysis_obj, analysis_obj_list[f2_index], params_obj, outputdir='', no_plots=True)
+            rmsds.append(rmsd)
+            rmsd_strings += '{},{},{:.2f}\n'.format(analysis_obj.short_filename, analysis_obj_list[f2_index].short_filename, rmsd)
+            f2_index += 1
+        f1_index += 1
+    return rmsds, rmsd_strings
+
+
+def save_avg_rmsd_data(analysis_obj_list, params_obj, avg_filename, output_dir):
+    """
+    Generate a CSV file with information about the averaged file, including the input files,
+    total replicate RMSD, and pairwise RMSDs from each file.
+    NOTE: should be called AFTER the averaged object has been saved with its updated filename
+    :param analysis_obj_list: list of analysis objects averaged
+    :param params_obj: parameters container
+    :type params_obj: Parameters
+    :param avg_filename: filename of the average .ciu file
+    :param output_dir: directory in which to save output.
+    :return: void
+    """
+    # Determine pairwise comparison RMSDs for all file and save
+    rmsds, rmsd_strings = get_pairwise_rmsds(analysis_obj_list, params_obj)
+
+    # Format string output
+    output_string = ''
+    output_string += 'Avg File:,{}\n'.format(avg_filename)
+    output_string += 'Input Files:,{}\n'.format(','.join([x.short_filename for x in analysis_obj_list]))
+    output_string += 'Replicate RMSD (%):,{:.2f}\n'.format(np.mean(rmsds))
+    output_string += 'RMSD Std Dev:,{:.2f}\n'.format(np.std(rmsds))
+    output_string += 'Pairwise RMSDs:\n'
+    output_string += 'File 1,File 2,RMSD (%)\n'
+    output_string += rmsd_strings
+
+    # save to file while catching permission errors
+    save_path = os.path.join(output_dir, avg_filename + '_RMSDs.csv')
+    try:
+        with open(save_path, 'w') as outfile:
+            outfile.write(output_string)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(save_path))
+        with open(save_path, 'w') as outfile:
+            outfile.write(output_string)
 
 
 def interpolate_axes(axis1, axis2, num_bins):
@@ -366,7 +430,7 @@ def interpolate_axes(axis1, axis2, num_bins):
     return np.linspace(min_val, max_val, num_bins)
 
 
-def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir):
+def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir, no_plots=False):
     """
     Basic CIU comparison between two raw files. Prints compare plot and csv to output dir.
     Adapted to use CIUAnalysis objects as inputs, so now assumes data will be preprocessed prior
@@ -378,6 +442,7 @@ def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir):
     :param params_obj: Parameters object with parameter information
     :type params_obj: Parameters
     :param outputdir: directory in which to save output
+    :param no_plots: Turn off plot outputs
     :return: RMSD value (writes plot to output directory)
     """
     norm_data_1 = analysis_obj1.ciu_data
@@ -413,24 +478,24 @@ def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir):
     # dif, rmsd = rmsd_difference(norm_data_1, norm_data_2)
     dif, rmsd = rmsd_difference_new([norm_data_1, norm_data_2], params_obj.compare_4_int_cutoff)
 
-    rtext = "RMSD = " + '%2.2f' % rmsd
-    title = '{} - {}'.format(analysis_obj1.short_filename,
-                             analysis_obj2.short_filename)
+    if not no_plots:
+        rtext = "RMSD = " + '%2.2f' % rmsd
+        rmsd_plot(difference_matrix=dif,
+                  axes=axes,
+                  file1=analysis_obj1.short_filename,
+                  file2=analysis_obj2.short_filename,
+                  rtext=rtext,
+                  outputdir=outputdir,
+                  params_obj=params_obj,
+                  blue_label=params_obj.compare_2_custom_blue,
+                  red_label=params_obj.compare_1_custom_red)
 
-    rmsd_plot(difference_matrix=dif,
-              axes=axes,
-              file1=analysis_obj1.short_filename,
-              file2=analysis_obj2.short_filename,
-              rtext=rtext,
-              outputdir=outputdir,
-              params_obj=params_obj,
-              blue_label=params_obj.compare_2_custom_blue,
-              red_label=params_obj.compare_1_custom_red)
-
-    if params_obj.output_1_save_csv:
-        save_path = os.path.join(outputdir, title)
-        save_path += '_raw.csv'
-        write_ciu_csv(save_path, dif, axes)
+    # if params_obj.output_1_save_csv:
+    #     title = '{} - {}'.format(analysis_obj1.short_filename,
+    #                              analysis_obj2.short_filename)
+    #     save_path = os.path.join(outputdir, title)
+    #     save_path += '_raw.csv'
+    #     write_ciu_csv(save_path, dif, axes)
 
     return rmsd
 

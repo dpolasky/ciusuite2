@@ -523,7 +523,7 @@ class CIUSuite2(object):
 
                     f1_index += 1
                     self.update_progress(loaded_files.index(analysis_obj), len(loaded_files))
-                    self.display_analysis_files(updated_filelist)
+                self.display_analysis_files(updated_filelist)
 
                 # print output to csv
                 with open(os.path.join(self.output_dir, 'batch_RMSDs.csv'), 'w') as rmsd_file:
@@ -573,21 +573,24 @@ class CIUSuite2(object):
 
         self.progress_started()
 
+        # Check that axes are the same across objects
         analysis_obj_list = [load_analysis_obj(x) for x in files_to_read]
-
-        rmsd = Original_CIU.rmsd_difference_multiple([x.ciu_data for x in analysis_obj_list])
-
         analysis_obj_list = check_axes_and_warn(analysis_obj_list)
-        averaged_obj, std_data = Original_CIU.average_ciu(analysis_obj_list, self.params_obj, self.output_dir)
+
+        # Compute averaged CIU data and generate output plots
+        averaged_obj, std_data, rep_rmsd = Original_CIU.average_ciu(analysis_obj_list, self.params_obj.compare_4_int_cutoff)
+
+        # Save averaged object as a .ciu file
         averaged_obj.filename = save_analysis_obj(averaged_obj, {}, self.output_dir,
                                                   filename_append='_Avg')
         averaged_obj.short_filename = os.path.basename(averaged_obj.filename).rstrip('.ciu')
 
-        # plot averaged object and standard deviation
+        # plot averaged object and standard deviation and save output average CSV file
+        pairwise_rmsds, rmsd_strings = Original_CIU.get_pairwise_rmsds(analysis_obj_list, self.params_obj)
         Original_CIU.ciu_plot(averaged_obj, self.params_obj, self.output_dir)
-        Original_CIU.std_dev_plot(averaged_obj, std_data, self.params_obj, self.output_dir)
+        Original_CIU.std_dev_plot(averaged_obj, std_data, pairwise_rmsds, self.params_obj, self.output_dir)
+        Original_CIU.save_avg_rmsd_data(analysis_obj_list, self.params_obj, averaged_obj.short_filename, self.output_dir)
 
-        # self.analysis_file_list = [averaged_obj.filename]
         self.display_analysis_files([averaged_obj.filename])
         self.progress_done()
 

@@ -2,6 +2,7 @@
 <interface>
   <object class="tk.Toplevel" id="CIU_app_top">
     <property name="height">1000</property>
+    <property name="title" translatable="yes">CIUSuite 2</property>
     <property name="width">200</property>
     <child>
       <object class="ttk.Frame" id="Logo_Panel">
