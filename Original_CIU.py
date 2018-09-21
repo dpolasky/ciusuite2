@@ -102,8 +102,14 @@ def get_contour_levels(ciu_data, merge_cutoff=10, num_contours=100):
     min_val = int(round(np.min(ciu_data) * 100)) - 1
     step = (max_val - min_val) / float(num_contours)      # round magnitude step to get close to 100 contours/bins total
     step = possible_steps[(np.abs(possible_steps - step)).argmin()]
-    levels = [x for x in np.arange(merge_cutoff, max_val, step)]
-    levels.insert(0, min_val)
+
+    # ensure the min value in the data is above the merge cutoff
+    if merge_cutoff < min_val:
+        merge_cutoff = min_val
+        levels = [x for x in np.arange(merge_cutoff, max_val, step)]
+    else:
+        levels = [x for x in np.arange(merge_cutoff, max_val, step)]
+        levels.insert(0, min_val)
     levels = [x / 100.0 for x in levels]  # convert from integers (percent) back to float (relative intensity)
     return levels
 
@@ -124,14 +130,45 @@ def rmsd_difference(data_1, data_2):
     return dif, rmsd
 
 
-def rmsd_plot(difference_matrix, axes, contour_scale, tick_scale, rtext, outputdir, params_obj,
-              file1, file2, blue_label=None, red_label=None):
+def rmsd_difference_new(data_mat_list, noise_cutoff):
+    """
+    Compute RMSD between an arbitrary number of fingerprints. Returns RMSD and either pairwise difference
+    matrix or standard deviation matrix depending on number of files passed.
+    :param data_mat_list: list of data matrices (2D numpy arrays)
+    :param noise_cutoff: minimum relative intensity to consider (all values below cutoff set to 0)
+    :return: averaged difference matrix (ndarray), rmsd (float) in percent
+    """
+    # first, noise filter all data
+    for data_mat in data_mat_list:
+        data_mat[data_mat < noise_cutoff] = 0
+
+    # compute averaged fingerprint
+    avg_data = np.mean(data_mat_list, axis=0)
+    avg_num_points = np.count_nonzero(avg_data)
+
+    # compute average RMSD (all replicates)
+    rmsd = 0
+    for data_mat in data_mat_list:
+        dif_mat = avg_data - data_mat
+        rmsd += np.sum(dif_mat ** 2)
+    rmsd /= avg_num_points
+    rmsd = np.sqrt(rmsd) * 100
+
+    # Compute pairwise difference if passed a pair of datasets OR compute standard deviation amongst data if >2 datasets passed
+    if len(data_mat_list) == 2:
+        dif = data_mat_list[0] - data_mat_list[1]
+    else:
+        dif = np.std(data_mat_list)
+
+    return dif, rmsd
+
+
+def rmsd_plot(difference_matrix, axes, rtext, outputdir, params_obj,
+              file1, file2, blue_label=None, red_label=None, filename_append=''):
     """
     Make a CIUSuite comparison RMSD plot with provided parameters
     :param difference_matrix: 2D ndarray with differences to plot
     :param axes: [DT axis, CV axis] - axes labels to use for plot
-    :param contour_scale: Scaling axis for the contour plot, (default = -1 to 1 in 100 increments)
-    :param tick_scale: Scaling axis for ticks on contour plot scalebar (default = -1 to 1 in 6 increments)
     :param rtext: RMSD label to apply to plot
     :param outputdir: directory in which to save plot
     :param file1: filename of first file
@@ -140,6 +177,7 @@ def rmsd_plot(difference_matrix, axes, contour_scale, tick_scale, rtext, outputd
     :param red_label: (optional) custom colorbar label for the first file
     :param params_obj: Parameters container with plotting information
     :type params_obj: Parameters
+    :param filename_append: optional string to append to output title immediately before the file extenstion
     :return: void
     """
     # initial plot setup
@@ -154,8 +192,18 @@ def rmsd_plot(difference_matrix, axes, contour_scale, tick_scale, rtext, outputd
         plot_title = 'Red: {} \nBlue: {}'.format(file1, file2)
         plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
 
+    # scale plot to max difference value in high contrast mode, or max value (1) in default mode
+    if params_obj.compare_3_high_contrast:
+        rmsd_plot_scaling = np.amax(difference_matrix, axis=None)
+        rmsd_plot_scaling = round(rmsd_plot_scaling, 2)  # round to nearest hundredth
+        rmsd_plot_scaling += 0.01  # ensure that we didn't round down below the max value by adding 1/100
+    else:
+        rmsd_plot_scaling = 1
+    contour_scaling = np.linspace(-rmsd_plot_scaling, rmsd_plot_scaling, 50, endpoint=True)
+    colorbar_scaling = np.linspace(-rmsd_plot_scaling, rmsd_plot_scaling, 3, endpoint=True)
+
     # make the RMSD contour plot
-    plt.contourf(axes[1], axes[0], difference_matrix, contour_scale, cmap="bwr", ticks="none")
+    plt.contourf(axes[1], axes[0], difference_matrix, contour_scaling, cmap="bwr", ticks="none")
     plt.tick_params(axis='x', which='both', bottom='off', top='off', left='off', right='off')
     plt.tick_params(axis='y', which='both', bottom='off', top='off', left='off', right='off')
 
@@ -163,7 +211,7 @@ def rmsd_plot(difference_matrix, axes, contour_scale, tick_scale, rtext, outputd
     if params_obj.plot_07_show_legend:
         plt.annotate(rtext, xy=(200, 10), xycoords='axes points', fontsize=params_obj.plot_13_font_size)
     if params_obj.plot_06_show_colorbar:
-        colorbar = plt.colorbar(ticks=tick_scale)
+        colorbar = plt.colorbar(ticks=colorbar_scaling)
         if blue_label is not None and red_label is not None:
             colorbar.ax.set_yticklabels([red_label, 'Equal', blue_label])
         colorbar.ax.tick_params(labelsize=params_obj.plot_13_font_size)
@@ -191,7 +239,7 @@ def rmsd_plot(difference_matrix, axes, contour_scale, tick_scale, rtext, outputd
         plt.ylim(ymax=params_obj.plot_19_ylim_upper)
 
     # save and close
-    output_path = os.path.join(outputdir, '{}-{}{}'.format(file1, file2, params_obj.plot_02_extension))
+    output_path = os.path.join(outputdir, '{}-{}{}{}'.format(file1, file2, filename_append, params_obj.plot_02_extension))
     try:
         plt.savefig(output_path)
     except PermissionError:
@@ -362,27 +410,17 @@ def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir):
         norm_data_2 = interp_fn2(cv_axis, dt_axis)
         axes = [dt_axis, cv_axis]
 
-    dif, rmsd = rmsd_difference(norm_data_1, norm_data_2)
+    # dif, rmsd = rmsd_difference(norm_data_1, norm_data_2)
+    dif, rmsd = rmsd_difference_new([norm_data_1, norm_data_2], params_obj.compare_4_int_cutoff)
 
     rtext = "RMSD = " + '%2.2f' % rmsd
     title = '{} - {}'.format(analysis_obj1.short_filename,
                              analysis_obj2.short_filename)
 
-    # scale plot to max difference value in high contrast mode, or max value (1) in default mode
-    if params_obj.compare_3_high_contrast:
-        rmsd_plot_scaling = np.amax(dif, axis=None)
-        rmsd_plot_scaling = round(rmsd_plot_scaling, 2)  # round to nearest hundredth
-        rmsd_plot_scaling += 0.01   # ensure that we didn't round down below the max value by adding 1/100
-    else:
-        rmsd_plot_scaling = 1
-    contour_scaling = np.linspace(-rmsd_plot_scaling, rmsd_plot_scaling, 50, endpoint=True)
-    colorbar_scaling = np.linspace(-rmsd_plot_scaling, rmsd_plot_scaling, 3, endpoint=True)
     rmsd_plot(difference_matrix=dif,
               axes=axes,
               file1=analysis_obj1.short_filename,
               file2=analysis_obj2.short_filename,
-              contour_scale=contour_scaling,
-              tick_scale=colorbar_scaling,
               rtext=rtext,
               outputdir=outputdir,
               params_obj=params_obj,
@@ -394,8 +432,6 @@ def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir):
         save_path += '_raw.csv'
         write_ciu_csv(save_path, dif, axes)
 
-    # if return_dif:
-    #     return RMSD, dif
     return rmsd
 
 

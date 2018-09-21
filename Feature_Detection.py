@@ -426,6 +426,10 @@ def check_feature_order(features_list):
     :param features_list: list of Feature objects to sort
     :return: sorted features list, swapping ONLY features that are completely out of order as described above
     """
+    if len(features_list) == 0:
+        # no features detected, likely because filter settings were too strict. return empty list
+        return features_list
+
     new_list = [features_list[0]]
     index = 1
     while index < len(features_list):
@@ -451,6 +455,7 @@ def plot_features(feature_list, analysis_obj, params_obj, outputdir, filename_ap
     :param params_obj: Parameters object with parameter information
     :type params_obj: Parameters
     :param outputdir: directory in which to save output
+    :param filename_append: additional string to append to filename (optional)
     :return: void
     """
     # initialize plot
@@ -902,7 +907,9 @@ class Feature(object):
                     return False
 
             # if collision voltage is within tolerance of the nearest CV in the feature already, return True
-            return abs(collision_voltage - nearest_cv) <= cv_tol
+            cv_diff = abs(collision_voltage - nearest_cv)
+            within_tol_bool = cv_diff <= cv_tol
+            return within_tol_bool
 
     def get_median(self):
         """

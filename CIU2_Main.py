@@ -31,7 +31,6 @@ import pickle
 import sys
 import multiprocessing
 
-from CIU_raw import CIURaw
 from CIU_analysis_obj import CIUAnalysisObj
 import CIU_Params
 import Raw_Processing
@@ -198,7 +197,7 @@ class CIUSuite2(object):
                         continue
 
                     try:
-                        analysis_obj = process_raw_obj(raw_obj, self.params_obj)
+                        analysis_obj = Raw_Processing.process_raw_obj(raw_obj, self.params_obj)
                     except ValueError:
                         # all 0's in raw data - skip this file an notify the user
                         messagebox.showerror('Empty raw data file!', 'The raw file {} is empty (no intensity values > 0) and will NOT be loaded. Press OK to continue.'.format(os.path.basename(raw_file)))
@@ -282,7 +281,7 @@ class CIUSuite2(object):
 
                 # update parameters and re-process raw data
                 try:
-                    new_obj = process_raw_obj(analysis_obj.raw_obj, self.params_obj, short_filename=analysis_obj.short_filename)
+                    new_obj = Raw_Processing.process_raw_obj(analysis_obj.raw_obj, self.params_obj, short_filename=analysis_obj.short_filename)
                 except ValueError:
                     # all 0's in raw data - skip this file an notify the user
                     messagebox.showerror('Empty raw data file!', 'The raw data in file {} is empty (no intensity values > 0) and will NOT be loaded. Press OK to continue.'.format(analysis_obj.short_filename))
@@ -514,12 +513,13 @@ class CIUSuite2(object):
                         ciu1 = analysis_obj
                         ciu2 = loaded_files[f2_index]
                         rmsd = Original_CIU.compare_basic_raw(ciu1, ciu2, self.params_obj, self.output_dir)
+
                         printstring = '{},{},{:.2f}'.format(ciu1.short_filename, ciu2.short_filename, rmsd)
                         rmsd_print_list.append(printstring)
                         f2_index += 1
 
-                        filename = save_analysis_obj(analysis_obj, param_dict, outputdir=self.output_dir)
-                        updated_filelist.append(filename)
+                    filename = save_analysis_obj(analysis_obj, param_dict, outputdir=self.output_dir)
+                    updated_filelist.append(filename)
 
                     f1_index += 1
                     self.update_progress(loaded_files.index(analysis_obj), len(loaded_files))
@@ -574,6 +574,9 @@ class CIUSuite2(object):
         self.progress_started()
 
         analysis_obj_list = [load_analysis_obj(x) for x in files_to_read]
+
+        rmsd = Original_CIU.rmsd_difference_multiple([x.ciu_data for x in analysis_obj_list])
+
         analysis_obj_list = check_axes_and_warn(analysis_obj_list)
         averaged_obj, std_data = Original_CIU.average_ciu(analysis_obj_list, self.params_obj, self.output_dir)
         averaged_obj.filename = save_analysis_obj(averaged_obj, {}, self.output_dir,
@@ -638,52 +641,76 @@ class CIUSuite2(object):
         behavior if old values (e.g. features) were used after interpolation.
         :return: void
         """
-        param_keys = [x for x in self.params_obj.params_dict.keys() if 'interpolate' in x]
-        param_success, param_dict = self.run_param_ui('Interpolation Parameters', param_keys)
-        if param_success:
-            # Determine if a file range has been specified
+        if len(self.analysis_file_list) > 0:
+
+            # Warn user if any files have features or Gaussians, as these will be erased by cropping
             files_to_read = self.check_file_range_entries()
-            self.progress_started()
+            loaded_files = [load_analysis_obj(x) for x in files_to_read]
+            warned_yet_flag = False
+            for quick_obj in loaded_files:
+                if quick_obj.features_changept is not None or quick_obj.raw_protein_gaussians is not None or quick_obj.features_gaussian is not None:
+                    if not warned_yet_flag:
+                        messagebox.showwarning('Processing Results will be Erased', 'All processing results (feature detection, Gaussian fitting, etc.) are erased when cropping files to prevent axes errors. If you do not want this, press cancel on the next screen.')
+                        warned_yet_flag = True
 
-            # determine which axis to interpolate
-            if self.params_obj.interpolate_1_axis == 'collision voltage':
-                interp_cv = True
-                interp_dt = False
-            elif self.params_obj.interpolate_1_axis == 'drift time':
-                interp_cv = False
-                interp_dt = True
-            else:
-                interp_cv = True
-                interp_dt = True
+            # interpolation parameters
+            param_keys = [x for x in self.params_obj.params_dict.keys() if 'interpolate' in x]
+            param_success, param_dict = self.run_param_ui('Interpolation Parameters', param_keys)
 
-            new_file_list = []
-            for file in files_to_read:
-                analysis_obj = load_analysis_obj(file)
-                # compute new axes
-                new_axes = Raw_Processing.compute_new_axes(old_axes=analysis_obj.axes,
-                                                           interpolation_scaling=int(self.params_obj.interpolate_2_scaling),
-                                                           interp_cv=interp_cv,
-                                                           interp_dt=interp_dt)
-                if not self.params_obj.interpolate_3_onedim:
-                    analysis_obj = Raw_Processing.interpolate_axes(analysis_obj, new_axes)
+            if param_success:
+                self.progress_started()
+
+                # determine which axis to interpolate
+                if self.params_obj.interpolate_1_axis == 'collision voltage':
+                    interp_cv = True
+                    interp_dt = False
+                elif self.params_obj.interpolate_1_axis == 'drift time':
+                    interp_cv = False
+                    interp_dt = True
                 else:
-                    # 1D interpolation mode, pass the correct axis to 1D interp method
-                    if interp_dt:
-                        analysis_obj = Raw_Processing.interpolate_axis_1d(analysis_obj, interp_dt, new_axes[0])
-                    elif interp_cv:
-                        analysis_obj = Raw_Processing.interpolate_axis_1d(analysis_obj, interp_dt, new_axes[1])
+                    interp_cv = True
+                    interp_dt = True
+
+                new_file_list = []
+                for file in files_to_read:
+                    analysis_obj = load_analysis_obj(file)
+
+                    # Restore the original data and interpolate from that to ensure constant level of interpolation
+                    try:
+                        new_obj = Raw_Processing.process_raw_obj(analysis_obj.raw_obj, self.params_obj,
+                                                                 short_filename=analysis_obj.short_filename)
+                    except ValueError:
+                        # all 0's in raw data - skip this file an notify the user
+                        messagebox.showerror('Empty raw data file!',
+                                             'The raw data in file {} is empty (no intensity values > 0) and will NOT be loaded. Press OK to continue.'.format(
+                                                 analysis_obj.short_filename))
+                        continue
+
+                    # compute new axes
+                    new_axes = Raw_Processing.compute_new_axes(old_axes=new_obj.axes, interpolation_scaling=int(self.params_obj.interpolate_2_scaling), interp_cv=interp_cv, interp_dt=interp_dt)
+                    if not self.params_obj.interpolate_3_onedim:
+                        new_obj = Raw_Processing.interpolate_axes(new_obj, new_axes)
                     else:
-                        messagebox.showerror('Invalid Mode', '1D interpolation can only be performed on one axis at a time. Please select 2D interpolation for both axes or select a single axis for 1D interpolation.')
-                        break
+                        # 1D interpolation mode, pass the correct axis to 1D interp method
+                        if interp_dt:
+                            new_obj = Raw_Processing.interpolate_axis_1d(new_obj, interp_dt, new_axes[0])
+                        elif interp_cv:
+                            new_obj = Raw_Processing.interpolate_axis_1d(new_obj, interp_dt, new_axes[1])
+                        else:
+                            messagebox.showerror('Invalid Mode', '1D interpolation can only be performed on one axis at a time. Please select 2D interpolation for both axes or select a single axis for 1D interpolation.')
+                            break
 
-                # create a new analysis object to prevent unstable behavior with new axes
-                new_obj = CIUAnalysisObj(analysis_obj.raw_obj, analysis_obj.ciu_data, analysis_obj.axes, self.params_obj, short_filename=analysis_obj.short_filename)
+                    # create a new analysis object to prevent unstable behavior with new axes
+                    interp_obj = CIUAnalysisObj(new_obj.raw_obj, new_obj.ciu_data, new_obj.axes, self.params_obj, short_filename=new_obj.short_filename)
 
-                filename = save_analysis_obj(new_obj, param_dict, outputdir=self.output_dir)
-                new_file_list.append(filename)
-                self.update_progress(files_to_read.index(file), len(files_to_read))
+                    filename = save_analysis_obj(interp_obj, param_dict, outputdir=self.output_dir)
+                    new_file_list.append(filename)
+                    self.update_progress(files_to_read.index(file), len(files_to_read))
 
-            self.display_analysis_files(new_file_list)
+                self.display_analysis_files(new_file_list)
+        else:
+            messagebox.showwarning('No Files Selected',
+                                   'Please select files before performing cropping/interpolation')
         self.progress_done()
 
     def on_button_gaussfit_clicked(self):
@@ -708,7 +735,7 @@ class CIUSuite2(object):
                 # Determine if a file range has been specified
                 files_to_read = self.check_file_range_entries()
                 self.progress_started()
-                print('\n**** Starting Gaussian Fitting - THIS MAY TAKE SOME TIME - the GUI will not respond until fitting is completed ****')
+                print('\n**** Starting Gaussian Fitting - THIS MAY TAKE SOME TIME - CIUSuite 2 will not respond until fitting is completed ****')
 
                 new_file_list = []
                 all_output = ''
@@ -1352,35 +1379,6 @@ def save_existing_output_string(full_output_path, string_to_save):
                              'The file {} is open or being used by another program! Please close it, THEN press the OK button to retry saving'.format(full_output_path))
         with open(full_output_path, 'w') as outfile:
             outfile.write(string_to_save)
-
-
-def process_raw_obj(raw_obj, params_obj, short_filename=None):
-    """
-    Run all initial raw processing stages (data import, smoothing, interpolation, cropping)
-    on a raw file using the parameters provided in a Parameters object. Returns a NEW
-    analysis object with the processed data
-    :param raw_obj: the CIURaw object containing the raw data to process
-    :type raw_obj: CIURaw
-    :param params_obj: Parameters object containing processing parameters
-    :type params_obj: Parameters
-    :param short_filename: filename to save into the new object (e.g. if reconstructing)
-    :rtype: CIUAnalysisObj
-    :return: CIUAnalysisObj with processed data
-    :raises: ValueError
-    """
-    # check for empty raw data and don't initialize object if empty
-    if max(raw_obj.rawdata) == 0:
-        raise ValueError
-
-    # normalize data and save axes information
-    norm_data = Raw_Processing.normalize_by_col(raw_obj.rawdata)
-    axes = (raw_obj.dt_axis, raw_obj.cv_axis)
-
-    # save a CIUAnalysisObj with the information above
-    analysis_obj = CIUAnalysisObj(raw_obj, norm_data, axes, params_obj, short_filename=short_filename)
-    analysis_obj = Raw_Processing.smooth_main(analysis_obj, params_obj)
-
-    return analysis_obj
 
 
 def check_axes_and_warn(loaded_obj_list):

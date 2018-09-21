@@ -20,6 +20,35 @@ import CIU_analysis_obj
 import CIU_raw
 
 
+def process_raw_obj(raw_obj, params_obj, short_filename=None):
+    """
+    Run all initial raw processing stages (data import, smoothing, interpolation, cropping)
+    on a raw file using the parameters provided in a Parameters object. Returns a NEW
+    analysis object with the processed data
+    :param raw_obj: the CIURaw object containing the raw data to process
+    :type raw_obj: CIURaw
+    :param params_obj: Parameters object containing processing parameters
+    :type params_obj: Parameters
+    :param short_filename: filename to save into the new object (e.g. if reconstructing)
+    :rtype: CIUAnalysisObj
+    :return: CIUAnalysisObj with processed data
+    :raises: ValueError
+    """
+    # check for empty raw data and don't initialize object if empty
+    if np.max(raw_obj.rawdata) == 0:
+        raise ValueError
+
+    # normalize data and save axes information
+    norm_data = normalize_by_col(raw_obj.rawdata)
+    axes = (raw_obj.dt_axis, raw_obj.cv_axis)
+
+    # save a CIUAnalysisObj with the information above
+    analysis_obj = CIU_analysis_obj.CIUAnalysisObj(raw_obj, norm_data, axes, params_obj, short_filename=short_filename)
+    analysis_obj = smooth_main(analysis_obj, params_obj)
+
+    return analysis_obj
+
+
 def get_data(fname):
     """
     Read _raw.csv file and generate a CIURaw object containing its raw data and filename

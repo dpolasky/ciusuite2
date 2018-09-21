@@ -353,7 +353,7 @@ def crossval_main(analysis_obj_list_by_label, labels, outputdir, params_obj, fea
         max_features = len(features_list) + 1
 
     for ind, feature in enumerate(features_list[:max_features]):
-        print('\nNum features: {}'.format(ind+1))
+        print('\nPerforming cross validation for {} features'.format(ind+1))
         current_features_list.append(feature)
 
         # Generate all combinations

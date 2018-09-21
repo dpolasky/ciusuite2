@@ -251,6 +251,8 @@ def main_gaussian_lmfit(analysis_obj, params_obj, outputpath):
             cv = analysis_obj.axes[1][cv_index]
             gaussian_guess_list = guess_gauss_init(cv_col_intensities, analysis_obj.axes[0], cv, rsq_cutoff=0.99, amp_cutoff=params_obj.gaussian_2_int_threshold)
 
+            print('Starting fit at CV {} of {}'.format(cv_index + 1, len(cv_col_data)))
+
             # Run fitting and scoring across the provided range of peak options with multiprocessing
             argslist = [analysis_obj.axes[0], cv_col_intensities, gaussian_guess_list, params_obj, outputfolder]
             pool_result = pool.apply_async(iterate_lmfitting, args=argslist)
@@ -485,7 +487,7 @@ def perform_fit(x_data, y_data, cv, num_prot_pks, num_nonprot_pks, guesses_list,
         final_model += model
 
     output = final_model.fit(y_data, fit_params, x=x_data, method='leastsq', nan_policy='omit',
-                             scale_covar=False)
+                             scale_covar=False, fit_kws={'maxfev': 1000})
 
     # compute fits and score
     current_fit = SingleFitStats(x_data=x_data, y_data=y_data, cv=cv, lmfit_output=output,

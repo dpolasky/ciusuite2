@@ -122,6 +122,7 @@ class Parameters(object):
         self.compare_1_custom_red = None
         self.compare_2_custom_blue = None
         self.compare_3_high_contrast = None
+        self.compare_4_int_cutoff = None
 
         # Gaussian fitting
         self.gauss_t1_1_protein_mode = None
