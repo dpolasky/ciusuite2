@@ -578,7 +578,7 @@ class CIUSuite2(object):
         analysis_obj_list = check_axes_and_warn(analysis_obj_list)
 
         # Compute averaged CIU data and generate output plots
-        averaged_obj, std_data, rep_rmsd = Original_CIU.average_ciu(analysis_obj_list, self.params_obj.compare_4_int_cutoff)
+        averaged_obj, std_data = Original_CIU.average_ciu(analysis_obj_list)
 
         # Save averaged object as a .ciu file
         averaged_obj.filename = save_analysis_obj(averaged_obj, {}, self.output_dir,

@@ -114,53 +114,24 @@ def get_contour_levels(ciu_data, merge_cutoff=10, num_contours=100):
     return levels
 
 
-# todo: deprecated
-# def rmsd_difference(data_1, data_2):
-#     """
-#     Compute overall RMSD for the comparison of two matrices
-#     :param data_1: matrix 1 (numpy.ndarray)
-#     :param data_2: matrix 2 (numpy.ndarray) - MUST be same shape as matrix 1
-#     :return: difference matrix (ndarray), rmsd (float) in percent
-#     """
-#     data_1[data_1 < 0.1] = 0
-#     num_entries_1 = np.count_nonzero(data_1)
-#     data_2[data_2 < 0.1] = 0
-#     num_entries_2 = np.count_nonzero(data_2)
-#     dif = data_1 - data_2
-#     rmsd = ((np.sum(dif ** 2) / (num_entries_1 + num_entries_2)) ** 0.5) * 100
-#     return dif, rmsd
-
-
-def rmsd_difference_new(data_mat_list, noise_cutoff):
+def rmsd_difference(ciu_matrix_1, ciu_matrix_2, noise_cutoff):
     """
-    Compute RMSD between an arbitrary number of fingerprints. Returns RMSD and either pairwise difference
+        Compute RMSD between an arbitrary number of fingerprints. Returns RMSD and either pairwise difference
     matrix or standard deviation matrix depending on number of files passed.
-    :param data_mat_list: list of data matrices (2D numpy arrays)
     :param noise_cutoff: minimum relative intensity to consider (all values below cutoff set to 0)
-    :return: averaged difference matrix (ndarray), rmsd (float) in percent
+    :param ciu_matrix_1: 2D numpy array of floats
+    :param ciu_matrix_2: 2D numpy array of floats
+    :return: difference matrix (ndarray), rmsd (float) in percent
     """
-    # first, noise filter all data
-    for data_mat in data_mat_list:
-        data_mat[data_mat < noise_cutoff] = 0
+    # First, noise filter data by setting anything below noise cutoff (relative intensity) to 0
+    ciu_matrix_1[ciu_matrix_1 < noise_cutoff] = 0
+    ciu_matrix_2[ciu_matrix_2 < noise_cutoff] = 0
 
-    # compute averaged fingerprint
-    avg_data = np.mean(data_mat_list, axis=0)
-    avg_num_points = np.count_nonzero(avg_data)
+    # Calculate difference matrix
+    dif = ciu_matrix_1 - ciu_matrix_2
+    num_values = np.count_nonzero(dif)
 
-    # compute average RMSD (all replicates)
-    rmsd = 0
-    for data_mat in data_mat_list:
-        dif_mat = avg_data - data_mat
-        rmsd += np.sum(dif_mat ** 2)
-    rmsd /= avg_num_points
-    rmsd = np.sqrt(rmsd) * 100
-
-    # Compute pairwise difference if passed a pair of datasets OR compute standard deviation amongst data if >2 datasets passed
-    if len(data_mat_list) == 2:
-        dif = data_mat_list[0] - data_mat_list[1]
-    else:
-        dif = np.std(data_mat_list)
-
+    rmsd = (np.sum(dif ** 2) / num_values) ** 0.5 * 100
     return dif, rmsd
 
 
@@ -320,13 +291,12 @@ def std_dev_plot(analysis_obj, std_dev_matrix, pairwise_rmsds, params_obj, outpu
     plt.close()
 
 
-def average_ciu(analysis_obj_list, compare_int_cutoff):
+def average_ciu(analysis_obj_list):
     """
     Generate and save replicate object (a CIUAnalysisObj with averaged ciu_data and a list
     of raw_objs) that can be used for further analysis
     :param analysis_obj_list: list of CIUAnalysisObj's to average
     :type analysis_obj_list: list[CIUAnalysisObj]
-    :param compare_int_cutoff: Intensity cutoff for RMSD comparisons
     :rtype: CIUAnalysisObj
     :return: averaged analysis object, standard deviation matrix, and replicate rmsd
     """
@@ -342,10 +312,7 @@ def average_ciu(analysis_obj_list, compare_int_cutoff):
     averaged_obj = CIUAnalysisObj(raw_obj_list[0], avg_data, analysis_obj_list[0].axes, analysis_obj_list[0].params)
     averaged_obj.raw_obj_list = raw_obj_list
 
-    # compute replicate RMSD
-    dif, rep_rmsd = rmsd_difference_new([x.ciu_data for x in analysis_obj_list], compare_int_cutoff)
-
-    return averaged_obj, std_data, rep_rmsd
+    return averaged_obj, std_data
 
 
 def get_pairwise_rmsds(analysis_obj_list, params_obj):
@@ -476,7 +443,7 @@ def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir, no_pl
         axes = [dt_axis, cv_axis]
 
     # dif, rmsd = rmsd_difference(norm_data_1, norm_data_2)
-    dif, rmsd = rmsd_difference_new([norm_data_1, norm_data_2], params_obj.compare_4_int_cutoff)
+    dif, rmsd = rmsd_difference(norm_data_1, norm_data_2, params_obj.compare_4_int_cutoff)
 
     if not no_plots:
         rtext = "RMSD = " + '%2.2f' % rmsd
