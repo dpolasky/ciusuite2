@@ -211,7 +211,7 @@ class CIUSuite2(object):
 
                 # update directory to match the loaded files
                 if not self.output_dir_override:
-                    if len(self.analysis_file_list) > 1:
+                    if len(self.analysis_file_list) > 0:
                         self.output_dir = os.path.dirname(self.analysis_file_list[0])
                         self.update_dir_entry()
         self.progress_done()
