@@ -927,12 +927,6 @@ def remove_low_amp(popt_list, amp_cutoff):
             current_amplitude = value
             if current_amplitude < amp_cutoff:
                 values_to_remove.extend([popt_list[index], popt_list[index + 1], popt_list[index + 2]])
-        # width screen (widths are the third or 3 values)
-        if index % 3 == 2:
-            current_width = value
-            # compare width against centroid/100 to allow different magnitude drift axes.
-            if current_width < (popt_list[index - 1] * 0.01):
-                values_to_remove.extend([popt_list[index - 2], popt_list[index - 1], popt_list[index]])
 
     for value in values_to_remove:
         try:
