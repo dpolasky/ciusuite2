@@ -505,8 +505,10 @@ def equalize_obj(analysis_obj, final_axes):
     :rtype: CIUAnalysisObj, bool
     """
     # compute bin spacing on DT axis to determine relative difference acceptable tolerance (set to 1/10 of a bin)
-    dt_spacing = scipy.stats.mode([final_axes[0][x + 1] - final_axes[0][x] for x in range(len(final_axes[0]) - 1)])[0][0]
-    dt_tol = dt_spacing * 0.1
+    # dt_spacing = scipy.stats.mode([final_axes[0][x + 1] - final_axes[0][x] for x in range(len(final_axes[0]) - 1)])[0][0]
+    # dt_tol = dt_spacing * 0.1
+    # dt_tol deprecated because CCS-calibrated files can succeed given this tolerance when they should fail
+    dt_tol = 0.001
     try:
         if np.allclose(analysis_obj.axes[0], final_axes[0], rtol=dt_tol) \
                 and np.allclose(analysis_obj.axes[1], final_axes[1]):

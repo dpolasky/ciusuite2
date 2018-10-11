@@ -1396,8 +1396,8 @@ def check_axes_and_warn(loaded_obj_list):
     loaded_obj_list, final_axes, adjust_flag = Raw_Processing.equalize_axes_main(loaded_obj_list)
 
     if adjust_flag:
-        messagebox.showinfo('Different axes in file(s)', 'FYI: At least some of the loaded files had different axes. '
-                                                         'Data was interpolated and re-framed onto identical axes. '
+        messagebox.showinfo('Different axes in file(s)', 'FYI: At least some of the loaded files had different axes and/or unevely spaced axes. '
+                                                         'Data was interpolated and/or re-framed onto identical, evenly spaced axes. '
                                                          'Please click OK to continue.')
     return loaded_obj_list
 
