@@ -464,6 +464,11 @@ class CIUSuite2(object):
                 for analysis_obj in all_objs:
                     filename = save_analysis_obj(analysis_obj, param_dict, outputdir=self.output_dir)
                     updated_filelist.append(filename)
+
+                with open(os.path.join(self.output_dir, 'batch_RMSDs.csv'), 'w') as rmsd_file:
+                    for rmsd_string in rmsd_print_list:
+                        rmsd_file.write(rmsd_string + '\n')
+
                 self.display_analysis_files(updated_filelist)
 
         if len(files_to_read) == 2:
@@ -471,6 +476,7 @@ class CIUSuite2(object):
             param_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x and 'batch' not in x]
             param_success, param_dict = self.run_param_ui('Plot parameters', param_keys)
             if param_success:
+
                 ciu1 = load_analysis_obj(files_to_read[0])
                 ciu2 = load_analysis_obj(files_to_read[1])
                 updated_obj_list = check_axes_and_warn([ciu1, ciu2])
