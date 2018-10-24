@@ -586,10 +586,11 @@ class CIUSuite2(object):
         # Compute averaged CIU data and generate output plots
         averaged_obj, std_data = Original_CIU.average_ciu(analysis_obj_list)
 
-        # Save averaged object as a .ciu file
-        averaged_obj.filename = save_analysis_obj(averaged_obj, {}, self.output_dir,
-                                                  filename_append='_Avg')
+        # Save averaged object as a .ciu file and write the new average Raw data to _raw.csv text file
+        averaged_obj.filename = save_analysis_obj(averaged_obj, {}, self.output_dir)
         averaged_obj.short_filename = os.path.basename(averaged_obj.filename).rstrip('.ciu')
+        avg_raw_path = os.path.join(self.output_dir, averaged_obj.raw_obj.filename)
+        Original_CIU.write_ciu_csv(avg_raw_path, averaged_obj.raw_obj.rawdata, [averaged_obj.raw_obj.dt_axis, averaged_obj.raw_obj.cv_axis])
 
         # plot averaged object and standard deviation and save output average CSV file
         pairwise_rmsds, rmsd_strings = Original_CIU.get_pairwise_rmsds(analysis_obj_list, self.params_obj)

@@ -13,6 +13,7 @@ from tkinter import messagebox
 
 from CIU_analysis_obj import CIUAnalysisObj
 from CIU_Params import Parameters
+from CIU_raw import CIURaw
 
 # use a non-interactive backend to prevent background windows from getting created and causing error messages
 import matplotlib
@@ -297,19 +298,22 @@ def average_ciu(analysis_obj_list):
     of raw_objs) that can be used for further analysis
     :param analysis_obj_list: list of CIUAnalysisObj's to average
     :type analysis_obj_list: list[CIUAnalysisObj]
-    :rtype: CIUAnalysisObj
+    :rtype: CIUAnalysisObj, numpy array of std data
     :return: averaged analysis object, standard deviation matrix, and replicate rmsd
     """
-    raw_obj_list = []
-    ciu_data_list = []
-    for analysis_obj in analysis_obj_list:
-        raw_obj_list.append(analysis_obj.raw_obj)
-        ciu_data_list.append(analysis_obj.ciu_data)
+    raw_obj_list = [analysis_obj.raw_obj for analysis_obj in analysis_obj_list]
+    raw_data_list = [analysis_obj.raw_obj.rawdata for analysis_obj in analysis_obj_list]
+    ciu_data_list = [analysis_obj.ciu_data for analysis_obj in analysis_obj_list]
 
-    # generate the average object
+    # generate the average object and averaged Raw container
     avg_data = np.mean(ciu_data_list, axis=0)
     std_data = np.std(ciu_data_list, axis=0)
-    averaged_obj = CIUAnalysisObj(raw_obj_list[0], avg_data, analysis_obj_list[0].axes, analysis_obj_list[0].params)
+
+    raw_avg_data = np.mean(raw_data_list, axis=0)
+    raw_filename = raw_obj_list[0].filename.rstrip('_raw.csv') + '_Avg_raw.csv'
+    avg_raw_obj = CIURaw(raw_avg_data, raw_obj_list[0].dt_axis, raw_obj_list[0].cv_axis, raw_filename)
+
+    averaged_obj = CIUAnalysisObj(avg_raw_obj, avg_data, analysis_obj_list[0].axes, analysis_obj_list[0].params)
     averaged_obj.raw_obj_list = raw_obj_list
 
     return averaged_obj, std_data
