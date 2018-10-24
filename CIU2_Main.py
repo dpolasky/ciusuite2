@@ -1295,6 +1295,15 @@ class CIUSuite2(object):
         """
         self.mainwindow.withdraw()
         files = filedialog.askopenfilenames(filetypes=filetype)
+
+        # check for excessively long paths and warn the user to shorten them or face possible crashes
+        warn_flag = False
+        for file in files:
+            if len(file) > 200:
+                warn_flag = True
+        if warn_flag:
+            messagebox.showwarning('Warning! Long File Path', 'Warning! At least one loaded file has a path length greater than 200 characters. Windows will not allow you to save files with paths longer than 260 characters. It is strongly recommended to shorten the name of your file and/or the path to the folder containing it to prevent crashes if the length of analysis files/outputs exceed 260 characters.')
+
         self.mainwindow.deiconify()
         return files
 
@@ -1482,14 +1491,21 @@ def save_analysis_obj(analysis_obj, params_dict, outputdir, filename_append=''):
 
     # update parameters with only those changed in the current analysis (or all params for new analysis objects)
     analysis_obj.params.set_params(params_dict)
-    # analysis_obj.params = update_params_in_obj(analysis_obj, params_dict)
 
     # Generate filename and short filename and save to object
     if analysis_obj.short_filename is None:
         filename = os.path.basename(analysis_obj.raw_obj.filename.rstrip('_raw.csv'))
     else:
         filename = analysis_obj.short_filename
+
     picklefile = os.path.join(outputdir, filename + filename_append + file_extension)
+
+    # check for path length limits here (won't catch all instances, but should warn users when close to limit)
+    len_flag = False
+    if len(picklefile) > 260:
+        len_flag = True
+        messagebox.showerror('File path too long!', 'The requested save path (filename + folder) is longer than the maximum length allowed by Windows and cannot be saved! Please shorten the name of the raw file or save directory so Windows can save your file.')
+
     analysis_obj.filename = picklefile
     analysis_obj.short_filename = os.path.basename(picklefile.rstrip('.ciu'))
 
@@ -1498,7 +1514,10 @@ def save_analysis_obj(analysis_obj, params_dict, outputdir, filename_append=''):
         with open(picklefile, 'wb') as pkfile:
             pickle.dump(analysis_obj, pkfile)
     except IOError:
-        messagebox.showerror('File Save Error', 'Error: file {} could not be saved!'.format(picklefile))
+        if len_flag:
+            messagebox.showerror('File path too long!','The requested save path (filename + folder) is longer than the maximum length allowed by Windows and cannot be saved! Please shorten the name of the raw file or save directory so Windows can save your file.')
+        else:
+            messagebox.showerror('File Save Error', 'Error: file {} could not be saved!'.format(picklefile))
 
     return picklefile
 
@@ -1510,6 +1529,10 @@ def load_analysis_obj(analysis_filename):
     :rtype: CIUAnalysisObj
     :return: CIUAnalysisObj
     """
+    # check for long paths to avoid future problems with Windows max path length
+    if len(analysis_filename) > 200:
+        messagebox.showwarning('Warning! Long File Path', 'Warning! The loaded file has a path length greater than 200 characters. Windows will not allow you to save files with paths longer than 260 characters. It is strongly recommended to shorten the name of your file and/or the path to the folder containing it to prevent crashes if you exceed 260 characters.')
+
     with open(analysis_filename, 'rb') as analysis_file:
         analysis_obj = pickle.load(analysis_file)
         analysis_obj.filename = analysis_filename

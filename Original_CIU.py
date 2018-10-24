@@ -458,8 +458,8 @@ def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir, no_pl
                   rtext=rtext,
                   outputdir=outputdir,
                   params_obj=params_obj,
-                  blue_label=params_obj.compare_2_custom_blue,
-                  red_label=params_obj.compare_1_custom_red)
+                  blue_label=params_obj.compare_1_custom_blue,
+                  red_label=params_obj.compare_2_custom_red)
 
     # if params_obj.output_1_save_csv:
     #     title = '{} - {}'.format(analysis_obj1.short_filename,
