@@ -414,19 +414,6 @@ def compute_new_axes(old_axes, interpolation_scaling, interp_cv=True, interp_dt=
     return [new_dt_axis, new_cv_axis]
 
 
-def average_ciu(list_of_data_matrices):
-    """
-    Average CIU fingerprints and return the averaged and standard deviation matrices (SD only
-    if n >= 3).
-    :param list_of_data_matrices: List of CIU data matrices (2D numpy array with no axes label info)
-    :return: averaged_matrix, std_dev_matrix as 2D numpy arrays of same shape as input
-    """
-    avg_matrix = np.mean(list_of_data_matrices, axis=0)
-    std_matrix = np.std(list_of_data_matrices, axis=0)
-
-    return avg_matrix, std_matrix
-
-
 def check_axes_crop(analysis_obj_list):
     """
     Interrogate all CIUAnalysisObjs in the provided list to determine the shared dimensions in all files to use for
@@ -602,10 +589,6 @@ def equalize_unk_axes_classif(flat_unknown_list, final_axes, scheme_cvs_list, ga
         # if not gaussian_mode:
         adjusted_axes = [final_axes[0], analysis_obj.axes[1]]
         analysis_obj, adj_flag = equalize_obj(analysis_obj, adjusted_axes)
-        # todo: confirm?
-        # else:
-        #     return flat_unknown_list
-            # adjusted_axes = analysis_obj.axes
 
         # Remove all CVs except those required by the scheme (raises errors if those are not found)
         final_ciu_matrix = []

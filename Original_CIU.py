@@ -302,16 +302,15 @@ def average_ciu(analysis_obj_list):
     :return: averaged analysis object, standard deviation matrix, and replicate rmsd
     """
     raw_obj_list = [analysis_obj.raw_obj for analysis_obj in analysis_obj_list]
-    raw_data_list = [analysis_obj.raw_obj.rawdata for analysis_obj in analysis_obj_list]
     ciu_data_list = [analysis_obj.ciu_data for analysis_obj in analysis_obj_list]
 
     # generate the average object and averaged Raw container
     avg_data = np.mean(ciu_data_list, axis=0)
     std_data = np.std(ciu_data_list, axis=0)
 
-    raw_avg_data = np.mean(raw_data_list, axis=0)
+    # Avg raw data uses the averaged CIU data (NOT raw) to prevent crashes on uneven axes.
     raw_filename = raw_obj_list[0].filename.rstrip('_raw.csv') + '_Avg_raw.csv'
-    avg_raw_obj = CIURaw(raw_avg_data, raw_obj_list[0].dt_axis, raw_obj_list[0].cv_axis, raw_filename)
+    avg_raw_obj = CIURaw(avg_data, analysis_obj_list[0].axes[0], analysis_obj_list[0].axes[1], raw_filename)
 
     averaged_obj = CIUAnalysisObj(avg_raw_obj, avg_data, analysis_obj_list[0].axes, analysis_obj_list[0].params)
     averaged_obj.raw_obj_list = raw_obj_list
