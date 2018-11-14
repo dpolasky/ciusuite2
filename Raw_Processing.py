@@ -569,6 +569,31 @@ def equalize_axes_2d_list(analysis_obj_list_by_label):
     return analysis_obj_list_by_label, final_axes
 
 
+def equalize_axes_classifinputs(list_classif_inputs):
+    """
+    Axis checking for list of classification input lists - handle checking complex lists in place
+    (as in equalize axes 2d inputs)
+    :param list_classif_inputs: list of ClassifInput objects
+    :type list_classif_inputs: list[ClassifInput]
+    :return: list of classification inputs with any objects cropped/edited that needed to be, equalized axes
+    """
+    flat_obj_list = []
+    for subclass_input in list_classif_inputs:
+        flat_obj_list.extend(subclass_input.get_flat_list(get_type='obj'))
+
+    # check axes for cropping (ensure that region of interest is equal)
+    crop_vals, axes_spacings = check_axes_crop(flat_obj_list)
+    final_axes = check_axes_interp(crop_vals, axes_spacings)
+
+    # Check all objects in original data structure and make adjustments in place as needed
+    for subclass_input in list_classif_inputs:
+        for analysis_obj_list in subclass_input.analysis_objs_by_label:
+            for analysis_obj in analysis_obj_list:
+                analysis_obj, adj_flag = equalize_obj(analysis_obj, final_axes)
+
+    return list_classif_inputs, final_axes
+
+
 def equalize_unk_axes_classif(flat_unknown_list, final_axes, scheme_cvs_list, gaussian_mode=False):
     """
     Specialized equalization method for unknown classification data. Equalizes DT axis by cropping,

@@ -106,7 +106,11 @@ class CIUSuite2(object):
             'on_button_feature_detect_clicked': self.on_button_feature_detect_clicked,
             'on_button_ciu50_clicked': self.on_button_ciu50_clicked,
             'on_button_gaussian_reconstruction_clicked': self.on_button_gaussian_reconstruct_clicked,
+
+            # todo: finalize
             'on_button_classification_supervised_clicked': self.on_button_classification_supervised_clicked,
+            # 'on_button_classification_supervised_clicked': self.on_button_classification_supervised_multi_clicked,
+
             'on_button_classify_unknown_clicked': self.on_button_classify_unknown_clicked,
             'on_button_smoothing_clicked': self.on_button_smoothing_clicked
         }
@@ -1094,6 +1098,114 @@ class CIUSuite2(object):
 
         self.progress_done()
 
+    def on_button_classification_supervised_multi_clicked(self):
+        """
+        Run supervised classification from Classification module for multiple subclasses. Uses file
+        template instead of dialogs by default.
+        :return: void
+        """
+
+        # num_classes = simpledialog.askinteger('Class Number', 'Into how many classes do you want to group?')
+        # if num_classes is None:
+        #     # user hit cancel - return
+        #     print('classification canceled')
+        #     return
+        # data_labels = []
+        # obj_list_by_label = []
+        # endfile = ''
+        # for index in range(0, num_classes):
+        #     # Read in the .CIU files and labels for each class, canceling the process if the user hits 'cancel'
+        #     label = simpledialog.askstring('Class Name', 'Enter the name (class label) for class {}'.format(index + 1))
+        #     if label is None:
+        #         print('classification canceled')
+        #         return
+        #     files = filedialog.askopenfilenames(filetypes=[('CIU', '.ciu')])
+        #     if len(files) == 0:
+        #         print('classification canceled')
+        #         return
+        #     if len(files) < 3:
+        #         messagebox.showerror('Not Enough Files', 'At least 3 replicates are required for classification. Please select at least 3 files per class and try again.')
+        #         return
+        #
+        #     obj_list = []
+        #     for file in files:
+        #         with open(file, 'rb') as analysis_file:
+        #             obj = pickle.load(analysis_file)
+        #         obj_list.append(obj)
+        #         endfile = file
+        #     data_labels.append(label)
+        #     obj_list_by_label.append(obj_list)
+
+        template_file = filedialog.askopenfilename(title='Choose Classification Template File', filetypes=[('CSV file', '.csv')])
+        classif_inputs = parse_classification_template(template_file)
+
+        if len(classif_inputs) > 0:
+            # If no data has been loaded, use template file location as default output dir
+            current_dir_text = self.builder.get_object('Text_outputdir').get(1.0, tk.END).rstrip('\n')
+            if current_dir_text == '(No files loaded yet)':
+                self.output_dir = os.path.dirname(template_file)
+
+            # check axes
+            classif_inputs, equalized_axes = Raw_Processing.equalize_axes_classifinputs(classif_inputs)
+            # obj_list_by_label, equalized_axes_list = Raw_Processing.equalize_axes_2d_list(obj_list_by_label)
+
+            # get classification parameters
+            param_keys = [x for x in self.params_obj.params_dict.keys() if 'classif' in x]
+            param_success, param_dict = self.run_param_ui('Classification Parameters', param_keys)
+            if param_success:
+                if self.params_obj.classif_3_unk_mode == 'Gaussian':
+                    # Ensure Gaussian features are present and prepare them for classification
+                    max_num_gaussians = 0
+                    for subclass_obj in classif_inputs:
+                        for obj_list in subclass_obj.analysis_objs_by_label:
+                            for analysis_obj in obj_list:
+                                if analysis_obj.features_gaussian is None:
+                                    messagebox.showerror('No Gaussian Features Fitted', 'Error: Gaussian feature classification selected, '
+                                                                                        'but Gaussian Feature Detection has not been performed yet. '
+                                                                                        'Please run Gaussian Feature Detection on all files being used '
+                                                                                        'for classification and try again.')
+                                    # cancel the classification
+                                    self.progress_done()
+                                else:
+                                    # make ready the gaussians (saved into analysis object and length checked)
+                                    gaussians_by_cv = Classification.prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
+                                    for gaussian_list in gaussians_by_cv:
+                                        if len(gaussian_list) > max_num_gaussians:
+                                            max_num_gaussians = len(gaussian_list)
+                    # save num Gaussians to ensure all matrices same size
+                    self.params_obj.silent_clf_4_num_gauss = max_num_gaussians
+                else:
+                    max_num_gaussians = 0   # no Gaussians in non-Gaussian mode
+
+                # Run the classification
+                if self.params_obj.classif_5_auto_featselect == 'automatic':
+                    self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
+                    scheme = Classification.main_build_classification_subclass(classif_inputs, self.params_obj, self.output_dir)
+                    scheme.final_axis_cropvals = equalized_axes
+                    scheme.num_gaussians = max_num_gaussians
+                    Classification.save_scheme(scheme, self.output_dir)
+                else:
+                    # manual feature selection mode: run feature selection, pause, and THEN run LDA with user input
+                    self.progress_print_text('Feature Evaluation in progress...', 50)
+
+                    # run feature selection
+                    Classification.multi_subclass_ufs(classif_inputs, self.params_obj, self.output_dir)
+
+                    # prompt for user input to select desired features
+                    input_success_flag = False
+                    selected_features = []
+                    while not input_success_flag:
+                        input_success_flag, selected_features = parse_user_cvfeats_input()
+
+                    # Run LDA using selected features
+                    self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
+                    scheme = Classification.main_build_classification_subclass(classif_inputs, self.params_obj, self.output_dir, known_feats=selected_features)
+                    scheme.final_axis_cropvals = equalized_axes
+                    scheme.num_gaussians = max_num_gaussians
+                    Classification.save_scheme(scheme, self.output_dir)
+
+        self.progress_done()
+
     def on_button_classify_unknown_clicked(self):
         """
         Open filechooser to load classification scheme object (previously saved), then run
@@ -1473,6 +1585,49 @@ def parse_tooltips_file(tooltips_file):
 
     except FileNotFoundError:
         print('params file not found!')
+
+
+def parse_classification_template(template_file):
+    """
+    Parsing method for classification template CSV
+    :param template_file: csv file
+    :return: list of ClassifInput containers for each subclass (list of 1 if no subclasses present)
+    :rtype: list[Classification.ClassifInput]
+    """
+    class_labels = []
+    classif_inputs = []
+
+    with open(template_file, 'r') as template:
+        for line in list(template):
+            # skip headers and blank lines
+            if line.startswith('#') or line.startswith('\n'):
+                continue
+
+            if line.lower().startswith('class'):
+                # special header line for subclasses - remember them
+                splits = line.rstrip('\n').split(',')
+                class_labels = splits[1:]
+
+            else:
+                # regular lines: folders of files by sublcasses
+                splits = line.rstrip('\n').split(',')
+                subclass_label = splits[0]
+                if subclass_label is '':
+                    subclass_label = None
+
+                objs_by_label = []
+                for index, class_label in enumerate(class_labels):
+                    folder = splits[index + 1]
+                    # todo: add error checking here
+                    files = [os.path.join(folder, x) for x in os.listdir(folder) if x.endswith('.ciu')]
+                    class_files = [x for x in files if class_label in x]
+                    objs = [load_analysis_obj(x) for x in class_files]
+                    objs_by_label.append(objs)
+
+                classif_input = Classification.ClassifInput(class_labels, objs_by_label, subclass_label)
+                classif_inputs.append(classif_input)
+
+    return classif_inputs
 
 
 def save_analysis_obj(analysis_obj, params_dict, outputdir, filename_append=''):

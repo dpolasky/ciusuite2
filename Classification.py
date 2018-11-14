@@ -257,7 +257,8 @@ def univariate_feature_selection(shaped_label_list, analysis_obj_list_by_label, 
     :param params_obj: parameters information
     :type params_obj: Parameters
     :param output_path: directory in which to save plot
-    :return: list of selected features, list of all features (both CFeature object lists)
+    :return: list of all features, sorted in decreasing order of score
+    :rtype: list[CFeature]
     """
     cv_axis = analysis_obj_list_by_label[0][0].axes[1]
 
@@ -662,6 +663,56 @@ def plot_feature_scores(feature_list, params_obj, scheme_name, output_path):
     plt.axhline(y=0.0, color='black', ls='--')
 
     # plot titles, labels, and legends
+    if params_obj.plot_12_custom_title is not None:
+        plot_title = params_obj.plot_12_custom_title
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+    elif params_obj.plot_11_show_title:
+        plot_title = scheme_name
+        plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+    if params_obj.plot_08_show_axes_titles:
+        plt.xlabel(params_obj.plot_09_x_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        plt.ylabel('-Log10(p-value)', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+    plt.xticks(fontsize=params_obj.plot_13_font_size)
+    plt.yticks(fontsize=params_obj.plot_13_font_size)
+
+    output_name = os.path.join(output_path, scheme_name + '_UFS' + params_obj.plot_02_extension)
+    try:
+        plt.savefig(output_name)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_name))
+        plt.savefig(output_name)
+    plt.close()
+
+
+def plot_feature_scores_subclass(features_by_subclass, params_obj, scheme_name, output_path):
+    """
+    Plot feature score by collision voltage
+    :param features_by_subclass: list of CFeatures
+    :type features_by_subclass: list[list[CFeature]]
+    :param params_obj: Parameters object with plot information
+    :type params_obj: Parameters
+    :param scheme_name: (string) name of scheme for labeling purposes
+    :param output_path: directory in which to save output
+    :return: void
+    """
+    plt.figure(figsize=(params_obj.plot_03_figwidth, params_obj.plot_04_figheight), dpi=params_obj.plot_05_dpi)
+
+    colors = ['black', 'blue', 'green', 'orange', 'red', 'purple', 'yellow', 'pink', 'lightblue']
+    for index, feature_list in enumerate(features_by_subclass):
+        mean_scores = [x.mean_score for x in feature_list]
+        std_scores = [x.std_dev_score for x in feature_list]
+        cv_axis = [x.cv for x in feature_list]
+
+        try:
+            color = colors[index]
+        except IndexError:
+            color = 'black'
+        plt.errorbar(x=cv_axis, y=mean_scores, yerr=std_scores, ls='none', marker='o', color=color, markersize=params_obj.plot_14_dot_size, markeredgecolor='black', label=feature_list[0].subclass_label)
+        plt.axhline(y=0.0, color='black', ls='--')
+
+    # plot titles, labels, and legends
+    if params_obj.plot_07_show_legend:
+        plt.legend(loc='best', fontsize=params_obj.plot_13_font_size)
     if params_obj.plot_12_custom_title is not None:
         plot_title = params_obj.plot_12_custom_title
         plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
@@ -1113,6 +1164,354 @@ def load_scheme(filepath):
     return scheme
 
 
+def multi_subclass_ufs(subclass_input_list, params_obj, output_path):
+    """
+    Perform univariate feature selection across classes using multiple subclasses (e.g. different charge states
+    of CIU fingerprints). Essentially performs standard UFS on each subclass separately and combines
+    all output features/scores into a single list, from which the best features can be chosen for
+    LDA/SVM classification. Inputs are structured like in standard UFS method, except provided
+    as a list of inputs for each subclass rather than a single input (as the standard method takes only
+    1 "subclass")
+    :param subclass_input_list: list of ClassifInput containers for each subclass
+    :type subclass_input_list: list[ClassifInput]
+    :param params_obj: parameters information
+    :type params_obj: Parameters
+    :param output_path: directory in which to save plot
+    :return: list of all features, sorted in decreasing order of score from ALL subclasses
+    :rtype: list[CFeature]
+    """
+    # Iterate over all subclass lists to generate feature score information
+    features = []
+    features_by_subclass = []
+    for subclass_input in subclass_input_list:
+        # generate all combinations of replicate datasets within the labels
+        shaped_label_list = subclass_input.shaped_label_list
+        products = generate_products_for_ufs(subclass_input.analysis_objs_by_label, shaped_label_list, params_obj)
+
+        # Create a CFeature object to hold the information for this CV (feature)
+        scores = [product.fit_sc for product in products]
+        mean_score = np.mean(scores, axis=0)
+        std_score = np.std(scores, axis=0)
+
+        cv_axis = subclass_input.analysis_objs_by_label[0][0].axes[1]
+        subclass_features = []
+        for cv_index, cv in enumerate(cv_axis):
+            feature = CFeature(cv, cv_index, mean_score[cv_index], std_score[cv_index], subclass_label=subclass_input.subclass_label)
+            features.append(feature)
+            subclass_features.append(feature)
+        features_by_subclass.append(subclass_features)
+
+    # sort feature scores either by mean - stdev ("error mode") or just mean alone.
+    if params_obj.classif_6_ufs_use_error_mode:
+        sorted_features = sorted(features, key=lambda x: (x.mean_score - x.std_dev_score), reverse=True)
+    else:
+        sorted_features = sorted(features, key=lambda x: x.mean_score, reverse=True)
+
+    unique_labels = get_unique_labels([x for label_list in subclass_input_list[0].shaped_label_list for x in label_list])
+    scheme_name = '_'.join(unique_labels)
+    # plot_feature_scores(sorted_features, params_obj, scheme_name, output_path)
+    plot_feature_scores_subclass(features_by_subclass, params_obj, scheme_name, output_path)
+    return sorted_features
+
+
+def get_subclass_index(subclass_label, list_classif_inputs):
+    """
+    Return the index of a particular subclass in a list of ClassifInput containers
+    :param subclass_label: string label
+    :param list_classif_inputs: list of ClassifInput containers
+    :type list_classif_inputs: list[ClassifInput]
+    :return: int (index)
+    """
+    indices = [index for index, input_obj in enumerate(list_classif_inputs) if input_obj.subclass_label == subclass_label]
+    subclass_index = indices[0]
+    return subclass_index
+
+
+def main_build_classification_subclass(list_classif_inputs, params_obj, output_dir, known_feats=None):
+    """
+    Main method for classification. Performs feature selection followed by LDA and classification
+    and generates output and plots. Returns a ClassificationScheme object to be saved for future
+    classification of unknowns.
+    :param list_classif_inputs: list of ClassifInput containers
+    :type list_classif_inputs: list[ClassifInput]
+    :param output_dir: directory in which to save plots/output
+    :param params_obj: Parameters object with classification parameter information
+    :type params_obj: Parameters
+    :param known_feats: list of
+    :return: ClassificationScheme object with the generated scheme
+    :rtype: ClassificationScheme
+    """
+    if known_feats is None:
+        # run feature selection and crossvalidation to select best features automatically
+        all_features = multi_subclass_ufs(list_classif_inputs, params_obj, output_dir)
+
+        # assess all features to determine which to use in the final scheme
+        best_features, crossval_score, all_crossval_data = crossval_main_subclass(list_classif_inputs, output_dir, params_obj, all_features)
+    else:
+        # Manual mode: use the provided features and run limited crossvalidation
+        best_features, crossval_score, all_crossval_data = crossval_main_subclass(list_classif_inputs, output_dir, params_obj, known_feats)
+        best_features = known_feats
+
+    # perform LDA and classification on the selected/best features
+    constructed_scheme = lda_best_features_subclass(best_features, list_classif_inputs, params_obj, output_dir)
+    constructed_scheme.crossval_test_score = crossval_score
+    constructed_scheme.all_crossval_data = all_crossval_data
+
+    # plot output here for now, will probably move eventually
+    plot_classification_decision_regions(constructed_scheme, params_obj, output_dir)
+    return constructed_scheme
+
+
+def crossval_main_subclass(classif_inputs, outputdir, params_obj, features_list):
+    """
+    Updated crossval method to allow multiple subclasses. Same method as original crossval, but
+    chooses data from the correct subclass if present.
+    :param classif_inputs: list of ClassifInput containers
+    :type classif_inputs: list[ClassifInput]
+    :param outputdir:
+    :param params_obj:
+    :type params_obj: Parameters
+    :param features_list: List of CFeatures, sorted in decreasing order of score
+    :type features_list: list[CFeature]
+    :return: list of selected features, test score for that # features, and all cross validation data
+    """
+    # determine training size as size of the smallest class - 1 (1 test file at a time)
+    min_class_size = np.inf
+    for subclass_input in classif_inputs:
+        min_subclass_size = np.min([len(x) for x in subclass_input.analysis_objs_by_label])
+        if min_subclass_size < min_class_size:
+            min_class_size = min_subclass_size
+    training_size = min_class_size - 1
+
+    current_features_list = []
+    train_score_means = []
+    train_score_stds = []
+    test_score_means = []
+    test_score_stds = []
+    results = []
+
+    time_start = time.time()
+    # optional max number of features to consider
+    if params_obj.classif_7_max_feats_for_crossval > 0:
+        max_features = params_obj.classif_7_max_feats_for_crossval
+        if max_features > len(features_list):
+            max_features = len(features_list) + 1
+    else:
+        max_features = len(features_list) + 1
+
+    for ind, feature in enumerate(features_list[:max_features]):
+        # Generate all combinations - NOTE: assumes that if subclasses are present, features know their subclass (should always be true)
+        print('\nPerforming cross validation for {} features'.format(ind+1))
+        current_features_list.append(feature)
+
+        if len(classif_inputs) > 1:
+            # multiple subclasses
+            subclass_index = get_subclass_index(feature.subclass_label, classif_inputs)
+        else:
+            subclass_index = 0
+        obj_list = classif_inputs[subclass_index].analysis_objs_by_label
+        label_list = classif_inputs[subclass_index].class_labels
+
+        # perform the cross validation for this feature combination
+        crossval_obj = CrossValProduct(obj_list, label_list, training_size, current_features_list)
+        crossval_combos = crossval_obj.assemble_class_combinations(params_obj)
+        result = assemble_products(crossval_combos)
+        results.append(result)
+
+    for result in results:
+        # get scores and plot and stuff
+        train_score_means.append(result[0])
+        train_score_stds.append(result[1])
+        test_score_means.append(result[2])
+        test_score_stds.append(result[3])
+    print('classification done in {:.2f}'.format(time.time() - time_start))
+
+    train_score_means = np.array(train_score_means)
+    train_score_stds = np.array(train_score_stds)
+    test_score_means = np.array(test_score_means)
+    test_score_stds = np.array(test_score_stds)
+
+    # save and plot crossvalidation score information
+    crossval_data = (train_score_means, train_score_stds, test_score_means, test_score_stds)
+    unique_labels = get_unique_labels(classif_inputs[0].class_labels)
+    scheme_name = '_'.join(unique_labels)
+    save_crossval_score(crossval_data, scheme_name, outputdir)
+    plot_crossval_scores(crossval_data, scheme_name, params_obj, outputdir)
+
+    # determine best features list from crossval scores
+    best_num_feats, best_score = peak_crossval_score_detect(test_score_means, params_obj.classif_2_score_dif_tol)
+    output_features = features_list[0: best_num_feats]
+    return output_features, best_score, crossval_data
+
+
+def lda_best_features_subclass(features_list, classif_inputs, param_obj, output_dir):
+    """
+    Construct final classification scheme using a support vector machine in the optimal linear
+    discriminant space for the provided data. Only uses data from the specified features (activation
+    voltages). Updated to handle data from multiple subclasses if necessary
+    :param features_list: list of selected features from feature selection
+    :type features_list: list[CFeature]
+    :param classif_inputs: list of ClassifInput containers
+    :type classif_inputs: list[ClassifInput]
+    :param param_obj: parameters information
+    :type param_obj: Parameters
+    :param output_dir: directory in which to save output plot
+    :return: generated classification scheme object with LDA and SVC performed
+    :rtype: ClassificationScheme
+    """
+    # loop over features, assembling correct data for LDA for all classes/replicates for each
+    x_data, label_data, filenames, cvs = [], [], [], []
+    for feature in features_list:
+        x_data, label_data, filenames, cvs = lda_prep_subclass(feature, classif_inputs, param_obj, x_data, label_data, filenames, cvs)
+
+    # finalize input data for LDA
+    x_data = np.asarray(x_data)
+    input_y_labels, target_label = createtargetarray_featureselect(label_data)
+
+    # run LDA
+    lda = LinearDiscriminantAnalysis(solver='svd', n_components=5)
+    lda.fit(x_data, input_y_labels)
+    x_lda = lda.transform(x_data)
+    expl_var_r = lda.explained_variance_ratio_
+
+    # build classification scheme
+    clf = SVC(kernel='linear', C=1, probability=True, max_iter=1000)
+    clf.fit(x_lda, input_y_labels)
+    y_pred = clf.predict(x_lda)
+    prec_score = precision_score(input_y_labels, y_pred, pos_label=1, average='weighted')
+    probs = clf.predict_proba(x_lda)
+
+    # initialize classification scheme object and return it
+    scheme = ClassificationScheme()
+    scheme.selected_features = features_list
+    scheme.classifier = clf
+    scheme.classifier_type = 'SVC'
+    scheme.classif_prec_score = prec_score
+    scheme.lda = lda
+    scheme.explained_variance_ratio = expl_var_r
+    scheme.numeric_labels = input_y_labels
+    scheme.class_labels = target_label
+    scheme.unique_labels = get_unique_labels(target_label)
+    scheme.transformed_test_data = x_lda
+    scheme.test_filenames = filenames
+    scheme.params = clf.get_params()
+    scheme.input_feats = cvs
+    scheme.set_name()
+
+    # save_lda_output(x_lda, input_filenames, input_feats, scheme.name, output_dir, explained_variance_ratio=expl_var_r)
+    x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file = [], [], [], []
+    num_feats = len(features_list)
+    index = 0
+    for filename in filenames:
+        x_lda_by_file.append(x_lda[index: index + num_feats])
+        y_pred_by_file.append(y_pred[index: index + num_feats])
+        probs_by_file.append(probs[index: index + num_feats])
+        filenames_by_file.append(filename)
+        index += num_feats
+
+    save_lda_and_predictions(scheme, x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file, output_dir, unknowns_bool=False)
+    plot_probabilities(param_obj, scheme, probs_by_file, output_dir, unknown_bool=False)
+    return scheme
+
+
+def lda_prep_subclass(feature, classif_inputs, param_obj, x_data, label_data, filenames, cvs):
+    """
+    Helper method to append the correct input data for LDA to the provided lists for a given
+    feature. x_data, labels, filenames, and cvs are ongoing lists that get added to, feature
+    and classif_inputs are the data getting assembled. Supports subclasses since the feature
+    knows its subclass. Gets the data for the Feature at the correct CV/subclass for every
+    class and replicate and add to the lists.
+    :param feature: CFeature specifying data to add
+    :type feature: CFeature
+    :param classif_inputs: list of ClassifInput containers with class data/info
+    :type classif_inputs: list[ClassifInput]
+    :param x_data: ongoing list of actual data for LDA
+    :param param_obj: container with parameter information
+    :type param_obj: Parameters
+    :param label_data: ongoing list of labels for LDA
+    :param filenames: ongoing list of filenames for outputs
+    :param cvs: ongoing list of CVs chosen for outputs
+    :return: x_data, label_data, filenames, cvs updated with values from this feature
+    """
+    # Get the correct subclass if more than one present
+    if feature.subclass_label is not None:
+        subclass_index = get_subclass_index(feature.subclass_label, classif_inputs)
+    else:
+        subclass_index = 0
+    classif_input = classif_inputs[subclass_index]
+    flat_obj_list = classif_input.get_flat_list(get_type='obj')
+
+    # Assemble flattened lists to draw correct values from to append
+    flat_raws = [get_classif_data(obj, param_obj) for obj in flat_obj_list]
+    flat_labels = classif_input.get_flat_list(get_type='label')
+    flat_filenames = [obj.short_filename for obj in flat_obj_list]
+    flat_cv_axes = [obj.axes[1] for obj in flat_obj_list]
+
+    # Append data from each class/replicate to the output lists in order
+    for data_index in range(len(flat_raws)):
+        # Determine the correct CV column to append
+        current_cv_axis = flat_cv_axes[data_index]
+        this_cv_index = (np.abs(np.asarray(current_cv_axis) - feature.cv)).argmin()
+        transposed_raw = flat_raws[data_index].T
+        cv_col = transposed_raw[this_cv_index]
+
+        x_data.append(cv_col)
+        label_data.append(flat_labels[data_index])
+        if flat_filenames is not None:
+            filenames.append(flat_filenames[data_index])
+        cvs.append(feature.cv)
+
+    return x_data, label_data, filenames, cvs
+
+
+class ClassifInput(object):
+    """
+    Container for classification input information (labels and CIUAnalysisObj containers)
+    to keep track of labels/replicates and subclasses.
+    """
+    def __init__(self, class_labels, obj_list_by_label, subclass_label=None):
+        """
+        Initialize a new container with provided information, including optional subclass label
+        :param class_labels: list of strings corresponding to labels for each class
+        :param obj_list_by_label: list of lists of analysis containers corresponding to all replicates of each class (sorted by class)
+        :param subclass_label: (optional) if this is a subclass analysis, the label corresponding to this subclass
+        """
+        # prepare labels for all replicates in each class
+        self.class_labels = class_labels
+        self.shaped_label_list = []
+        for index, label in enumerate(class_labels):
+            self.shaped_label_list.append([label for _ in range(len(obj_list_by_label[index]))])
+
+        self.analysis_objs_by_label = obj_list_by_label
+        self.subclass_label = subclass_label
+
+    def get_flat_list(self, get_type):
+        """
+        Get a flattened list of labels or analysis objects
+        :param get_type: whether to get labels ('label') or analysis objects ('obj')
+        :return: flattened list
+        """
+        if get_type == 'label':
+            flat_label_list = [x for label_list in self.shaped_label_list for x in label_list]
+            return flat_label_list
+        elif get_type == 'obj':
+            flat_obj_list = [x for analysis_obj_list in self.analysis_objs_by_label for x in analysis_obj_list]
+            return flat_obj_list
+        else:
+            print('Invalid type request. Valid values are "label" or "obj"')
+
+    def __str__(self):
+        """
+        Return string representation - subclass label
+        :return: string
+        """
+        if self.subclass_label is not None:
+            return '<ClassInput> {}'.format(self.subclass_label)
+        else:
+            return '<ClassInput>'
+    __repr__ = __str__
+
+
 class ClassificationScheme(object):
     """
     Container for final classification information, to be saved and used in future for unknown
@@ -1213,12 +1612,13 @@ class CFeature(object):
     """
     Container for classification feature information in feature selection.
     """
-    def __init__(self, cv, cv_index, mean_score, std_dev_score):
+    def __init__(self, cv, cv_index, mean_score, std_dev_score, subclass_label=None):
         self.cv = cv
         self.cv_index = cv_index
         # self.score_list = score_list
         self.mean_score = mean_score
         self.std_dev_score = std_dev_score
+        self.subclass_label = subclass_label
 
     def __str__(self):
         return '<CFeature> cv: {}, score: {:.2f}'.format(self.cv, self.mean_score)
