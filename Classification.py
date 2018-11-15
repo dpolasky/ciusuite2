@@ -619,13 +619,15 @@ def createtargetarray_featureselect(inputlabel):
     """
     string_labels = []
     numeric_labels = []
+    unique_labels = []
     class_index = 0
     # encode each class as an integer in the order they are presented from the initial lists
     for input_string in inputlabel:
         if input_string not in string_labels:
+            unique_labels.append(input_string)
             class_index += 1
         string_labels.append(input_string)
-        numeric_labels.append(class_index)
+        numeric_labels.append(unique_labels.index(input_string) + 1)
     return np.asarray(numeric_labels), np.asarray(string_labels)
 
 
@@ -707,7 +709,7 @@ def plot_feature_scores_subclass(features_by_subclass, params_obj, scheme_name, 
             color = colors[index]
         except IndexError:
             color = 'black'
-        plt.errorbar(x=cv_axis, y=mean_scores, yerr=std_scores, ls='none', marker='o', color=color, markersize=params_obj.plot_14_dot_size, markeredgecolor='black', label=feature_list[0].subclass_label)
+        plt.errorbar(x=cv_axis, y=mean_scores, yerr=std_scores, ls='none', marker='o', color=color, markersize=params_obj.plot_14_dot_size, markeredgecolor='black', alpha=0.8, label=feature_list[0].subclass_label)
         plt.axhline(y=0.0, color='black', ls='--')
 
     # plot titles, labels, and legends
@@ -1360,9 +1362,9 @@ def lda_best_features_subclass(features_list, classif_inputs, param_obj, output_
     :rtype: ClassificationScheme
     """
     # loop over features, assembling correct data for LDA for all classes/replicates for each
-    x_data, label_data, filenames, cvs = [], [], [], []
+    x_data, label_data, filenames, cvs, file_ids = [], [], [], [], []
     for feature in features_list:
-        x_data, label_data, filenames, cvs = lda_prep_subclass(feature, classif_inputs, param_obj, x_data, label_data, filenames, cvs)
+        x_data, label_data, filenames, cvs, file_ids = lda_prep_subclass(feature, classif_inputs, param_obj, x_data, label_data, filenames, cvs, file_ids)
 
     # finalize input data for LDA
     x_data = np.asarray(x_data)
@@ -1398,23 +1400,52 @@ def lda_best_features_subclass(features_list, classif_inputs, param_obj, output_
     scheme.input_feats = cvs
     scheme.set_name()
 
-    # save_lda_output(x_lda, input_filenames, input_feats, scheme.name, output_dir, explained_variance_ratio=expl_var_r)
-    x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file = [], [], [], []
-    num_feats = len(features_list)
-    index = 0
-    for filename in filenames:
-        x_lda_by_file.append(x_lda[index: index + num_feats])
-        y_pred_by_file.append(y_pred[index: index + num_feats])
-        probs_by_file.append(probs[index: index + num_feats])
-        filenames_by_file.append(filename)
-        index += num_feats
+    # Organize outputs by input file for easier viewing, then save
+    x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file = prep_outputs_by_file(x_lda, y_pred, probs, filenames, file_ids)
 
     save_lda_and_predictions(scheme, x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file, output_dir, unknowns_bool=False)
     plot_probabilities(param_obj, scheme, probs_by_file, output_dir, unknown_bool=False)
     return scheme
 
 
-def lda_prep_subclass(feature, classif_inputs, param_obj, x_data, label_data, filenames, cvs):
+def prep_outputs_by_file(x_lda, y_pred, probs, filenames, file_ids):
+    """
+    Organize outputs from LDA into groups sorted by input raw file for easy output formatting.
+    All 4 input lists are same shape and would be made into a nice container object except that
+    they come out all together from classification.
+    :param x_lda: transformed LDA result data
+    :param y_pred: predicted class outputs
+    :param probs: predicted class probabilities
+    :param filenames: raw filenames
+    :param file_ids: list of strings to keep track of class/replicate ID to order correctly
+    :return: sublist of each input list that is all the entries corresponding to the specific file
+    """
+    x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file = [], [], [], []
+
+    # Get unique IDs only
+    unique_ids = []
+    for file_id in file_ids:
+        if file_id not in unique_ids:
+            unique_ids.append(file_id)
+
+    for unique_id in unique_ids:
+        x_lda_out, y_pred_out, probs_out = [], [], []
+        file_indices = [index for index, x in enumerate(file_ids) if x == unique_id]
+
+        for index in file_indices:
+            x_lda_out.append(x_lda[index])
+            y_pred_out.append(y_pred[index])
+            probs_out.append(probs[index])
+
+        x_lda_by_file.append(x_lda_out)
+        y_pred_by_file.append(y_pred_out)
+        probs_by_file.append(probs_out)
+        filenames_by_file.append(filenames[file_indices[0]])
+
+    return x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file
+
+
+def lda_prep_subclass(feature, classif_inputs, param_obj, x_data, label_data, filenames, cvs, file_ids):
     """
     Helper method to append the correct input data for LDA to the provided lists for a given
     feature. x_data, labels, filenames, and cvs are ongoing lists that get added to, feature
@@ -1431,6 +1462,7 @@ def lda_prep_subclass(feature, classif_inputs, param_obj, x_data, label_data, fi
     :param label_data: ongoing list of labels for LDA
     :param filenames: ongoing list of filenames for outputs
     :param cvs: ongoing list of CVs chosen for outputs
+    :param file_ids: ongoing list of file IDs (class/rep) for later sorting
     :return: x_data, label_data, filenames, cvs updated with values from this feature
     """
     # Get the correct subclass if more than one present
@@ -1446,6 +1478,7 @@ def lda_prep_subclass(feature, classif_inputs, param_obj, x_data, label_data, fi
     flat_labels = classif_input.get_flat_list(get_type='label')
     flat_filenames = [obj.short_filename for obj in flat_obj_list]
     flat_cv_axes = [obj.axes[1] for obj in flat_obj_list]
+    flat_ids = classif_inputs[subclass_index].get_flat_list(get_type='rep')
 
     # Append data from each class/replicate to the output lists in order
     for data_index in range(len(flat_raws)):
@@ -1459,9 +1492,10 @@ def lda_prep_subclass(feature, classif_inputs, param_obj, x_data, label_data, fi
         label_data.append(flat_labels[data_index])
         if flat_filenames is not None:
             filenames.append(flat_filenames[data_index])
-        cvs.append(feature.cv)
+        file_ids.append('{}_{}'.format(label_data[data_index], flat_ids[data_index]))
+    cvs.append(feature.cv)
 
-    return x_data, label_data, filenames, cvs
+    return x_data, label_data, filenames, cvs, file_ids
 
 
 class ClassifInput(object):
@@ -1479,9 +1513,10 @@ class ClassifInput(object):
         # prepare labels for all replicates in each class
         self.class_labels = class_labels
         self.shaped_label_list = []
+        self.shaped_replicates = []
         for index, label in enumerate(class_labels):
             self.shaped_label_list.append([label for _ in range(len(obj_list_by_label[index]))])
-
+            self.shaped_replicates.append([x for x in range(len(obj_list_by_label[index]))])
         self.analysis_objs_by_label = obj_list_by_label
         self.subclass_label = subclass_label
 
@@ -1494,6 +1529,9 @@ class ClassifInput(object):
         if get_type == 'label':
             flat_label_list = [x for label_list in self.shaped_label_list for x in label_list]
             return flat_label_list
+        elif get_type == 'rep':
+            flat_reps = [x for rep_list in self.shaped_replicates for x in rep_list]
+            return flat_reps
         elif get_type == 'obj':
             flat_obj_list = [x for analysis_obj_list in self.analysis_objs_by_label for x in analysis_obj_list]
             return flat_obj_list
