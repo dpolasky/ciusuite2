@@ -108,8 +108,8 @@ class CIUSuite2(object):
             'on_button_gaussian_reconstruction_clicked': self.on_button_gaussian_reconstruct_clicked,
 
             # todo: finalize
-            'on_button_classification_supervised_clicked': self.on_button_classification_supervised_clicked,
-            # 'on_button_classification_supervised_clicked': self.on_button_classification_supervised_multi_clicked,
+            # 'on_button_classification_supervised_clicked': self.on_button_classification_supervised_clicked,
+            'on_button_classification_supervised_clicked': self.on_button_classification_supervised_multi_clicked,
 
             'on_button_classify_unknown_clicked': self.on_button_classify_unknown_clicked,
             'on_button_smoothing_clicked': self.on_button_smoothing_clicked
