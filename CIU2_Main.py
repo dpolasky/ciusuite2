@@ -19,7 +19,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-
+print('Loading CIUSuite 2...')
 import pygubu
 import tkinter as tk
 from tkinter import filedialog
@@ -45,7 +45,6 @@ import SimpleToolTip
 import matplotlib
 matplotlib.rcParams.update({'figure.autolayout': True})
 matplotlib.use('Agg')
-
 
 # Load resource file paths, supporting both live code and code bundled by PyInstaller
 if getattr(sys, 'frozen', False):
