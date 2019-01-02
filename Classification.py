@@ -1498,6 +1498,21 @@ def lda_prep_subclass(feature, classif_inputs, param_obj, x_data, label_data, fi
     return x_data, label_data, filenames, cvs, file_ids
 
 
+def unk_subclass_dict_to_list(unk_subclass_obj):
+    """
+    Convert a dictionary of unknown inputs {subclass label: [list_analysis_objs]} to a list of
+    ClassifInput containers by subclass for standard input into classification methods
+    :param unk_subclass_obj: SubclassUnknown container
+    :type unk_subclass_obj: SubclassUnknown
+    :rtype: list[ClassifInput]
+    """
+    classif_inputs = []
+    for subclass_label, obj_list in unk_subclass_obj.subclass_dict.items():
+        classif_input = ClassifInput([unk_subclass_obj.label], [obj_list], subclass_label)
+        classif_inputs.append(classif_input)
+    return classif_inputs
+
+
 class ClassifInput(object):
     """
     Container for classification input information (labels and CIUAnalysisObj containers)
@@ -1595,7 +1610,18 @@ class ClassificationScheme(object):
         unique_labels = get_unique_labels(self.class_labels)
         self.name = '_'.join(unique_labels)
 
-    def classify_unknown(self, unk_ciu_obj, params_obj, output_path, unk_label='Unknown'):
+    def get_subclass_labels(self):
+        """
+        Return a list of subclass labels from all selected features
+        :return: list of subclass labels (strings)
+        """
+        subclass_labels = []
+        for feature in self.selected_features:
+            if feature.subclass_label is not None:
+                subclass_labels.append(feature.subclass_label)
+        return subclass_labels
+
+    def classify_unknown(self, unk_ciu_obj, params_obj, unk_label='Unknown'):
         """
         Classify a test dataset according to this classification scheme. Selects features from
         the test dataset (ciudata), classifies, and returns output and score metrics.
@@ -1604,7 +1630,6 @@ class ClassificationScheme(object):
         :param unk_label: label for the unknown data
         :param params_obj: parameters information
         :type params_obj: Parameters
-        :param output_path: directory in which to save output
         :return: updated analysis object with prediction data saved
         :rtype: CIUAnalysisObj
         """
@@ -1626,10 +1651,40 @@ class ClassificationScheme(object):
         unk_ciu_obj.classif_probs_avg = pred_probs_avg
         unk_ciu_obj.classif_transformed_data = unknown_transformed_lda
 
-        # unknown_plot_info = [(unknown_transformed_lda, unk_ciu_obj.short_filename)]
-        # plot_classification_decision_regions(self, params_obj, output_path, unknown_tups=unknown_plot_info)
-
         return unk_ciu_obj
+
+    def classify_unknown_subclass(self, unk_subclass_obj, params_obj):
+        """
+        Classify a test dataset according to this classification scheme with subclasses. Selects features from
+        the test dataset (ciudata), classifies, and returns output and score metrics. Each container has only 1 (or more) replicates of a particular unknown rather than a shaped list by known classes
+        :param unk_subclass_obj: A single subclass unknown container with all subclasses/replicates for a single analysis
+        :type unk_subclass_obj: SubclassUnknown
+        :param params_obj: parameters information
+        :type params_obj: Parameters
+        :return: updated analysis object with prediction data saved
+        :rtype: SubclassUnknown
+        """
+        # convert subclass object to standard ClassifInput
+        list_classif_input = unk_subclass_dict_to_list(unk_subclass_obj)
+
+        # Assemble feature data for fitting
+        unk_input_x, label_data, filenames, cvs, file_ids = [], [], [], [], []
+        for feature in self.selected_features:
+            unk_input_x, label_data, filenames, cvs, file_ids = lda_prep_subclass(feature, list_classif_input, params_obj, unk_input_x,
+                                                                                  label_data, filenames, cvs, file_ids)
+
+        # Fit/classify data according to scheme LDA and classifier
+        unknown_transformed_lda = self.lda.transform(unk_input_x)
+        pred_class_label = self.classifier.predict(unknown_transformed_lda)
+        pred_probs_by_cv = self.classifier.predict_proba(unknown_transformed_lda)
+        pred_probs_avg = np.average(pred_probs_by_cv, axis=0)
+
+        # save information to original container and return for plotting/etc
+        unk_subclass_obj.predicted_label = pred_class_label
+        unk_subclass_obj.probs_by_cv = pred_probs_by_cv
+        unk_subclass_obj.probs_avg = pred_probs_avg
+        unk_subclass_obj.transformed_data = unknown_transformed_lda
+        return unk_subclass_obj
 
     def plot_all_unknowns(self, unk_ciuobj_list, params_obj, output_path):
         """
@@ -1644,6 +1699,49 @@ class ClassificationScheme(object):
         """
         all_plot_tups = [(x.classif_transformed_data, x.short_filename) for x in unk_ciuobj_list]
         plot_classification_decision_regions(self, params_obj, output_path, unknown_tups=all_plot_tups)
+
+    def plot_all_unknowns_subclass(self, unk_subclass_obj_list, params_obj, output_path):
+        """
+        Same as classify unknown, except that all unknowns are plotted on a single output plot
+        and labeled by filename
+        :param unk_subclass_obj_list: list of SubclassUnknown containers for each unknown - MUST have transformed data already set
+        :type unk_subclass_obj_list: list[SubclassUnknown]
+        :param params_obj: parameters information
+        :type params_obj: Parameters
+        :param output_path: directory in which to save output
+        :return: void
+        """
+        all_plot_tups = [(x.transformed_data, x.label) for x in unk_subclass_obj_list]
+        plot_classification_decision_regions(self, params_obj, output_path, unknown_tups=all_plot_tups)
+
+
+class SubclassUnknown(object):
+    """
+    Container for unknowns in subclass analyses. Essentially just a dictionary of {subclass label: [list of analysis objects]}
+    for each subclass with associated name and space to save output/classification predictions/probabilities
+    """
+    def __init__(self, label, dict_unk_subclasses):
+        """
+        Initialize new container
+        :param label: string used to label outputs from this combined unknown
+        :param dict_unk_subclasses: dict of key = subclass label, value = list of CIUAnalysisObjs
+        :type dict_unk_subclasses: dict[str, list[CIUAnalysisObj]]
+        """
+        self.label = label
+        self.subclass_dict = dict_unk_subclasses
+
+        # output storage
+        self.predicted_label = None
+        self.probs_by_cv = None
+        self.probs_avg = None
+        self.transformed_data = None
+
+    def __str__(self):
+        """
+        string rep
+        :return: string
+        """
+        return '<SubclassUnknown> {}'.format(self.label)
 
 
 class CFeature(object):

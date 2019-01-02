@@ -641,6 +641,60 @@ def equalize_unk_axes_classif(flat_unknown_list, final_axes, scheme_cvs_list, ga
     return output_obj_list
 
 
+def equalize_unk_axes_subclass(subclass_obj_list, final_axes, scheme_feats_list):
+    """
+    Specialized equalization method for unknown classification data. Equalizes DT axis by cropping,
+    and reduces CV axis to only the selected voltages in the scheme.
+    :param subclass_obj_list: list of SubclassUnknown objects containing CIUAnalysisObjs to equalize
+    :type subclass_obj_list: list[Classification.SubclassUnknown]
+    :param final_axes: crop values from the Scheme to equalize to
+    :param scheme_feats_list: List of CFeatures from the classification scheme being used
+    :type scheme_feats_list: list[Classification.CFeature]
+    :return: updated object list with axes cropped (if needed)
+    :rtype: list[Classification.SubclassUnknown]
+    """
+    output_obj_list = []
+
+    # adjust ALL files to the same final axes
+    for subclass_obj in subclass_obj_list:
+        for subclass_label, analysis_obj_list in subclass_obj.subclass_dict.items():
+            # Get CVs for this subclass label only
+            subclass_cvs = []
+            for feature in scheme_feats_list:
+                if feature.subclass_label == subclass_label:
+                    subclass_cvs.append(feature.cv)
+
+            for analysis_obj in analysis_obj_list:
+                # interpolate DT axis ONLY - leave CV axis alone by passing the existing CV axis as the "new" axis
+                adjusted_axes = [final_axes[0], analysis_obj.axes[1]]
+                analysis_obj, adj_flag = equalize_obj(analysis_obj, adjusted_axes)
+
+                # Remove all CVs except those required by the scheme (raises errors if those are not found)
+                final_ciu_matrix = []
+                ciu_data_matrix = analysis_obj.ciu_data.T     # transpose to access CV columns
+                cv_axis = []
+                for cv in subclass_cvs:
+                    # Get the index of this collision voltage in the object and add that column of the ciu_data to the output
+                    cv_index = find_nearest(analysis_obj.axes[1], cv)
+
+                    # make sure this is an exact match
+                    if not analysis_obj.axes[1][cv_index] == cv:
+                        raise ValueError('Unknown CV axis does not have a value required for this classification scheme. Classification cannot be performed', analysis_obj.short_filename, cv)
+
+                    final_ciu_matrix.append(ciu_data_matrix[cv_index])
+                    cv_axis.append(cv)
+
+                new_axes = [adjusted_axes[0], cv_axis]  # preserve the adjusted DT axis as well as the new CV axis
+                final_ciu_matrix = np.asarray(final_ciu_matrix).T   # tranpose back to original dimensions
+
+                # save final data into existing object
+                analysis_obj.axes = new_axes
+                analysis_obj.ciu_data = final_ciu_matrix
+                # output_obj_list.append(analysis_obj)
+        output_obj_list.append(subclass_obj)
+    return output_obj_list
+
+
 class CropUI(object):
     """
     Simple dialog with several fields build with Pygubu for inputting crop values

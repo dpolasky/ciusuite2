@@ -108,9 +108,10 @@ class CIUSuite2(object):
 
             # todo: finalize
             # 'on_button_classification_supervised_clicked': self.on_button_classification_supervised_clicked,
+            # 'on_button_classify_unknown_clicked': self.on_button_classify_unknown_clicked,
             'on_button_classification_supervised_clicked': self.on_button_classification_supervised_multi_clicked,
+            'on_button_classify_unknown_clicked': self.on_button_classify_unknown_subclass_clicked,
 
-            'on_button_classify_unknown_clicked': self.on_button_classify_unknown_clicked,
             'on_button_smoothing_clicked': self.on_button_smoothing_clicked
         }
         builder.connect_callbacks(callbacks)
@@ -1302,6 +1303,121 @@ class CIUSuite2(object):
                 self.display_analysis_files(new_filename_list)
         self.progress_done()
 
+    def on_button_classify_unknown_subclass_clicked(self):
+        """
+        Open filechooser to load classification scheme object (previously saved), then run
+        classification on all loaded .ciu files against that scheme.
+        :return: void
+        """
+        # check parameters
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'unk' in x]
+        param_success, param_dict = self.run_param_ui('Unknown Classification Parameters', param_keys)
+        if param_success:
+            # load classification scheme file
+            scheme_file = filedialog.askopenfilename(filetypes=[('Classification File', '.clf')])
+            if not scheme_file == '':
+                scheme = Classification.load_scheme(scheme_file)
+                # subclass_labels = scheme.get_subclass_labels()
+
+                # load folders from which to draw files
+                template_file = filedialog.askopenfilename(title='Open Unknown Classification Template', filetypes=[('CSV files', '.csv')])
+                replicate_objs = parse_classification_template_unknowns(template_file)
+
+                current_dir_text = self.builder.get_object('Text_outputdir').get(1.0, tk.END).rstrip('\n')
+                if current_dir_text == '(No files loaded yet)':
+                    self.output_dir = os.path.dirname(template_file)
+
+                if len(replicate_objs) > 0:
+                # rep_folders = Raw_Data_Import.get_data(input_dir=self.params_obj.silent_filechooser_dir)
+                # if len(rep_folders) > 0:
+                #     update_dict = {'silent_filechooser_dir': os.path.dirname(rep_folders[0])}
+                #     CIU_Params.update_specific_param_vals(update_dict, hard_params_file)
+                #
+                #     # load data into containers sorted by subclass
+                #     replicate_objs = []
+                #     for rep_folder in rep_folders:
+                #         files = [os.path.join(rep_folder, x) for x in os.listdir(rep_folder) if x.endswith('.ciu')]
+                #         subclass_dict = {}
+                #         for subclass_label in subclass_labels:
+                #             class_files = [x for x in files if subclass_label in x]
+                #             subclass_objs = [load_analysis_obj(x) for x in class_files]
+                #             subclass_dict[subclass_label] = subclass_objs
+                #         rep_name = os.path.basename(rep_folder)
+                #         rep_obj = Classification.SubclassUnknown(rep_name, subclass_dict)
+                #         replicate_objs.append(rep_obj)
+
+                    # ensure Gaussian features are present if requested
+                    if self.params_obj.classif_3_unk_mode == 'Gaussian':
+                        messagebox.showerror('Gaussian mode not implemented', 'Gaussian mode is not implemented for multiple subclasses. Please select standard mode and try again.')
+                        # make sure the scheme is in Gaussian mode, cancel classification if not
+                        # if scheme.num_gaussians == 0:
+                        #     messagebox.showerror('Non-Gaussian Scheme Selected', 'Gaussian mode specified, but the selected classification scheme (.clf file) is NOT a Gaussian classification scheme. No analysis will be performed.')
+                        #     self.progress_done()
+                        #
+                        # for analysis_obj in analysis_obj_list:
+                        #     if analysis_obj.features_gaussian is None:
+                        #         messagebox.showerror('No Gaussian Features Fitted',
+                        #                              'Error: No Gaussian Features in file: {} . Gaussian Feature classification selected, '
+                        #                              'but Gaussian Feature Detection has not been performed yet. '
+                        #                              'Please run Gaussian Feature Detection on all files being used'
+                        #                              'and try again.')
+                        #         # skip file
+                        #         continue
+                        #     else:
+                        #         # prepare gaussian data for classification
+                        #         final_gaussians = Classification.prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
+                        #         analysis_obj.classif_gaussfeats = final_gaussians
+                        #
+                        #         # make ready the gaussians (saved into analysis object and length checked)
+                        #         skip_flag = False
+                        #         for gaussian_list in final_gaussians:
+                        #             if len(gaussian_list) > scheme.num_gaussians:
+                        #                 messagebox.showerror('Gaussian Extrapolation Error',
+                        #                                      'Warning: there are more overlapping features in file {} than in any of the training data used the classification scheme. '
+                        #                                      'To fit, ensure that the Gaussian Feature Detection outputs for this file are similar to the data used to build the chosen '
+                        #                                      'classification scheme (especially in the maximum number of features that overlap at one CV)'.format(
+                        #                                          analysis_obj.short_filename))
+                        #                 # skip file
+                        #                 skip_flag = True
+                        #                 break
+                        #         if skip_flag:
+                        #             continue
+
+                    try:
+                        replicate_objs = Raw_Processing.equalize_unk_axes_subclass(replicate_objs, scheme.final_axis_cropvals, scheme.selected_features)
+                    except (ValueError, TypeError) as err:
+                        # raised when the exact CV from the scheme cannot be found in the unknown object. Warn user with dialog
+                        messagebox.showerror('Axis Mismatch', message='{}. File: {}, CV: {}'.format(*err.args))
+                        self.progress_done()
+
+                    # analyze unknowns using the scheme and save outputs
+                    successful_objs_for_plot = []
+                    for rep_obj in replicate_objs:
+                        rep_obj = scheme.classify_unknown_subclass(rep_obj, self.params_obj)
+                        successful_objs_for_plot.append(rep_obj)
+                        self.update_progress(replicate_objs.index(rep_obj), len(replicate_objs))
+
+                    if len(successful_objs_for_plot) > 0:
+                        # Classification.save_predictions(successful_objs_for_plot, scheme.selected_features, scheme.unique_labels, self.output_dir, scheme.name)
+                        scheme.plot_all_unknowns_subclass(successful_objs_for_plot, self.params_obj, self.output_dir)
+
+                        # compile all successfully fitted LDA and prediction data for output csv
+                        all_transform_data = [x.transformed_data for x in successful_objs_for_plot]
+                        all_filenames = [x.label for x in successful_objs_for_plot]
+                        all_predictions = [x.predicted_label for x in successful_objs_for_plot]
+                        all_probs = [x.probs_by_cv for x in successful_objs_for_plot]
+                        # Classification.save_lda_output_unk(all_transform_data, all_filenames, scheme.selected_features, self.output_dir)
+                        Classification.save_lda_and_predictions(scheme, all_transform_data, all_predictions, all_probs, all_filenames, self.output_dir, True)
+                        Classification.plot_probabilities(self.params_obj, scheme, all_probs, self.output_dir, unknown_bool=True)
+
+        self.progress_done()
+
+    def on_button_subclass_prep_clicked(self):
+        """
+        Allow user to select files for a particular class with various subclasses
+        :return:
+        """
+
     def check_params(self):
         """
         Check each file the in the analysis file list to see if its parameters match the
@@ -1586,7 +1702,7 @@ def parse_tooltips_file(tooltips_file):
         print('params file not found!')
 
 
-def parse_classification_template(template_file):
+def parse_classification_template_old(template_file):
     """
     Parsing method for classification template CSV
     :param template_file: csv file
@@ -1603,7 +1719,7 @@ def parse_classification_template(template_file):
                 continue
 
             if line.lower().startswith('class'):
-                # special header line for subclasses - remember them
+                # special header line for class labels - remember them
                 splits = line.rstrip('\n').split(',')
                 class_labels = splits[1:]
 
@@ -1627,6 +1743,113 @@ def parse_classification_template(template_file):
                 classif_inputs.append(classif_input)
 
     return classif_inputs
+
+
+def parse_classification_template(template_file):
+    """
+    Parsing method for classification template CSV
+    :param template_file: csv file
+    :return: list of ClassifInput containers for each subclass (list of 1 if no subclasses present)
+    :rtype: list[Classification.ClassifInput]
+    """
+    class_labels = []
+    subclass_labels = []
+    classif_inputs = []
+
+    with open(template_file, 'r') as template:
+        for line in list(template):
+            # skip headers and blank lines
+            if line.startswith('#') or line.startswith('\n'):
+                continue
+
+            if line.lower().startswith('class'):
+                # special line for class labels - remember them
+                splits = line.rstrip('\n').split(',')
+                class_labels = [x for x in splits[1:] if x is not '']
+
+            elif line.lower().startswith('subclass'):
+                # special line for subclass labels - remember them too
+                splits = line.rstrip('\n').split(',')
+                subclass_labels = splits[1:]
+                for index, subclass_label in enumerate(subclass_labels):
+                    if subclass_label is '':
+                        subclass_labels[index] = None
+
+            elif line.lower().startswith('folder'):
+                splits = line.rstrip('\n').split(',')
+                folder = splits[1]
+
+                for subclass_label in subclass_labels:
+                    objs_by_label = []
+                    for class_label in class_labels:
+                            # todo: add error checking here
+                            files = [os.path.join(folder, x) for x in os.listdir(folder) if x.endswith('.ciu')]
+                            class_files = [x for x in files if class_label in x]
+                            subclass_files = [x for x in class_files if subclass_label in x]
+                            objs = [load_analysis_obj(x) for x in subclass_files]
+                            objs_by_label.append(objs)
+
+                    classif_input = Classification.ClassifInput(class_labels, objs_by_label, subclass_label)
+                    classif_inputs.append(classif_input)
+
+            else:
+                # non-standard line - ignore
+                continue
+    return classif_inputs
+
+
+def parse_classification_template_unknowns(template_file):
+    """
+    Parsing method for classification template CSV for unknown data. SAME TEMPLATE as for regular classification,
+    but returns SubclassUnknown containers instead of ClassifInputs (need to be organized opposite for unknowns)
+    :param template_file: csv file
+    :return: list of SubclassUnknown containers for each replicate
+    :rtype: list[Classification.SubclassUnknown]
+    """
+    class_labels = []
+    subclass_labels = []
+    subclass_unks = []
+
+    with open(template_file, 'r') as template:
+        for line in list(template):
+            # skip headers and blank lines
+            if line.startswith('#') or line.startswith('\n'):
+                continue
+
+            if line.lower().startswith('class'):
+                # special line for class labels - remember them
+                splits = line.rstrip('\n').split(',')
+                class_labels = [x for x in splits[1:] if x is not '']
+
+            elif line.lower().startswith('subclass'):
+                # special line for subclass labels - remember them too
+                splits = line.rstrip('\n').split(',')
+                subclass_labels = splits[1:]
+                for index, subclass_label in enumerate(subclass_labels):
+                    if subclass_label is '':
+                        subclass_labels[index] = None
+
+            elif line.lower().startswith('folder'):
+                splits = line.rstrip('\n').split(',')
+                folder = splits[1]
+
+                for class_label in class_labels:
+                    subclass_dict = {}
+                    for subclass_label in subclass_labels:
+                            # todo: add error checking here
+                            files = [os.path.join(folder, x) for x in os.listdir(folder) if x.endswith('.ciu')]
+                            class_files = [x for x in files if class_label in x]
+                            subclass_files = [x for x in class_files if subclass_label in x]
+                            objs = [load_analysis_obj(x) for x in subclass_files]
+                            subclass_dict[subclass_label] = objs
+
+                    subclass_unk = Classification.SubclassUnknown(class_label, subclass_dict)
+                    subclass_unks.append(subclass_unk)
+
+            else:
+                # non-standard line - ignore
+                continue
+    return subclass_unks
 
 
 def save_analysis_obj(analysis_obj, params_dict, outputdir, filename_append=''):
