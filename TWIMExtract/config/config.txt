@@ -1,5 +1,0 @@
-Raw_Directory,T:\Dan\Data\_Subcomplexes and CIU\Avidin\_Control
-Range_Directory,C:\Users\dpolasky\Desktop\Ranges\CIU HT single scans\IgGs
-Output_Directory,C:\Users\dpolasky\Desktop\CIUSuite2\CIU2 test data\Yuwei Glycan Renamed\TWIM_outputs
-Batch_Directory,C:\Users\dpolasky
-Rule_Directory,C:\Users\dpolasky

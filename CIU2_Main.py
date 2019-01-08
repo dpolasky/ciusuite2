@@ -1328,60 +1328,44 @@ class CIUSuite2(object):
                     self.output_dir = os.path.dirname(template_file)
 
                 if len(replicate_objs) > 0:
-                # rep_folders = Raw_Data_Import.get_data(input_dir=self.params_obj.silent_filechooser_dir)
-                # if len(rep_folders) > 0:
-                #     update_dict = {'silent_filechooser_dir': os.path.dirname(rep_folders[0])}
-                #     CIU_Params.update_specific_param_vals(update_dict, hard_params_file)
-                #
-                #     # load data into containers sorted by subclass
-                #     replicate_objs = []
-                #     for rep_folder in rep_folders:
-                #         files = [os.path.join(rep_folder, x) for x in os.listdir(rep_folder) if x.endswith('.ciu')]
-                #         subclass_dict = {}
-                #         for subclass_label in subclass_labels:
-                #             class_files = [x for x in files if subclass_label in x]
-                #             subclass_objs = [load_analysis_obj(x) for x in class_files]
-                #             subclass_dict[subclass_label] = subclass_objs
-                #         rep_name = os.path.basename(rep_folder)
-                #         rep_obj = Classification.SubclassUnknown(rep_name, subclass_dict)
-                #         replicate_objs.append(rep_obj)
-
                     # ensure Gaussian features are present if requested
                     if self.params_obj.classif_3_unk_mode == 'Gaussian':
-                        messagebox.showerror('Gaussian mode not implemented', 'Gaussian mode is not implemented for multiple subclasses. Please select standard mode and try again.')
                         # make sure the scheme is in Gaussian mode, cancel classification if not
-                        # if scheme.num_gaussians == 0:
-                        #     messagebox.showerror('Non-Gaussian Scheme Selected', 'Gaussian mode specified, but the selected classification scheme (.clf file) is NOT a Gaussian classification scheme. No analysis will be performed.')
-                        #     self.progress_done()
-                        #
-                        # for analysis_obj in analysis_obj_list:
-                        #     if analysis_obj.features_gaussian is None:
-                        #         messagebox.showerror('No Gaussian Features Fitted',
-                        #                              'Error: No Gaussian Features in file: {} . Gaussian Feature classification selected, '
-                        #                              'but Gaussian Feature Detection has not been performed yet. '
-                        #                              'Please run Gaussian Feature Detection on all files being used'
-                        #                              'and try again.')
-                        #         # skip file
-                        #         continue
-                        #     else:
-                        #         # prepare gaussian data for classification
-                        #         final_gaussians = Classification.prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
-                        #         analysis_obj.classif_gaussfeats = final_gaussians
-                        #
-                        #         # make ready the gaussians (saved into analysis object and length checked)
-                        #         skip_flag = False
-                        #         for gaussian_list in final_gaussians:
-                        #             if len(gaussian_list) > scheme.num_gaussians:
-                        #                 messagebox.showerror('Gaussian Extrapolation Error',
-                        #                                      'Warning: there are more overlapping features in file {} than in any of the training data used the classification scheme. '
-                        #                                      'To fit, ensure that the Gaussian Feature Detection outputs for this file are similar to the data used to build the chosen '
-                        #                                      'classification scheme (especially in the maximum number of features that overlap at one CV)'.format(
-                        #                                          analysis_obj.short_filename))
-                        #                 # skip file
-                        #                 skip_flag = True
-                        #                 break
-                        #         if skip_flag:
-                        #             continue
+                        if scheme.num_gaussians == 0:
+                            messagebox.showerror('Non-Gaussian Scheme Selected', 'Gaussian mode specified, but the selected classification scheme (.clf file) is NOT a Gaussian classification scheme. No analysis will be performed.')
+                            self.progress_done()
+
+                        # For each analysis_obj in all subclasses of each replicate container, prepare Gaussians for classification
+                        for rep_obj in replicate_objs:
+                            for subclass_label, analysis_obj_list in rep_obj.subclass_dict.items():
+                                for analysis_obj in analysis_obj_list:
+                                    if analysis_obj.features_gaussian is None:
+                                        messagebox.showerror('No Gaussian Features Fitted',
+                                                             'Error: No Gaussian Features in file: {} . Gaussian Feature classification selected, '
+                                                             'but Gaussian Feature Detection has not been performed yet. '
+                                                             'Please run Gaussian Feature Detection on all files being used'
+                                                             'and try again.')
+                                        # skip file
+                                        continue
+                                    else:
+                                        # prepare gaussian data for classification
+                                        final_gaussians = Classification.prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
+                                        analysis_obj.classif_gaussfeats = final_gaussians
+
+                                        # make ready the gaussians (saved into analysis object and length checked)
+                                        skip_flag = False
+                                        for gaussian_list in final_gaussians:
+                                            if len(gaussian_list) > scheme.num_gaussians:
+                                                messagebox.showerror('Gaussian Extrapolation Error',
+                                                                     'Warning: there are more overlapping features in file {} than in any of the training data used the classification scheme. '
+                                                                     'To fit, ensure that the Gaussian Feature Detection outputs for this file are similar to the data used to build the chosen '
+                                                                     'classification scheme (especially in the maximum number of features that overlap at one CV)'.format(
+                                                                         analysis_obj.short_filename))
+                                                # skip file
+                                                skip_flag = True
+                                                break
+                                        if skip_flag:
+                                            continue
 
                     try:
                         replicate_objs = Raw_Processing.equalize_unk_axes_subclass(replicate_objs, scheme.final_axis_cropvals, scheme.selected_features)
@@ -1411,12 +1395,6 @@ class CIUSuite2(object):
                         Classification.plot_probabilities(self.params_obj, scheme, all_probs, self.output_dir, unknown_bool=True)
 
         self.progress_done()
-
-    def on_button_subclass_prep_clicked(self):
-        """
-        Allow user to select files for a particular class with various subclasses
-        :return:
-        """
 
     def check_params(self):
         """
