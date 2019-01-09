@@ -470,12 +470,14 @@ def check_axes_interp(crop_vals, axes_spacings):
     # assemble final axes using start/end values and spacing
     final_dt_axis = []
     current_dt = crop_vals[0]
-    while current_dt <= crop_vals[1]:
+    # use tolerance of 1e-12 to prevent weird floating point equality issues
+    while current_dt - crop_vals[1] < 1e-12:
         final_dt_axis.append(current_dt)
         current_dt += axes_spacings[0]
+
     final_cv_axis = []
     current_cv = crop_vals[2]
-    while current_cv <= crop_vals[3]:
+    while current_cv - crop_vals[3] < 1e-12:
         final_cv_axis.append(current_cv)
         current_cv += axes_spacings[1]
 
