@@ -297,16 +297,16 @@ def generate_products_for_ufs(analysis_obj_list_by_label, shaped_label_list, par
     :param params_obj: parameter info
     :type params_obj: Parameters
     :return: list of DataProduct objects for each combination
-    :rtype: list[DataProduct]
+    :rtype: list[UFSResult]
     """
     products = []
     for object_tuple, label_tuple in zip(itertools.product(*analysis_obj_list_by_label), itertools.product(*shaped_label_list)):
-        # create a DataProduct object for this combination
+        # create a UFSResult object for this combination
         # data_list = [x.ciu_data for x in object_tuple]
         data_list = [get_classif_data(x, params_obj, ufs_mode=True) for x in object_tuple]
 
         label_list = [x for x in label_tuple]
-        product = DataProduct(data_list, label_list)
+        product = UFSResult(data_list, label_list)
 
         # Run feature selection for this combination
         select = GenericUnivariateSelect(score_func=f_classif, mode='percentile', param=100)
@@ -401,7 +401,6 @@ def assemble_products(all_class_combination_lists):
     probs = []
     train_scores, test_scores = [], []
     for combo_tuple in itertools.product(*all_class_combination_lists):
-        print('.', end="")
         # stack training and test data and labels
         stacked_train_data, stacked_train_labels = [], []
         stacked_test_data, stacked_test_labels = [], []
@@ -526,6 +525,7 @@ def lda_for_crossval(stacked_train_data, stacked_train_labels, stacked_test_data
     test_lda = lda.transform(stacked_test_data)
     # max_iter=1000 needed to prevent occasional (and unpredictable) freezes with ridiculous iteration numbers
     svm = SVC(kernel='linear', C=1, probability=True, max_iter=1000)
+    # svm = LinearSVC(C=1, max_iter=1000)
     try:
         svm.fit(train_lda, stacked_train_labels)
     except ValueError:
@@ -1301,9 +1301,12 @@ def crossval_main_subclass(classif_inputs, outputdir, params_obj, features_list)
     else:
         max_features = len(features_list) + 1
 
+    current_time = time_start
     for ind, feature in enumerate(features_list[:max_features]):
         # Generate all combinations - NOTE: assumes that if subclasses are present, features know their subclass (should always be true)
-        print('\nPerforming cross validation for {} features'.format(ind+1))
+        print('\nPerforming cross validation for {} features, last took {:.1f}s'.format(ind+1, time.time() - current_time))
+        current_time = time.time()
+
         current_features_list.append(feature)
 
         if len(classif_inputs) > 1:
@@ -1513,6 +1516,339 @@ def unk_subclass_dict_to_list(unk_subclass_obj):
     return classif_inputs
 
 
+def rearrange_ciu_by_feats(shaped_inputs_list, features_list, params_obj):
+    """
+    For each CIU dataset in the original input, generate a rearranged (and possibly shrunken)
+    matrix of data in order of features in the provided features list. Designed to allow easy
+    access to the CV subset data of interest prior to doing crossval/LDA/etc. Handles subclasses.
+    :param features_list: list of features in descending order of score from UFS
+    :type features_list: list[CFeature]
+    :param shaped_inputs_list: lists by class of SubclassUnknown containers with classification input info
+    :type shaped_inputs_list: list[list[ClInput]]
+    :param params_obj: parameters container for getting classif data (raw data or gaussian mode)
+    :type params_obj: Parameters
+    :return: shaped output data with selected feature data in order
+    :rtype: list[list[DataSubset]]
+    """
+    # Loop over the shaped input list, extracting data and maintaining the same organization
+    shaped_output_list = []
+    for class_list in shaped_inputs_list:
+        class_outputs = []
+
+        for rep_obj in class_list:
+            data_output = []
+
+            for feature in features_list:
+                if feature.subclass_label is not None:
+                    subclass_obj = rep_obj.get_subclass_data_list(feature.subclass_label)
+                else:
+                    subclass_obj = rep_obj.get_subclass_data_list('0')
+
+                # Determine the correct CV column to append to the growing matrix and do so
+                current_cv_axis = subclass_obj.axes[1]
+                this_cv_index = (np.abs(np.asarray(current_cv_axis) - feature.cv)).argmin()
+                raw_data = get_classif_data(subclass_obj, params_obj)
+                cv_col = raw_data.T[this_cv_index]
+                data_output.append(cv_col)
+
+            # generate a subset container to hold the extracted data and associated metadata
+            rep_subset = DataSubset(data_output, rep_obj.class_label, features_list)
+            class_outputs.append(rep_subset)
+        shaped_output_list.append(class_outputs)
+    return shaped_output_list
+
+
+def arrange_lda_new(subset_list):
+    """
+    Prepare data and label arrays for input to LDA methods given an input list of DataSubset containers
+    with formatted data and labels
+    :param subset_list: list of DataSubset containers with formatted data and labels
+    :type subset_list: list[DataSubset]
+    :return: x_data, label_data for direct input into LDA
+    """
+    x_data = []
+    label_data = []
+    for subset in subset_list:
+        x_data.append(subset.data)
+        label_data.append(subset.class_label)
+
+    x_data = np.asarray(x_data)
+    return x_data, label_data
+
+
+def run_lda_svc(x_data, label_data):
+    """
+    Run LDA and SVC analysis of a set of data and return the resulting classifier
+    :param x_data: input x data
+    :param label_data: input label data
+    :return: sklearn.svm.SVC classifier object
+    :rtype: SVC
+    """
+    lda = LinearDiscriminantAnalysis(solver='svd', n_components=5)
+    lda.fit(x_data, label_data)
+    train_lda = lda.transform(x_data)
+
+    # max_iter=1000 needed to prevent occasional (and unpredictable) freezes with ridiculous iteration numbers
+    svm = SVC(kernel='linear', C=1, probability=True, max_iter=1000)
+    try:
+        svm.fit(train_lda, label_data)
+    except ValueError:
+        print('Error in SVM fitting. This should not be reached - check your input data for duplicates')
+
+    return svm
+
+
+def main_build_classification_new(cl_inputs_by_label, params_obj, output_dir, known_feats=None):
+    """
+    Main method for classification. Performs feature selection followed by LDA and classification
+    and generates output and plots. Returns a ClassificationScheme object to be saved for future
+    classification of unknowns. Allows use of subclasses.
+    :param cl_inputs_by_label: lists of ClInput containers sorted by class label
+    :type cl_inputs_by_label: list[list[ClInput]]
+    :param output_dir: directory in which to save plots/output
+    :param params_obj: Parameters object with classification parameter information
+    :type params_obj: Parameters
+    :param known_feats: list of features (optional, allows manual mode)
+    :return: ClassificationScheme object with the generated scheme
+    :rtype: ClassificationScheme
+    """
+    if known_feats is None:
+        # run feature selection and crossvalidation to select best features automatically
+        # todo: convert to list_classif_inputs
+        all_features = multi_subclass_ufs(list_classif_inputs, params_obj, output_dir)
+
+        # assess all features to determine which to use in the final scheme
+        best_features, crossval_score, all_crossval_data, best_crossval = crossval_main_new(cl_inputs_by_label, output_dir, params_obj, all_features)
+    else:
+        # Manual mode: use the provided features and run limited crossvalidation
+        best_features, crossval_score, all_crossval_data, best_crossval = crossval_main_new(cl_inputs_by_label, output_dir, params_obj, known_feats)
+        best_features = known_feats
+
+    # perform LDA and classification on the selected/best features
+    shaped_subsets = rearrange_ciu_by_feats(cl_inputs_by_label, best_features, params_obj)
+    flat_subsets = [x for class_list in shaped_subsets for x in class_list]
+    constructed_scheme = lda_svc_best_feats(flat_subsets)
+
+    # constructed_scheme = lda_best_features_subclass(best_features, list_classif_inputs, params_obj, output_dir)
+    constructed_scheme.crossval_test_score = crossval_score
+    constructed_scheme.all_crossval_data = all_crossval_data
+
+    # plot output here for now, will probably move eventually
+    plot_classification_decision_regions(constructed_scheme, params_obj, output_dir)
+    return constructed_scheme
+
+
+def lda_svc_best_feats(flat_subset_list):
+    """
+    Generate a Scheme container by performing final LDA/SVM analysis on the provided data.
+    :param flat_subset_list: list of DataSubset containers
+    :type flat_subset_list: list[DataSubset]
+    :return: Scheme container
+    :rtype: ClassificationScheme
+    """
+    train_data, train_labels = arrange_lda_new(flat_subset_list)
+    # todo: also need to get lda for explained variance ratio
+    svc = run_lda_svc(train_data, train_labels)
+
+    # todo: actually make scheme
+
+
+# def ufs_new(cl_inputs_by_label, params_obj, output_path):
+#     """
+#     Perform univariate feature selection across classes using multiple subclasses (e.g. different charge states
+#     of CIU fingerprints). Essentially performs standard UFS on each subclass separately and combines
+#     all output features/scores into a single list, from which the best features can be chosen for
+#     LDA/SVM classification. Inputs are structured like in standard UFS method, except provided
+#     as a list of inputs for each subclass rather than a single input (as the standard method takes only
+#     1 "subclass")
+#     :param cl_inputs_by_label: lists of ClInput containers for each class
+#     :type cl_inputs_by_label: list[list[ClInput]]
+#     :param params_obj: parameters information
+#     :type params_obj: Parameters
+#     :param output_path: directory in which to save plot
+#     :return: list of all features, sorted in decreasing order of score from ALL subclasses
+#     :rtype: list[CFeature]
+#     """
+#     # Iterate over all subclass lists to generate feature score information
+#     features = []
+#     features_by_subclass = []
+#     for class_list in cl_inputs_by_label:
+#         for cl_input in class_list:
+#
+#             # generate all combinations of replicate datasets within the labels
+#             shaped_label_list = subclass_input.shaped_label_list
+#             products = generate_products_for_ufs(subclass_input.analysis_objs_by_label, shaped_label_list, params_obj)
+#
+#             # Create a CFeature object to hold the information for this CV (feature)
+#             scores = [product.fit_sc for product in products]
+#             mean_score = np.mean(scores, axis=0)
+#             std_score = np.std(scores, axis=0)
+#
+#         cv_axis = subclass_input.analysis_objs_by_label[0][0].axes[1]
+#         subclass_features = []
+#         for cv_index, cv in enumerate(cv_axis):
+#             feature = CFeature(cv, cv_index, mean_score[cv_index], std_score[cv_index], subclass_label=subclass_input.subclass_label)
+#             features.append(feature)
+#             subclass_features.append(feature)
+#         features_by_subclass.append(subclass_features)
+#
+#     # sort feature scores either by mean - stdev ("error mode") or just mean alone.
+#     if params_obj.classif_6_ufs_use_error_mode:
+#         sorted_features = sorted(features, key=lambda x: (x.mean_score - x.std_dev_score), reverse=True)
+#     else:
+#         sorted_features = sorted(features, key=lambda x: x.mean_score, reverse=True)
+#
+#     unique_labels = get_unique_labels([x for label_list in subclass_input_list[0].shaped_label_list for x in label_list])
+#     scheme_name = '_'.join(unique_labels)
+#     # plot_feature_scores(sorted_features, params_obj, scheme_name, output_path)
+#     plot_feature_scores_subclass(features_by_subclass, params_obj, scheme_name, output_path)
+#     return sorted_features
+#
+#
+# def generate_products_for_ufs_new(analysis_obj_list_by_label, shaped_label_list, params_obj):
+#     """
+#     Generate all combinations of replicate data across classes for feature selection. Will
+#     create a DataProduct object with the key information for each combination.
+#     :param analysis_obj_list_by_label: list of lists of CIUAnalysisObj's, sorted by class label
+#     :type analysis_obj_list_by_label: list[list[CIUAnalysisObj]]
+#     :param shaped_label_list: list of lists of class labels with matching shape of analysis_obj_by_label
+#     :param params_obj: parameter info
+#     :type params_obj: Parameters
+#     :return: list of DataProduct objects for each combination
+#     :rtype: list[UFSResult]
+#     """
+#     products = []
+#     for object_tuple, label_tuple in zip(itertools.product(*analysis_obj_list_by_label), itertools.product(*shaped_label_list)):
+#         # create a UFSResult object for this combination
+#         # data_list = [x.ciu_data for x in object_tuple]
+#         data_list = [get_classif_data(x, params_obj, ufs_mode=True) for x in object_tuple]
+#
+#         label_list = [x for x in label_tuple]
+#         product = UFSResult(data_list, label_list)
+#
+#         # Run feature selection for this combination
+#         select = GenericUnivariateSelect(score_func=f_classif, mode='percentile', param=100)
+#         select.fit(product.combined_data, product.numeric_label_arr)
+#
+#         product.fit_pvalues = select.pvalues_
+#         product.fit_scores = select.scores_
+#         product.fit_sc = -np.log10(select.pvalues_)
+#
+#         products.append(product)
+#     return products
+
+
+def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list):
+    """
+    Updated crossval method to allow multiple subclasses. Updated to reduce datasets to selected
+    features first, then perform crossval with modular methods.
+    :param cl_inputs_by_label: lists of ClInput containers sorted by class label
+    :type cl_inputs_by_label: list[list[ClInput]]
+    :param outputdir: directory in which to save output plots
+    :param params_obj: parameters container
+    :type params_obj: Parameters
+    :param features_list: List of CFeatures, sorted in decreasing order of score
+    :type features_list: list[CFeature]
+    :return: list of selected features, test score for that # features, and all cross validation data
+    """
+    # determine training size as size of the smallest class - 1 (1 test file at a time)
+    min_class_size = np.min([len(x) for x in cl_inputs_by_label])
+    training_size = min_class_size - 1
+    label_list = [class_list[0].class_label for class_list in cl_inputs_by_label]
+
+    # optional max number of features to consider
+    if params_obj.classif_7_max_feats_for_crossval > 0:
+        max_features = params_obj.classif_7_max_feats_for_crossval
+        if max_features > len(features_list):
+            max_features = len(features_list) + 1
+    else:
+        max_features = len(features_list) + 1
+
+    time_start = time.time()
+    current_features_list = []
+    train_score_means, train_score_stds, test_score_means, test_score_stds, crossvals = [], [], [], [], []
+    for ind, feature in enumerate(features_list[:max_features]):
+        # Generate all combinations - NOTE: assumes that if subclasses are present, features know their subclass (should always be true)
+        print('\nPerforming cross validation for {} features'.format(ind + 1))
+        current_features_list.append(feature)
+
+        # format all data
+        shaped_data_list = rearrange_ciu_by_feats(cl_inputs_by_label, current_features_list, params_obj)
+
+        # perform the cross validation for this feature combination
+        crossval_obj = CrossValRun(shaped_data_list, label_list, training_size, current_features_list)
+        crossval_obj.divide_data_and_run_lda()
+
+        # save results
+        train_score_means.append(crossval_obj.train_scores_mean)
+        train_score_stds.append(crossval_obj.train_scores_std)
+        test_score_means.append(crossval_obj.test_scores_mean)
+        test_score_stds.append(crossval_obj.test_scores_std)
+        crossvals.append(crossval_obj)
+
+    train_score_means = np.asarray(train_score_means)
+    train_score_stds = np.asarray(train_score_stds)
+    test_score_means = np.asarray(test_score_means)
+    test_score_stds = np.asarray(test_score_stds)
+
+    # save and plot crossvalidation score information
+    crossval_data = (train_score_means, train_score_stds, test_score_means, test_score_stds)
+    unique_labels = get_unique_labels(label_list)
+    scheme_name = '_'.join(unique_labels)
+    save_crossval_score(crossval_data, scheme_name, outputdir)
+    plot_crossval_scores(crossval_data, scheme_name, params_obj, outputdir)
+
+    # determine best features list from crossval scores
+    best_num_feats, best_score = peak_crossval_score_detect(test_score_means, params_obj.classif_2_score_dif_tol)
+    output_features = features_list[0: best_num_feats]
+    best_crossval = crossvals[best_num_feats]
+    return output_features, best_score, crossval_data, best_crossval
+
+
+class ClInput(object):
+    """
+    Container for all classification inputs. Essentially just a dictionary of {subclass label: analysis object}
+    for each subclass with associated name and space to save output/classification predictions/probabilities
+    Allows for all methods to handle subclass or non-subclass data. Represents a single replicate of a
+    single class (and all subclasses if using subclass data)
+    """
+
+    def __init__(self, label, dict_subclass_objs):
+        """
+        Initialize new container. NOTE: if no subclasses, set entry key = '0'
+        :param label: string used to label outputs from this combined unknown
+        :param dict_subclass_objs: dict of key = subclass label, value = list of CIUAnalysisObjs
+        :type dict_subclass_objs: dict[str, CIUAnalysisObj]
+        """
+        self.class_label = label
+        self.subclass_dict = dict_subclass_objs
+
+        # output storage
+        self.predicted_label = None
+        self.probs_by_cv = None
+        self.probs_avg = None
+        self.transformed_data = None
+
+    def get_subclass_data_list(self, subclass_label):
+        """
+        Return the list of CIUAnalysisObj's corresponding to the provided subclass label string
+        :param subclass_label: string to search for in the dict
+        :return: list of analysis objs for this subclass
+        :rtype: CIUAnalysisObj
+        """
+        try:
+            return self.subclass_dict[subclass_label]
+        except KeyError:
+            return None
+
+    def __str__(self):
+        """
+        string rep
+        :return: string
+        """
+        return '<ClInput> {}'.format(self.class_label)
+
+
 class ClassifInput(object):
     """
     Container for classification input information (labels and CIUAnalysisObj containers)
@@ -1540,6 +1876,7 @@ class ClassifInput(object):
         Get a flattened list of labels or analysis objects
         :param get_type: whether to get labels ('label') or analysis objects ('obj')
         :return: flattened list
+        :rtype: list[CIUAnalysisObj]    #  not always, but this resolves some erroneous type checking in PyCharm
         """
         if get_type == 'label':
             flat_label_list = [x for label_list in self.shaped_label_list for x in label_list]
@@ -1722,7 +2059,7 @@ class SubclassUnknown(object):
     """
     def __init__(self, label, dict_unk_subclasses):
         """
-        Initialize new container
+        Initialize new container. NOTE: if no subclasses, set entry key = '0'
         :param label: string used to label outputs from this combined unknown
         :param dict_unk_subclasses: dict of key = subclass label, value = list of CIUAnalysisObjs
         :type dict_unk_subclasses: dict[str, list[CIUAnalysisObj]]
@@ -1735,6 +2072,18 @@ class SubclassUnknown(object):
         self.probs_by_cv = None
         self.probs_avg = None
         self.transformed_data = None
+
+    def get_subclass_data_list(self, subclass_label):
+        """
+        Return the list of CIUAnalysisObj's corresponding to the provided subclass label string
+        :param subclass_label: string to search for in the dict
+        :return: list of analysis objs for this subclass
+        :rtype: list[CIUAnalysisObj]
+        """
+        try:
+            return self.subclass_dict[subclass_label]
+        except KeyError:
+            return None
 
     def __str__(self):
         """
@@ -1757,8 +2106,112 @@ class CFeature(object):
         self.subclass_label = subclass_label
 
     def __str__(self):
-        return '<CFeature> cv: {}, score: {:.2f}'.format(self.cv, self.mean_score)
+        if self.subclass_label is not None:
+            return '<CFeature> cv: {}, sub: {}, score: {:.2f}'.format(self.cv, self.subclass_label, self.mean_score)
+        else:
+            return '<CFeature> cv: {}, score: {:.2f}'.format(self.cv, self.mean_score)
     __repr__ = __str__
+
+
+class CrossValRun(object):
+    """
+    Method to generate combinations of training and test datasets and run LDA + classification to generate training
+    score and test score on selected features
+    """
+    def __init__(self, data_list_by_label, label_list, training_size, features):
+        """
+        Initialize a CrossValProduct method with data, label, training size, and features
+        :param data_list_by_label: formatted data (sorted by feats, subclasses handled, etc) list for all classes, sorted by class label
+        :type data_list_by_label: list[list[DataSubset]]
+        :param label_list: label list for data
+        :param training_size: num of ciu data in each class to be used as training set
+        :param features: cv features
+        :type features: list[CFeature]
+        """
+        self.data_list_by_label = data_list_by_label
+        self.label_list = label_list
+        self.training_size = training_size
+        self.features = features
+
+        # assemble training and test data and label
+        self.train_data = None
+        self.train_labels = None
+        self.test_data = None
+        self.test_labels = None
+
+        # results info
+        self.train_scores = []
+        self.train_scores_mean = None
+        self.train_scores_std = None
+        self.test_scores = []
+        self.test_scores_mean = None
+        self.test_scores_std = None
+        self.probs = []
+        self.probs_mean = None
+        self.probs_std = None
+
+        # assembled data
+        self.all_train_test_subset_tups = []
+
+    def divide_data_and_run_lda(self):
+        """
+        Divide the data into each possible training and test arrangement and run LDA/SVC classification
+        to assess accuracy
+        :return: void (set results to self)
+        """
+        shaped_label_list = []
+        for index, label in enumerate(self.label_list):
+            shaped_label_list.append([label for _ in range(len(self.data_list_by_label[index]))])
+
+        # generate all combinations of each class input datalist (products)
+        all_class_combo_lists = []
+        for class_index, class_subset_list in enumerate(self.data_list_by_label):
+            # create all combinations of specified training/test sizes from this class's data
+            class_combo_list = []
+
+            # create all combinations of training and test data
+            for training_subset_list in itertools.combinations(class_subset_list, self.training_size):
+                # test data is anything not in the training list
+                test_subset_list = [x for x in class_subset_list if x not in training_subset_list]
+
+                # assemble LDA data here for train_subsets, train_labels (and test_subsets, test_labels)
+                train_lda_data, train_lda_labels = arrange_lda_new(training_subset_list)
+                test_lda_data, test_lda_labels = arrange_lda_new(test_subset_list)
+
+                classifer = run_lda_svc(train_lda_data, train_lda_labels)
+                train_score = classifer.score(train_lda_data, train_lda_labels)
+                test_score = classifer.score(test_lda_data, test_lda_labels)
+
+                # save results to self
+                self.all_train_test_subset_tups.append((training_subset_list, test_subset_list))
+                self.train_scores.append(train_score)
+                self.test_scores.append(test_score)
+
+        # compute score statistics and save to self
+        self.train_scores_mean = np.mean(self.train_scores)
+        self.train_scores_std = np.std(self.train_scores)
+        self.test_scores_mean = np.mean(self.test_scores)
+        self.test_scores_std = np.std(self.test_scores)
+        self.probs_mean = np.mean(self.probs)
+        self.probs_std = np.std(self.probs)
+
+
+class DataSubset(object):
+    """
+    Container for a subset of CIU data selected from selected features.
+    """
+    def __init__(self, data, class_label, features):
+        """
+        Initialize new subset container
+        :param data: dataset arranged using rearrange CIU by feats method (2D numpy array)
+        :param class_label: class label
+        :param features: list of features used in arranging data
+        :type features: list[CFeature]
+        """
+        self.data = data
+        self.class_label = class_label
+        self.features = features
+        # self.file_id = file_id
 
 
 class CrossValProduct(object):
@@ -1830,7 +2283,7 @@ class CrossValProduct(object):
                 # [self.test_labels_tup[test_index] for _ in range(len((test_data[0])))]
                 test_label_list = [shaped_label_list[class_index][0] for _ in range(len(test_data_list))]
 
-                # create Train/Test DataProduct for this combination
+                # create Train/Test DataCombo for this combination
                 current_combo = DataCombination(training_data_list, training_label_tuple, training_cv_axes, test_data_list, test_label_list, test_cv_axes)
                 current_combo.prepare_data(self.features)
                 class_combo_list.append(current_combo)
@@ -1882,13 +2335,13 @@ class DataCombination(object):
         self.test_labels_string = test_labels_final
 
 
-class DataProduct(object):
+class UFSResult(object):
     """
     Container for label and product information for data combinations used in feature selection.
     """
     def __init__(self, data_list, label_list):
         """
-        Initialize a new DataProduct with associated label and data
+        Initialize a new UFSResult with associated label and data
         :param data_list: list of ciu_data matrices (normalized)
         :param label_list: list of class labels (same length as data_list)
         """
@@ -1933,7 +2386,7 @@ class DataProduct(object):
 
     def __str__(self):
         label_string = ','.join(self.labels_input)
-        return '<DataProduct> labels: {}'.format(label_string)
+        return '<UFSResult> labels: {}'.format(label_string)
     __repr__ = __str__
 
 
