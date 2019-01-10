@@ -1540,9 +1540,9 @@ def rearrange_ciu_by_feats(shaped_inputs_list, features_list, params_obj):
 
             for feature in features_list:
                 if feature.subclass_label is not None:
-                    subclass_obj = rep_obj.get_subclass_data_list(feature.subclass_label)
+                    subclass_obj = rep_obj.get_subclass_obj(feature.subclass_label)
                 else:
-                    subclass_obj = rep_obj.get_subclass_data_list('0')
+                    subclass_obj = rep_obj.get_subclass_obj('0')
 
                 # Determine the correct CV column to append to the growing matrix and do so
                 current_cv_axis = subclass_obj.axes[1]
@@ -1564,16 +1564,19 @@ def arrange_lda_new(subset_list):
     with formatted data and labels
     :param subset_list: list of DataSubset containers with formatted data and labels
     :type subset_list: list[DataSubset]
-    :return: x_data, label_data for direct input into LDA
+    :return: x_data, numeric labels, string labels for direct input into LDA
     """
     x_data = []
     label_data = []
     for subset in subset_list:
-        x_data.append(subset.data)
+        for column in subset.data:
+            x_data.append(column)
+        # x_data.append(subset.data)
         label_data.append(subset.class_label)
 
     x_data = np.asarray(x_data)
-    return x_data, label_data
+    numeric_labels, string_labels = createtargetarray_featureselect(label_data)
+    return x_data, numeric_labels, string_labels
 
 
 def run_lda_svc(x_data, label_data):
@@ -1581,8 +1584,8 @@ def run_lda_svc(x_data, label_data):
     Run LDA and SVC analysis of a set of data and return the resulting classifier
     :param x_data: input x data
     :param label_data: input label data
-    :return: sklearn.svm.SVC classifier object
-    :rtype: SVC
+    :return: sklearn.svm.SVC classifier object and LDA object
+    :rtype: SVC, LinearDiscriminantAnalysis
     """
     lda = LinearDiscriminantAnalysis(solver='svd', n_components=5)
     lda.fit(x_data, label_data)
@@ -1595,16 +1598,17 @@ def run_lda_svc(x_data, label_data):
     except ValueError:
         print('Error in SVM fitting. This should not be reached - check your input data for duplicates')
 
-    return svm
+    return svm, lda
 
 
-def main_build_classification_new(cl_inputs_by_label, params_obj, output_dir, known_feats=None):
+def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_obj, output_dir, known_feats=None):
     """
     Main method for classification. Performs feature selection followed by LDA and classification
     and generates output and plots. Returns a ClassificationScheme object to be saved for future
     classification of unknowns. Allows use of subclasses.
     :param cl_inputs_by_label: lists of ClInput containers sorted by class label
     :type cl_inputs_by_label: list[list[ClInput]]
+    :param subclass_labels: list of subclass labels (strings). If no subclasses present, default to ['0']
     :param output_dir: directory in which to save plots/output
     :param params_obj: Parameters object with classification parameter information
     :type params_obj: Parameters
@@ -1613,8 +1617,11 @@ def main_build_classification_new(cl_inputs_by_label, params_obj, output_dir, kn
     :rtype: ClassificationScheme
     """
     if known_feats is None:
+        # convert to subclass oriented data (if no subclasses, will be a single entry in a list)
+        class_labels = [class_list[0].class_label for class_list in cl_inputs_by_label]
+        list_classif_inputs = subclass_inputs_from_class_inputs(cl_inputs_by_label, subclass_labels, class_labels)
+
         # run feature selection and crossvalidation to select best features automatically
-        # todo: convert to list_classif_inputs
         all_features = multi_subclass_ufs(list_classif_inputs, params_obj, output_dir)
 
         # assess all features to determine which to use in the final scheme
@@ -1627,7 +1634,7 @@ def main_build_classification_new(cl_inputs_by_label, params_obj, output_dir, kn
     # perform LDA and classification on the selected/best features
     shaped_subsets = rearrange_ciu_by_feats(cl_inputs_by_label, best_features, params_obj)
     flat_subsets = [x for class_list in shaped_subsets for x in class_list]
-    constructed_scheme = lda_svc_best_feats(flat_subsets)
+    constructed_scheme = lda_svc_best_feats(flat_subsets, best_features, params_obj, output_dir)
 
     # constructed_scheme = lda_best_features_subclass(best_features, list_classif_inputs, params_obj, output_dir)
     constructed_scheme.crossval_test_score = crossval_score
@@ -1638,19 +1645,82 @@ def main_build_classification_new(cl_inputs_by_label, params_obj, output_dir, kn
     return constructed_scheme
 
 
-def lda_svc_best_feats(flat_subset_list):
+def subclass_inputs_from_class_inputs(cl_inputs_by_label, subclass_label_list, class_labels):
+    """
+    Generate and return a list of ClassifInput containers (organized by subclass) from the primary
+    input of replicates organized by class label.
+    :param cl_inputs_by_label: list of lists of ClInput containers with any subclasses present
+    :type cl_inputs_by_label: list[list[ClInput]]
+    :param subclass_label_list: list of subclass label strings to search for (strings)
+    :param class_labels: list of class labels (strings)
+    :return: list of ClassifInputs
+    :rtype: list[ClassifInput]
+    """
+    # Generate subclass oriented files for UFS from the primary input
+    classif_inputs = []
+    for subclass_label in subclass_label_list:
+        objs_by_label = []
+        for class_list in cl_inputs_by_label:
+            obj_list_this_label = []
+            for cl_input in class_list:
+                subclass_obj = cl_input.subclass_dict[subclass_label]
+                obj_list_this_label.append(subclass_obj)
+            objs_by_label.append(obj_list_this_label)
+        classif_input = ClassifInput(class_labels, objs_by_label, subclass_label)
+        classif_inputs.append(classif_input)
+    return classif_inputs
+
+
+def lda_svc_best_feats(flat_subset_list, features_list, params_obj, output_dir):
     """
     Generate a Scheme container by performing final LDA/SVM analysis on the provided data.
     :param flat_subset_list: list of DataSubset containers
     :type flat_subset_list: list[DataSubset]
+    :param features_list: selected (best) features to use in scheme construction
+    :type features_list: list[CFeature]
+    :param params_obj: parameters
+    :type params_obj: Parameters
+    :param output_dir: directory in which to save output
     :return: Scheme container
     :rtype: ClassificationScheme
     """
-    train_data, train_labels = arrange_lda_new(flat_subset_list)
-    # todo: also need to get lda for explained variance ratio
-    svc = run_lda_svc(train_data, train_labels)
+    train_data, train_numeric_labels, train_string_labels = arrange_lda_new(flat_subset_list)
+    svc, lda = run_lda_svc(train_data, train_numeric_labels)
 
     # todo: actually make scheme
+    x_lda = lda.transform(train_data)
+    expl_var_r = lda.explained_variance_ratio_
+
+    # build classification scheme
+    clf = SVC(kernel='linear', C=1, probability=True, max_iter=1000)
+    clf.fit(x_lda, train_numeric_labels)
+    y_pred = clf.predict(x_lda)
+    prec_score = precision_score(train_numeric_labels, y_pred, pos_label=1, average='weighted')
+    probs = clf.predict_proba(x_lda)
+
+    # initialize classification scheme object and return it
+    scheme = ClassificationScheme()
+    scheme.selected_features = features_list
+    scheme.classifier = clf
+    scheme.classifier_type = 'SVC'
+    scheme.classif_prec_score = prec_score
+    scheme.lda = lda
+    scheme.explained_variance_ratio = expl_var_r
+    scheme.numeric_labels = train_numeric_labels
+    scheme.class_labels = train_string_labels
+    scheme.unique_labels = get_unique_labels(train_string_labels)
+    scheme.transformed_test_data = x_lda
+    # scheme.test_filenames = filenames
+    scheme.params = clf.get_params()
+    scheme.input_feats = [feature.cv for feature in features_list]
+    scheme.set_name()
+
+    # Organize outputs by input file for easier viewing, then save
+    x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file = prep_outputs_by_file(x_lda, y_pred, probs, filenames, file_ids)
+
+    save_lda_and_predictions(scheme, x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file, output_dir, unknowns_bool=False)
+    plot_probabilities(params_obj, scheme, probs_by_file, output_dir, unknown_bool=False)
+    return scheme
 
 
 # def ufs_new(cl_inputs_by_label, params_obj, output_path):
@@ -1809,7 +1879,7 @@ class ClInput(object):
     """
     Container for all classification inputs. Essentially just a dictionary of {subclass label: analysis object}
     for each subclass with associated name and space to save output/classification predictions/probabilities
-    Allows for all methods to handle subclass or non-subclass data. Represents a single replicate of a
+    Allows for all methods to handle subclass or non-subclass data. Represents a SINGLE replicate of a
     single class (and all subclasses if using subclass data)
     """
 
@@ -1817,7 +1887,7 @@ class ClInput(object):
         """
         Initialize new container. NOTE: if no subclasses, set entry key = '0'
         :param label: string used to label outputs from this combined unknown
-        :param dict_subclass_objs: dict of key = subclass label, value = list of CIUAnalysisObjs
+        :param dict_subclass_objs: dict of key = subclass label, value = CIUAnalysisObj
         :type dict_subclass_objs: dict[str, CIUAnalysisObj]
         """
         self.class_label = label
@@ -1829,7 +1899,7 @@ class ClInput(object):
         self.probs_avg = None
         self.transformed_data = None
 
-    def get_subclass_data_list(self, subclass_label):
+    def get_subclass_obj(self, subclass_label):
         """
         Return the list of CIUAnalysisObj's corresponding to the provided subclass label string
         :param subclass_label: string to search for in the dict
@@ -1925,7 +1995,7 @@ class ClassificationScheme(object):
         self.class_labels = None    # list of original string class labels, with replicates
         self.unique_labels = None   # list of original string class labels, but only 1 per class
         self.transformed_test_data = None   # input data transformed by the final LDA
-        self.test_filenames = None  # list of filenames from input data
+        # self.test_filenames = None  # list of filenames from input data
         self.input_feats = None     # list of CVs used in the scheme. NOT Feature objects, just CVs
 
         # cross validation information
@@ -2164,21 +2234,20 @@ class CrossValRun(object):
             shaped_label_list.append([label for _ in range(len(self.data_list_by_label[index]))])
 
         # generate all combinations of each class input datalist (products)
-        all_class_combo_lists = []
-        for class_index, class_subset_list in enumerate(self.data_list_by_label):
-            # create all combinations of specified training/test sizes from this class's data
-            class_combo_list = []
+        train_data_allclass, train_labels_allclass = [], []
+        test_data_allclass, test_labels_allclass = [], []
 
+        for class_index, class_subset_list in enumerate(self.data_list_by_label):
             # create all combinations of training and test data
             for training_subset_list in itertools.combinations(class_subset_list, self.training_size):
                 # test data is anything not in the training list
                 test_subset_list = [x for x in class_subset_list if x not in training_subset_list]
 
                 # assemble LDA data here for train_subsets, train_labels (and test_subsets, test_labels)
-                train_lda_data, train_lda_labels = arrange_lda_new(training_subset_list)
-                test_lda_data, test_lda_labels = arrange_lda_new(test_subset_list)
+                train_lda_data, train_lda_labels, train_string_labels = arrange_lda_new(training_subset_list)
+                test_lda_data, test_lda_labels, test_string_labels = arrange_lda_new(test_subset_list)
 
-                classifer = run_lda_svc(train_lda_data, train_lda_labels)
+                classifer, lda = run_lda_svc(train_lda_data, train_lda_labels)
                 train_score = classifer.score(train_lda_data, train_lda_labels)
                 test_score = classifer.score(test_lda_data, test_lda_labels)
 

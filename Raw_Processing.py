@@ -571,6 +571,33 @@ def equalize_axes_2d_list(analysis_obj_list_by_label):
     return analysis_obj_list_by_label, final_axes
 
 
+def equalize_axes_2d_list_subclass(cl_input_list_by_label):
+    """
+    Axis checking method for 2D lists (e.g. in classification) where list order/shape must be
+    preserved. Axes are equalized across ALL sublists (every object anywhere in the 2D list)
+    :param cl_input_list_by_label: list of lists of Classification.ClInput
+    :type cl_input_list_by_label: list[list[Classification.ClInput]]
+    :return: updated list of lists with axes equalized, final axes list
+    :rtype: list[list[CIUAnalysisObj]], output_axes_list
+    """
+    flat_cl_input_list = [x for cl_input_list in cl_input_list_by_label for x in cl_input_list]
+    flat_obj_list = []
+    for cl_input in flat_cl_input_list:
+        for subclass_label, subclass_obj in cl_input.subclass_dict.items():
+            flat_obj_list.append(subclass_obj)
+
+    # check axes for cropping (ensure that region of interest is equal)
+    crop_vals, axes_spacings = check_axes_crop(flat_obj_list)
+    final_axes = check_axes_interp(crop_vals, axes_spacings)
+
+    for cl_input_list in cl_input_list_by_label:
+        for cl_input in cl_input_list:
+            for subclass_label, subclass_obj in cl_input.subclass_dict.items():
+                subclass_obj, adj_flag = equalize_obj(subclass_obj, final_axes)
+
+    return cl_input_list_by_label, final_axes
+
+
 def equalize_axes_classifinputs(list_classif_inputs):
     """
     Axis checking for list of classification input lists - handle checking complex lists in place

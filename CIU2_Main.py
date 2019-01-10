@@ -110,7 +110,9 @@ class CIUSuite2(object):
             # 'on_button_classification_supervised_clicked': self.on_button_classification_supervised_clicked,
             # 'on_button_classify_unknown_clicked': self.on_button_classify_unknown_clicked,
             'on_button_classification_supervised_clicked': self.on_button_classification_supervised_multi_clicked,
-            'on_button_classify_unknown_clicked': self.on_button_classify_unknown_subclass_clicked,
+            # 'on_button_classify_unknown_clicked': self.on_button_classify_unknown_subclass_clicked,
+            # todo: NOTE: scrambled for testing!!
+            'on_button_classify_unknown_clicked': self.on_button_classification_supervised_clicked,
 
             'on_button_smoothing_clicked': self.on_button_smoothing_clicked
         }
@@ -1137,17 +1139,16 @@ class CIUSuite2(object):
         #     obj_list_by_label.append(obj_list)
 
         template_file = filedialog.askopenfilename(title='Choose Classification Template File', filetypes=[('CSV file', '.csv')])
-        classif_inputs = parse_classification_template(template_file)
+        cl_inputs_by_label, subclass_labels = parse_classification_template(template_file)
 
-        if len(classif_inputs) > 0:
-            # If no data has been loaded, use template file location as default output dir
+        if len(cl_inputs_by_label) > 0:
+            # If no CIU data has been loaded previously, use template file location as default output dir
             current_dir_text = self.builder.get_object('Text_outputdir').get(1.0, tk.END).rstrip('\n')
             if current_dir_text == '(No files loaded yet)':
                 self.output_dir = os.path.dirname(template_file)
 
             # check axes
-            classif_inputs, equalized_axes = Raw_Processing.equalize_axes_classifinputs(classif_inputs)
-            # obj_list_by_label, equalized_axes_list = Raw_Processing.equalize_axes_2d_list(obj_list_by_label)
+            cl_inputs_by_label, equalized_axes = Raw_Processing.equalize_axes_2d_list_subclass(cl_inputs_by_label)
 
             # get classification parameters
             param_keys = [x for x in self.params_obj.params_dict.keys() if 'classif' in x]
@@ -1156,9 +1157,9 @@ class CIUSuite2(object):
                 if self.params_obj.classif_3_unk_mode == 'Gaussian':
                     # Ensure Gaussian features are present and prepare them for classification
                     max_num_gaussians = 0
-                    for subclass_obj in classif_inputs:
-                        for obj_list in subclass_obj.analysis_objs_by_label:
-                            for analysis_obj in obj_list:
+                    for class_list in cl_inputs_by_label:
+                        for cl_input in class_list:
+                            for sublabel, analysis_obj in cl_input.subclass_dict.items():
                                 if analysis_obj.features_gaussian is None:
                                     messagebox.showerror('No Gaussian Features Fitted', 'Error: Gaussian feature classification selected, '
                                                                                         'but Gaussian Feature Detection has not been performed yet. '
@@ -1180,7 +1181,7 @@ class CIUSuite2(object):
                 # Run the classification
                 if self.params_obj.classif_5_auto_featselect == 'automatic':
                     self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
-                    scheme = Classification.main_build_classification_subclass(classif_inputs, self.params_obj, self.output_dir)
+                    scheme = Classification.main_build_classification_new(cl_inputs_by_label, subclass_labels, self.params_obj, self.output_dir)
                     scheme.final_axis_cropvals = equalized_axes
                     scheme.num_gaussians = max_num_gaussians
                     Classification.save_scheme(scheme, self.output_dir)
@@ -1189,7 +1190,10 @@ class CIUSuite2(object):
                     self.progress_print_text('Feature Evaluation in progress...', 50)
 
                     # run feature selection
-                    Classification.multi_subclass_ufs(classif_inputs, self.params_obj, self.output_dir)
+                    class_labels = [class_list[0].class_label for class_list in cl_inputs_by_label]
+                    list_classif_inputs = Classification.subclass_inputs_from_class_inputs(cl_inputs_by_label, subclass_labels, class_labels)
+
+                    Classification.multi_subclass_ufs(list_classif_inputs, self.params_obj, self.output_dir)
 
                     # prompt for user input to select desired features
                     input_success_flag = False
@@ -1199,7 +1203,7 @@ class CIUSuite2(object):
 
                     # Run LDA using selected features
                     self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
-                    scheme = Classification.main_build_classification_subclass(classif_inputs, self.params_obj, self.output_dir, known_feats=selected_features)
+                    scheme = Classification.main_build_classification_new(cl_inputs_by_label, subclass_labels, self.params_obj, self.output_dir, known_feats=selected_features)
                     scheme.final_axis_cropvals = equalized_axes
                     scheme.num_gaussians = max_num_gaussians
                     Classification.save_scheme(scheme, self.output_dir)
@@ -1727,12 +1731,12 @@ def parse_classification_template(template_file):
     """
     Parsing method for classification template CSV
     :param template_file: csv file
-    :return: list of ClassifInput containers for each subclass (list of 1 if no subclasses present)
-    :rtype: list[Classification.ClassifInput]
+    :return: list of ClInput lists by class label, list of subclass labels
+    :rtype: list[Classification.ClassifInput], list[string]
     """
     class_labels = []
     subclass_labels = []
-    classif_inputs = []
+    cl_inputs_by_label = []     # class oriented inputs for crossval and classification
 
     with open(template_file, 'r') as template:
         for line in list(template):
@@ -1756,24 +1760,53 @@ def parse_classification_template(template_file):
             elif line.lower().startswith('folder'):
                 splits = line.rstrip('\n').split(',')
                 folder = splits[1]
+                files = [os.path.join(folder, x) for x in os.listdir(folder) if x.endswith('.ciu')]
 
-                for subclass_label in subclass_labels:
-                    objs_by_label = []
-                    for class_label in class_labels:
-                            # todo: add error checking here
-                            files = [os.path.join(folder, x) for x in os.listdir(folder) if x.endswith('.ciu')]
-                            class_files = [x for x in files if class_label in x]
+                # Generate class oriented files for crossval/classification
+                for class_label in class_labels:
+                    class_files = [x for x in files if class_label in x]
+
+                    # generate dictionary of all subclass data
+                    subclass_lists = []
+                    if len(subclass_labels) == 0:
+                        # No subclasses in this analysis - use all class files with default subclass label
+                        subclass_lists.append(('0', class_files))
+                    else:
+                        for subclass_label in subclass_labels:
                             subclass_files = [x for x in class_files if subclass_label in x]
-                            objs = [load_analysis_obj(x) for x in subclass_files]
-                            objs_by_label.append(objs)
+                            subclass_lists.append((subclass_label, subclass_files))
 
-                    classif_input = Classification.ClassifInput(class_labels, objs_by_label, subclass_label)
-                    classif_inputs.append(classif_input)
+                    # reorganize files into individual replicates, each containing all subclasses
+                    all_replicates = []
+                    for rep_index in range(len(subclass_lists[0][1])):
+                        try:
+                            subclass_dict = {}
+                            for subclass_tup in subclass_lists:
+                                subclass_label = subclass_tup[0]
+                                subclass_files = subclass_tup[1]
+                                subclass_obj = load_analysis_obj(subclass_files[rep_index])
+                                subclass_dict[subclass_label] = subclass_obj
+                            cl_input = Classification.ClInput(class_label, subclass_dict)
+                            all_replicates.append(cl_input)
+                        except IndexError:
+                            # not an even number of replicates in all files - skip odd numbers
+                            continue
+                    cl_inputs_by_label.append(all_replicates)
+
+                    # for class_label in class_labels:
+                    #         # todo: add error checking here
+                    #         class_files = [x for x in files if class_label in x]
+                    #         subclass_files = [x for x in class_files if subclass_label in x]
+                    #         objs = [load_analysis_obj(x) for x in subclass_files]
+                    #         objs_by_label.append(objs)
+                    #
+                    # classif_input = Classification.ClassifInput(class_labels, objs_by_label, subclass_label)
+                    # classif_inputs.append(classif_input)
 
             else:
                 # non-standard line - ignore
                 continue
-    return classif_inputs
+    return cl_inputs_by_label, subclass_labels
 
 
 def parse_classification_template_unknowns(template_file):
