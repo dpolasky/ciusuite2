@@ -1139,74 +1139,75 @@ class CIUSuite2(object):
         #     obj_list_by_label.append(obj_list)
 
         template_file = filedialog.askopenfilename(title='Choose Classification Template File', filetypes=[('CSV file', '.csv')])
-        cl_inputs_by_label, subclass_labels = parse_classification_template(template_file)
+        if len(template_file) > 0:
+            cl_inputs_by_label, subclass_labels = parse_classification_template(template_file)
 
-        if len(cl_inputs_by_label) > 0:
-            # If no CIU data has been loaded previously, use template file location as default output dir
-            current_dir_text = self.builder.get_object('Text_outputdir').get(1.0, tk.END).rstrip('\n')
-            if current_dir_text == '(No files loaded yet)':
-                self.output_dir = os.path.dirname(template_file)
+            if len(cl_inputs_by_label) > 0:
+                # If no CIU data has been loaded previously, use template file location as default output dir
+                current_dir_text = self.builder.get_object('Text_outputdir').get(1.0, tk.END).rstrip('\n')
+                if current_dir_text == '(No files loaded yet)':
+                    self.output_dir = os.path.dirname(template_file)
 
-            # check axes
-            cl_inputs_by_label, equalized_axes = Raw_Processing.equalize_axes_2d_list_subclass(cl_inputs_by_label)
+                # check axes
+                cl_inputs_by_label, equalized_axes = Raw_Processing.equalize_axes_2d_list_subclass(cl_inputs_by_label)
 
-            # get classification parameters
-            param_keys = [x for x in self.params_obj.params_dict.keys() if 'classif' in x]
-            param_success, param_dict = self.run_param_ui('Classification Parameters', param_keys)
-            if param_success:
-                if self.params_obj.classif_3_unk_mode == 'Gaussian':
-                    # Ensure Gaussian features are present and prepare them for classification
-                    max_num_gaussians = 0
-                    for class_list in cl_inputs_by_label:
-                        for cl_input in class_list:
-                            for sublabel, analysis_obj in cl_input.subclass_dict.items():
-                                if analysis_obj.features_gaussian is None:
-                                    messagebox.showerror('No Gaussian Features Fitted', 'Error: Gaussian feature classification selected, '
-                                                                                        'but Gaussian Feature Detection has not been performed yet. '
-                                                                                        'Please run Gaussian Feature Detection on all files being used '
-                                                                                        'for classification and try again.')
-                                    # cancel the classification
-                                    self.progress_done()
-                                else:
-                                    # make ready the gaussians (saved into analysis object and length checked)
-                                    gaussians_by_cv = Classification.prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
-                                    for gaussian_list in gaussians_by_cv:
-                                        if len(gaussian_list) > max_num_gaussians:
-                                            max_num_gaussians = len(gaussian_list)
-                    # save num Gaussians to ensure all matrices same size
-                    self.params_obj.silent_clf_4_num_gauss = max_num_gaussians
-                else:
-                    max_num_gaussians = 0   # no Gaussians in non-Gaussian mode
+                # get classification parameters
+                param_keys = [x for x in self.params_obj.params_dict.keys() if 'classif' in x]
+                param_success, param_dict = self.run_param_ui('Classification Parameters', param_keys)
+                if param_success:
+                    if self.params_obj.classif_3_unk_mode == 'Gaussian':
+                        # Ensure Gaussian features are present and prepare them for classification
+                        max_num_gaussians = 0
+                        for class_list in cl_inputs_by_label:
+                            for cl_input in class_list:
+                                for sublabel, analysis_obj in cl_input.subclass_dict.items():
+                                    if analysis_obj.features_gaussian is None:
+                                        messagebox.showerror('No Gaussian Features Fitted', 'Error: Gaussian feature classification selected, '
+                                                                                            'but Gaussian Feature Detection has not been performed yet. '
+                                                                                            'Please run Gaussian Feature Detection on all files being used '
+                                                                                            'for classification and try again.')
+                                        # cancel the classification
+                                        self.progress_done()
+                                    else:
+                                        # make ready the gaussians (saved into analysis object and length checked)
+                                        gaussians_by_cv = Classification.prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
+                                        for gaussian_list in gaussians_by_cv:
+                                            if len(gaussian_list) > max_num_gaussians:
+                                                max_num_gaussians = len(gaussian_list)
+                        # save num Gaussians to ensure all matrices same size
+                        self.params_obj.silent_clf_4_num_gauss = max_num_gaussians
+                    else:
+                        max_num_gaussians = 0   # no Gaussians in non-Gaussian mode
 
-                # Run the classification
-                if self.params_obj.classif_5_auto_featselect == 'automatic':
-                    self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
-                    scheme = Classification.main_build_classification_new(cl_inputs_by_label, subclass_labels, self.params_obj, self.output_dir)
-                    scheme.final_axis_cropvals = equalized_axes
-                    scheme.num_gaussians = max_num_gaussians
-                    Classification.save_scheme(scheme, self.output_dir)
-                else:
-                    # manual feature selection mode: run feature selection, pause, and THEN run LDA with user input
-                    self.progress_print_text('Feature Evaluation in progress...', 50)
+                    # Run the classification
+                    if self.params_obj.classif_5_auto_featselect == 'automatic':
+                        self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
+                        scheme = Classification.main_build_classification_new(cl_inputs_by_label, subclass_labels, self.params_obj, self.output_dir)
+                        scheme.final_axis_cropvals = equalized_axes
+                        scheme.num_gaussians = max_num_gaussians
+                        Classification.save_scheme(scheme, self.output_dir)
+                    else:
+                        # manual feature selection mode: run feature selection, pause, and THEN run LDA with user input
+                        self.progress_print_text('Feature Evaluation in progress...', 50)
 
-                    # run feature selection
-                    class_labels = [class_list[0].class_label for class_list in cl_inputs_by_label]
-                    list_classif_inputs = Classification.subclass_inputs_from_class_inputs(cl_inputs_by_label, subclass_labels, class_labels)
+                        # run feature selection
+                        class_labels = [class_list[0].class_label for class_list in cl_inputs_by_label]
+                        list_classif_inputs = Classification.subclass_inputs_from_class_inputs(cl_inputs_by_label, subclass_labels, class_labels)
 
-                    Classification.multi_subclass_ufs(list_classif_inputs, self.params_obj, self.output_dir)
+                        Classification.multi_subclass_ufs(list_classif_inputs, self.params_obj, self.output_dir)
 
-                    # prompt for user input to select desired features
-                    input_success_flag = False
-                    selected_features = []
-                    while not input_success_flag:
-                        input_success_flag, selected_features = parse_user_cvfeats_input()
+                        # prompt for user input to select desired features
+                        input_success_flag = False
+                        selected_features = []
+                        while not input_success_flag:
+                            input_success_flag, selected_features = parse_user_cvfeats_input()
 
-                    # Run LDA using selected features
-                    self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
-                    scheme = Classification.main_build_classification_new(cl_inputs_by_label, subclass_labels, self.params_obj, self.output_dir, known_feats=selected_features)
-                    scheme.final_axis_cropvals = equalized_axes
-                    scheme.num_gaussians = max_num_gaussians
-                    Classification.save_scheme(scheme, self.output_dir)
+                        # Run LDA using selected features
+                        self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
+                        scheme = Classification.main_build_classification_new(cl_inputs_by_label, subclass_labels, self.params_obj, self.output_dir, known_feats=selected_features)
+                        scheme.final_axis_cropvals = equalized_axes
+                        scheme.num_gaussians = max_num_gaussians
+                        Classification.save_scheme(scheme, self.output_dir)
 
         self.progress_done()
 
@@ -1736,6 +1737,7 @@ def parse_classification_template(template_file):
     """
     class_labels = []
     subclass_labels = []
+    subclass_mode = True
     cl_inputs_by_label = []     # class oriented inputs for crossval and classification
 
     with open(template_file, 'r') as template:
@@ -1768,9 +1770,12 @@ def parse_classification_template(template_file):
 
                     # generate dictionary of all subclass data
                     subclass_lists = []
-                    if len(subclass_labels) == 0:
+                    if len(subclass_labels) == 0 or not subclass_mode:
                         # No subclasses in this analysis - use all class files with default subclass label
+                        if subclass_mode:
+                            subclass_labels.append('0')
                         subclass_lists.append(('0', class_files))
+                        subclass_mode = False
                     else:
                         for subclass_label in subclass_labels:
                             subclass_files = [x for x in class_files if subclass_label in x]
