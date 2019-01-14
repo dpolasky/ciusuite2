@@ -19,7 +19,8 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-print('Loading CIUSuite 2...')
+if __name__ == '__main__':
+    print('Loading CIUSuite 2...')
 import pygubu
 import tkinter as tk
 from tkinter import filedialog
