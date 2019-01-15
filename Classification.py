@@ -1084,7 +1084,7 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
         plot_title = 'From CVs: {}'.format(cv_string)
         plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
     if params_obj.plot_07_show_legend:
-        ax.legend(loc='best', fontsize=params_obj.plot_13_font_size)
+        ax.legend(loc='best', fontsize=params_obj.plot_13_font_size * 0.75)
 
     if unknown_tups is not None:
         output_name = os.path.join(output_path, class_scheme.name + '_Results-unknowns' + params_obj.plot_02_extension)
@@ -1138,16 +1138,18 @@ def plot_sklearn_lda_1ld(class_scheme, marker, color, dot_size):
                     alpha=0.9, label=unique_labels[label], s=dot_size ** 2 * 2, edgecolors='black')
 
 
-def save_scheme(scheme, outputdir):
+def save_scheme(scheme, outputdir, subclass_labels):
     """
     Save a ClassificationScheme object into the provided output directory using pickle
     :param scheme: classification object to save
     :type scheme: ClassificationScheme
     :param outputdir: directory in which to save output
+    :param subclass_labels: labels for output name
     :return: void
     """
     unique_labels = get_unique_labels(scheme.class_labels)
-    save_name = 'Classifier_' + '_'.join(unique_labels)
+    scheme_name = generate_scheme_name(scheme.class_labels, subclass_labels)
+    save_name = 'Classifier_' + scheme_name
     output_path = os.path.join(outputdir, save_name + '.clf')
 
     with open(output_path, 'wb') as save_file:
@@ -1540,32 +1542,55 @@ def rearrange_ciu_by_feats(shaped_inputs_list, features_list, params_obj):
         class_outputs = []
 
         for rep_obj in class_list:
-            data_output = []
-            file_id = ''
-            for feature in features_list:
-                if feature.subclass_label is not None:
-                    subclass_obj = rep_obj.get_subclass_obj(feature.subclass_label)
-                    # multiple subclasses, so file_id is a combination of each ID
-                    file_id += subclass_obj.short_filename
-                    file_id += ';'
-                else:
-                    subclass_obj = rep_obj.get_subclass_obj()
-                    file_id = subclass_obj.short_filename   # only one object, so just use its filename
-
-                # Determine the correct CV column to append to the growing matrix and do so
-                current_cv_axis = subclass_obj.axes[1]
-                this_cv_index = (np.abs(np.asarray(current_cv_axis) - feature.cv)).argmin()
-                raw_data = get_classif_data(subclass_obj, params_obj)
-                cv_col = raw_data.T[this_cv_index]
-                data_output.append(cv_col)
-
             # generate a subset container to hold the extracted data and associated metadata
-            rep_subset = DataSubset(data_output, rep_obj.class_label, class_numeric_label, file_id, features_list)
+            rep_subset = rearrange_ciu_by_feats_helper(rep_obj, params_obj, features_list, class_numeric_label)
             class_outputs.append(rep_subset)
+
         shaped_output_list.append(class_outputs)
         class_numeric_label += 1
 
     return shaped_output_list
+
+
+def rearrange_ciu_by_feats_helper(rep_obj, params_obj, features_list, class_numeric_label):
+    """
+    Rearrange CIU data in feature order for a single replicate to generate a single DataSubset
+    container to return.
+    :param rep_obj: input ClInput container with raw data
+    :type rep_obj: ClInput
+    :param params_obj: paramters
+    :type params_obj: Parameters
+    :param features_list: list of features in decreasing order of score
+    :type features_list: list[CFeature]
+    :param class_numeric_label: (int) numeric label for scheme. Set to 0 for unknown data
+    :return: DataSubset container with initialized data
+    :rtype: DataSubset
+    """
+    data_output = []
+    if features_list[0].subclass_label is not None:
+        # multiple subclasses, so file_id is the 'best' subclass object plus the number of subclasses
+        len_subclasses = len(rep_obj.subclass_dict.keys())
+        file_id = rep_obj.subclass_dict[features_list[0].subclass_label].short_filename + '_{}SubCl'.format(len_subclasses)
+    else:
+        # only one object, so just use its filename
+        file_id = rep_obj.get_subclass_obj().short_filename
+
+    for feature in features_list:
+        if feature.subclass_label is not None:
+            subclass_obj = rep_obj.get_subclass_obj(feature.subclass_label)
+        else:
+            subclass_obj = rep_obj.get_subclass_obj()
+
+        # Determine the correct CV column to append to the growing matrix and do so
+        current_cv_axis = subclass_obj.axes[1]
+        this_cv_index = (np.abs(np.asarray(current_cv_axis) - feature.cv)).argmin()
+        raw_data = get_classif_data(subclass_obj, params_obj)
+        cv_col = raw_data.T[this_cv_index]
+        data_output.append(cv_col)
+
+    # generate a subset container to hold the extracted data and associated metadata
+    rep_subset = DataSubset(data_output, rep_obj.class_label, class_numeric_label, file_id, features_list)
+    return rep_subset
 
 
 def arrange_lda_new(subset_list):
@@ -1872,6 +1897,7 @@ class ClInput(object):
         """
         self.class_label = label
         self.subclass_dict = dict_subclass_objs
+        self.name = self.get_name()
 
         # output storage
         self.predicted_label = None
@@ -1898,6 +1924,18 @@ class ClInput(object):
                 return self.subclass_dict[subclass_label]
         except KeyError:
             return None
+
+    def get_name(self):
+        """
+        Generate a name from the input data and subclasses. Primarily intended for unknown data
+        :return: string name
+        """
+        first_key = sorted([x for x in self.subclass_dict.keys()])[0]
+        if len(self.subclass_dict.keys()) > 1:
+            name = self.subclass_dict[first_key].short_filename + '_{}SubCl'.format(len(self.subclass_dict.keys()))
+        else:
+            name = self.subclass_dict[first_key].short_filename
+        return name
 
     def __str__(self):
         """
@@ -1999,13 +2037,14 @@ class ClassificationScheme(object):
 
     def get_subclass_labels(self):
         """
-        Return a list of subclass labels from all selected features
+        Return a list of (unique) subclass labels from all selected features
         :return: list of subclass labels (strings)
         """
         subclass_labels = []
         for feature in self.selected_features:
             if feature.subclass_label is not None:
-                subclass_labels.append(feature.subclass_label)
+                if feature.subclass_label not in subclass_labels:
+                    subclass_labels.append(feature.subclass_label)
         return subclass_labels
 
     def classify_unknown(self, unk_ciu_obj, params_obj, unk_label='Unknown'):
@@ -2100,6 +2139,51 @@ class ClassificationScheme(object):
         """
         all_plot_tups = [(x.transformed_data, x.label) for x in unk_subclass_obj_list]
         plot_classification_decision_regions(self, params_obj, output_path, unknown_tups=all_plot_tups)
+
+    def classify_unknown_clinput(self, unk_cl_input, params_obj, unk_label='Unknown'):
+        """
+        Classify a test dataset according to this classification scheme. Selects features from
+        the test dataset (ciudata), classifies, and returns output and score metrics.
+        :param unk_cl_input: ClInput containing the ciu_data from unknown to be fitted
+        :type unk_cl_input: ClInput
+        :param unk_label: label for the unknown data
+        :param params_obj: parameters information
+        :type params_obj: Parameters
+        :return: updated analysis object with prediction data saved
+        :rtype: ClInput
+        """
+        # Assemble feature data for fitting
+        unk_subset = rearrange_ciu_by_feats_helper(unk_cl_input, params_obj, self.selected_features, class_numeric_label=0)
+        unk_x_data, numeric_labels, string_labels = arrange_lda_new([unk_subset])
+
+        # Fit/classify data according to scheme LDA and classifier
+        unknown_transformed_lda = self.lda.transform(unk_x_data)
+        pred_class_label = self.classifier.predict(unknown_transformed_lda)
+        pred_probs_by_cv = self.classifier.predict_proba(unknown_transformed_lda)
+        pred_probs_avg = np.average(pred_probs_by_cv, axis=0)
+
+        # create plots and save information to object
+        unk_cl_input.predicted_label = pred_class_label
+        unk_cl_input.probs_by_cv = pred_probs_by_cv
+        unk_cl_input.probs_avg = pred_probs_avg
+        unk_cl_input.transformed_data = unknown_transformed_lda
+
+        return unk_cl_input
+
+    def plot_all_unknowns_clinput(self, unk_cl_inputs, param_obj, output_path):
+        """
+        Generate a decision regions plot of all unknown data in a provided list using this scheme,
+        parameters, and output path. Input data MUST have transformed test data already set (classified)
+        in all CIUAnalysisObj containers
+        :param unk_cl_inputs: list of inputs already classified
+        :type unk_cl_inputs: list[ClInput]
+        :param param_obj: parameters container
+        :type param_obj: Parameters
+        :param output_path: directory in which to save output
+        :return: void
+        """
+        all_plot_tups = [(x.transformed_data, x.name) for x in unk_cl_inputs]
+        plot_classification_decision_regions(self, param_obj, output_path, unknown_tups=all_plot_tups)
 
 
 class SubclassUnknown(object):

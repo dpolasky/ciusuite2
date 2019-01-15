@@ -623,6 +623,51 @@ def equalize_axes_classifinputs(list_classif_inputs):
     return list_classif_inputs, final_axes
 
 
+def equalize_unk_axes_classif_new(flat_unknown_list, final_axes, scheme_cvs_list, gaussian_mode=False):
+    """
+    Specialized equalization method for unknown classification data. Equalizes DT axis by cropping,
+    and reduces CV axis to only the selected voltages in the scheme.
+    :param flat_unknown_list: list of CIUAnalysis objects to be equalized
+    :type flat_unknown_list: list[Classification.ClInput]
+    :param final_axes: crop values from the Scheme to equalize to
+    :param scheme_cvs_list: List of collision voltage values (floats) from the classification scheme being used
+    :param gaussian_mode: (optional) if True, does NOT adjust DT axis (only CV), as Gaussian fitted data doesn't need DT adjustment
+    :return: updated object list with axes cropped (if needed)
+    :rtype: list[CIUAnalysisObj]
+    """
+    # adjust ALL files to the same final axes
+    for cl_input in flat_unknown_list:
+        for subclass_label, analysis_obj in cl_input.subclass_dict.items():
+            # interpolate DT axis ONLY - leave CV axis alone by passing the existing CV axis as the "new" axis
+            # if not gaussian_mode:
+            adjusted_axes = [final_axes[0], analysis_obj.axes[1]]
+            analysis_obj, adj_flag = equalize_obj(analysis_obj, adjusted_axes)
+
+            # Remove all CVs except those required by the scheme (raises errors if those are not found)
+            final_ciu_matrix = []
+            ciu_data_matrix = analysis_obj.ciu_data.T     # transpose to access CV columns
+            cv_axis = []
+            for cv in scheme_cvs_list:
+                # Get the index of this collision voltage in the object and add that column of the ciu_data to the output
+                cv_index = find_nearest(analysis_obj.axes[1], cv)
+
+                # make sure this is an exact match
+                if not analysis_obj.axes[1][cv_index] == cv:
+                    raise ValueError('Unknown CV axis does not have a value required for this classification scheme. Classification cannot be performed', analysis_obj.short_filename, cv)
+
+                final_ciu_matrix.append(ciu_data_matrix[cv_index])
+                cv_axis.append(cv)
+
+            new_axes = [adjusted_axes[0], cv_axis]  # preserve the adjusted DT axis as well as the new CV axis
+            final_ciu_matrix = np.asarray(final_ciu_matrix).T   # tranpose back to original dimensions
+
+            # save final data into existing object
+            analysis_obj.axes = new_axes
+            analysis_obj.ciu_data = final_ciu_matrix
+
+    return flat_unknown_list
+
+
 def equalize_unk_axes_classif(flat_unknown_list, final_axes, scheme_cvs_list, gaussian_mode=False):
     """
     Specialized equalization method for unknown classification data. Equalizes DT axis by cropping,
