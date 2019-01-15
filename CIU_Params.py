@@ -154,6 +154,8 @@ class Parameters(object):
         self.ciu50_t2_2_pad_transitions_cv = None
         self.ciu50_t2_3_gauss_width_adj_tol = None
 
+        self.class_t1_1_load_method = None
+        self.class_t1_2_subclass_mode = None
         self.classif_6_ufs_use_error_mode = None
         self.classif_2_score_dif_tol = None
         self.classif_3_unk_mode = None

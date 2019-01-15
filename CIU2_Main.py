@@ -1108,48 +1108,42 @@ class CIUSuite2(object):
         template instead of dialogs by default.
         :return: void
         """
+        # get classification setup parameters (how to load files)
+        t1_param_keys = [x for x in self.params_obj.params_dict.keys() if 'class_t1' in x]
+        t1_param_success, t1_param_dict = self.run_param_ui('Classification Setup', t1_param_keys)
+        if t1_param_success:
+            # Load data for classification
+            class_labels, subclass_labels, cl_inputs_by_label = [], [], []
+            if self.params_obj.class_t1_1_load_method == 'prompt':
+                # load data from prompts mode (subclass mode not allowed)
+                if not self.params_obj.class_t1_2_subclass_mode:
+                    class_labels, cl_inputs_by_label, output_dir = classif_dialogs_run()
+                    subclass_labels = ['0']
+                    # update output directory
+                    current_dir_text = self.builder.get_object('Text_outputdir').get(1.0, tk.END).rstrip('\n')
+                    if current_dir_text == '(No files loaded yet)':
+                        self.output_dir = output_dir
+                else:
+                    # subclass mode not allowed! Inform user
+                    messagebox.showerror('Subclass mode not allowed', 'Subclass mode is not allowed when using the dialog prompt input. Please switch to loading files in the table mode in order to run a subclass analysis')
 
-        # num_classes = simpledialog.askinteger('Class Number', 'Into how many classes do you want to group?')
-        # if num_classes is None:
-        #     # user hit cancel - return
-        #     print('classification canceled')
-        #     return
-        # data_labels = []
-        # obj_list_by_label = []
-        # endfile = ''
-        # for index in range(0, num_classes):
-        #     # Read in the .CIU files and labels for each class, canceling the process if the user hits 'cancel'
-        #     label = simpledialog.askstring('Class Name', 'Enter the name (class label) for class {}'.format(index + 1))
-        #     if label is None:
-        #         print('classification canceled')
-        #         return
-        #     files = filedialog.askopenfilenames(filetypes=[('CIU', '.ciu')])
-        #     if len(files) == 0:
-        #         print('classification canceled')
-        #         return
-        #     if len(files) < 3:
-        #         messagebox.showerror('Not Enough Files', 'At least 3 replicates are required for classification. Please select at least 3 files per class and try again.')
-        #         return
-        #
-        #     obj_list = []
-        #     for file in files:
-        #         with open(file, 'rb') as analysis_file:
-        #             obj = pickle.load(analysis_file)
-        #         obj_list.append(obj)
-        #         endfile = file
-        #     data_labels.append(label)
-        #     obj_list_by_label.append(obj_list)
+            elif self.params_obj.class_t1_1_load_method == 'table':
+                # load from table mode (subclasses allowed if specified)
+                cl_inputs_by_label, subclass_labels, class_labels = self.classif_load_from_table(self.params_obj.class_t1_2_subclass_mode)
 
-        template_file = filedialog.askopenfilename(title='Choose Classification Template File', filetypes=[('CSV file', '.csv')])
-        if len(template_file) > 0:
-            cl_inputs_by_label, subclass_labels = parse_classification_template(template_file)
+            elif self.params_obj.class_t1_1_load_method == 'template':
+                # load from template
+                template_file = filedialog.askopenfilename(title='Choose Classification Template File', filetypes=[('CSV file', '.csv')])
+                if len(template_file) > 0:
+                    cl_inputs_by_label, subclass_labels = parse_classification_template(template_file)
 
-            if len(cl_inputs_by_label) > 0:
-                # If no CIU data has been loaded previously, use template file location as default output dir
+                # update output directory
                 current_dir_text = self.builder.get_object('Text_outputdir').get(1.0, tk.END).rstrip('\n')
                 if current_dir_text == '(No files loaded yet)':
                     self.output_dir = os.path.dirname(template_file)
 
+            # Once data has been loaded, check it (appropriate number of classes, files, subclasses, etc)
+            if check_classif_data(cl_inputs_by_label, subclass_labels):
                 # check axes
                 cl_inputs_by_label, equalized_axes = Raw_Processing.equalize_axes_2d_list_subclass(cl_inputs_by_label)
 
@@ -1171,6 +1165,7 @@ class CIUSuite2(object):
                                         # cancel the classification
                                         self.progress_done()
                                     else:
+                                        # todo: move to classification main (?) [and move the check for fitted gaussians to the check method]
                                         # make ready the gaussians (saved into analysis object and length checked)
                                         gaussians_by_cv = Classification.prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
                                         for gaussian_list in gaussians_by_cv:
@@ -1402,6 +1397,53 @@ class CIUSuite2(object):
                         Classification.plot_probabilities(self.params_obj, scheme, all_probs, self.output_dir, unknown_bool=True)
 
         self.progress_done()
+
+    def classif_load_from_table(self, subclass_mode):
+        """
+        Load data files for classification from the data files in the GUI data table and organize
+        them into classes (and subclasses, if subclass mode is True). Prompts user for class names,
+        then uses those names to search the table for matching files.
+        :param subclass_mode: bool - if True, use subclass mode
+        :return: class labels, list of ClInputs for each label
+        """
+        files_to_read = self.check_file_range_entries()
+        if len(files_to_read) < 3:
+            messagebox.showerror('Not Enough Files', 'Less than 3 files are loaded in the table. At least 3 per class are required. Please load more files and try again, or use the prompts input method to select data for each class.')
+            return [], [], []
+
+        # Determine the number of classes
+        class_string = simpledialog.askstring('Enter Class Labels, Separated by Commas','Enter the Labels for each Class, separated by commas. NOTE: the labels entered must EXACTLY match a part of the file name for each class or the data will not be loaded properly!')
+        if class_string is not None:
+            class_splits = class_string.split(',')
+            class_labels = []
+            for split in class_splits:
+                class_labels.append(split.strip())
+        else:
+            class_labels = []
+
+        if len(class_labels) < 2:
+            messagebox.showerror('At least 2 classes needed', 'Less than 2 classes were read from the previous entry. Classification requires 2 or more classes. Please try again (make sure class labels are separated by commas)')
+            return [], [], []
+
+        # Get subclass labels (if desired)
+        if subclass_mode:
+            subclass_string = simpledialog.askstring('Enter Subclass Labels, Separated by Commas', 'Enter the Labels for each Subclass, separated by commas. NOTE: the labels entered must EXACTLY match a part of the file name for each subclass or the data will not be loaded properly!')
+            if subclass_string is not None:
+                subclass_splits = subclass_string.split(',')
+                subclass_labels = []
+                for split in subclass_splits:
+                    subclass_labels.append(split.strip())
+            else:
+                subclass_labels = []
+            if len(subclass_labels) < 2:
+                print('Warning: No (or only 1) subclass labels read from input! Classification will NOT use subclasses')
+        else:
+            subclass_labels = ['0']
+
+        # Actually load files
+        cl_inputs_by_label = load_classif_inputs_from_files(files_to_read, class_labels, subclass_labels)
+
+        return cl_inputs_by_label, subclass_labels, class_labels
 
     def check_params(self):
         """
@@ -1687,6 +1729,139 @@ def parse_tooltips_file(tooltips_file):
         print('params file not found!')
 
 
+def classif_dialogs_run():
+    """
+    Get user input from a series of dialogs for class name and data selection. Returns an ordered
+    list of lists of ClInputs by class label
+    :return: list of class labels, ordered list of lists of ClInputs by class label, output directory
+    """
+    class_labels = []
+    obj_list_by_label = []
+    output_dir_file = ''
+
+    num_classes = simpledialog.askinteger('Class Number', 'Into how many classes do you want to group?')
+    if num_classes is None:
+        # user hit cancel - return
+        print('classification canceled')
+        return [], [], ''
+
+    for index in range(0, num_classes):
+        # Read in the .CIU files and labels for each class, canceling the process if the user hits 'cancel'
+        class_label = simpledialog.askstring('Class Name', 'Enter the name (class label) for class {}'.format(index + 1))
+        if class_label is None:
+            print('classification canceled')
+            return [], [], ''
+        files = filedialog.askopenfilenames(filetypes=[('CIU', '.ciu')])
+        if len(files) == 0:
+            print('classification canceled')
+            return [], [], ''
+        if len(files) < 3:
+            messagebox.showerror('Not Enough Files', 'At least 3 replicates are required for classification. Please select at least 3 files per class and try again.')
+            return [], [], ''
+
+        # load data files for this class into ClInput containers (with no subclasses)
+        input_list = []
+        for file in files:
+            subclass_dict = {}
+            with open(file, 'rb') as analysis_file:
+                obj = pickle.load(analysis_file)
+            subclass_dict['0'] = obj
+            cl_input = Classification.ClInput(class_label, subclass_dict)
+            input_list.append(cl_input)
+            output_dir_file = os.path.dirname(file)
+        class_labels.append(class_label)
+        obj_list_by_label.append(input_list)
+
+    return class_labels, obj_list_by_label, output_dir_file
+
+
+def load_classif_inputs_from_files(files, class_labels, subclass_labels):
+    """
+    Helper method for generating a sorted list of lists of ClInputs by class label from files
+    and labels. Used in both loading from table and template.
+    :param files: list of file paths (strings) to load data from
+    :param class_labels: list of strings. Each will be searched against the filenames to sort by class
+    :param subclass_labels: list of strings. Each will be searched against the filenames to sort by subclass
+    :return: list of lists of ClInputs by class label
+    :rtype: list[list[Classification.ClInput]]
+    """
+    cl_inputs_by_label = []
+
+    # Generate class oriented files for crossval/classification
+    for class_label in class_labels:
+        class_files = [x for x in files if class_label in x]
+
+        # generate dictionary of all subclass data
+        subclass_lists = []
+        if '0' in subclass_labels and len(subclass_labels) == 1:
+            # No subclasses in this analysis - use all class files with default subclass label
+            subclass_lists.append(('0', class_files))
+        else:
+            for subclass_label in subclass_labels:
+                subclass_files = [x for x in class_files if subclass_label in x]
+                subclass_lists.append((subclass_label, subclass_files))
+
+        # reorganize files into individual replicates, each containing all subclasses
+        all_replicates = []
+        for rep_index in range(len(subclass_lists[0][1])):
+            try:
+                subclass_dict = {}
+                for subclass_tup in subclass_lists:
+                    subclass_label = subclass_tup[0]
+                    subclass_files = subclass_tup[1]
+                    subclass_obj = load_analysis_obj(subclass_files[rep_index])
+                    subclass_dict[subclass_label] = subclass_obj
+                cl_input = Classification.ClInput(class_label, subclass_dict)
+                all_replicates.append(cl_input)
+            except IndexError:
+                # not an even number of replicates in all files - skip odd numbers
+                continue
+        cl_inputs_by_label.append(all_replicates)
+    return cl_inputs_by_label
+
+
+def check_classif_data(cl_inputs_by_label, subclass_labels):
+    """
+    Check that a set of classification data is organized correctly. It must have at least 2 classes
+    with at least 2 replicates each. All replicates must also have the same number of subclasses.
+    :param cl_inputs_by_label: organized list of ClInputs by label
+    :type cl_inputs_by_label: list[list[Classification.ClInput]]
+    :param subclass_labels: list of subclass labels
+    :return: boolean - True if all good, False if any errors
+    """
+    if len(cl_inputs_by_label) > 1:
+        # check each input list
+        for class_list in cl_inputs_by_label:
+            if len(class_list) < 3:
+                # not enough replicates! return false
+                try:
+                    class_label = class_list[0].class_label
+                except IndexError:
+                    class_label = '(No data in class)'
+                print('Only {} replicates in class {}. At least 3 are required for each class. Classification canceled.'.format(len(class_list), class_label))
+                return False
+
+            # make sure all replicates have same subclasses
+            for cl_input in class_list:
+                subclass_len = len(cl_input.subclass_dict.keys())
+                if not subclass_len == len(subclass_labels):
+                    # if '0' not in cl_input.subclass_dict.keys() and subclass_len == 1:
+                    # not correct number of subclasses
+                    print('Should have {} subclasses, but replicate had {}. Check input data and try again.'.format(len(cl_input.subclass_dict.keys()), len(subclass_labels)))
+                    return False
+                for subclass_label in cl_input.subclass_dict.keys():
+                    if subclass_label not in subclass_labels:
+                        print('Subclass label {} was not supposed to be present! Classification canceled'.format(subclass_label))
+                        return False
+
+        # no errors - return True
+        return True
+    else:
+        # no data (or only one class) loaded! return false
+        print('Only {} complete classes; at least 2 are required. Classification canceled.'.format(len(cl_inputs_by_label)))
+        return False
+
+
 def parse_classification_template_old(template_file):
     """
     Parsing method for classification template CSV
@@ -1739,7 +1914,7 @@ def parse_classification_template(template_file):
     """
     class_labels = []
     subclass_labels = []
-    subclass_mode = True
+    # subclass_mode = True
     cl_inputs_by_label = []     # class oriented inputs for crossval and classification
 
     with open(template_file, 'r') as template:
@@ -1765,40 +1940,43 @@ def parse_classification_template(template_file):
                 splits = line.rstrip('\n').split(',')
                 folder = splits[1]
                 files = [os.path.join(folder, x) for x in os.listdir(folder) if x.endswith('.ciu')]
+                if len(subclass_labels) == 0:
+                    subclass_labels = ['0']
+                cl_inputs_by_label = load_classif_inputs_from_files(files, class_labels, subclass_labels)
 
-                # Generate class oriented files for crossval/classification
-                for class_label in class_labels:
-                    class_files = [x for x in files if class_label in x]
-
-                    # generate dictionary of all subclass data
-                    subclass_lists = []
-                    if len(subclass_labels) == 0 or not subclass_mode:
-                        # No subclasses in this analysis - use all class files with default subclass label
-                        if subclass_mode:
-                            subclass_labels.append('0')
-                        subclass_lists.append(('0', class_files))
-                        subclass_mode = False
-                    else:
-                        for subclass_label in subclass_labels:
-                            subclass_files = [x for x in class_files if subclass_label in x]
-                            subclass_lists.append((subclass_label, subclass_files))
-
-                    # reorganize files into individual replicates, each containing all subclasses
-                    all_replicates = []
-                    for rep_index in range(len(subclass_lists[0][1])):
-                        try:
-                            subclass_dict = {}
-                            for subclass_tup in subclass_lists:
-                                subclass_label = subclass_tup[0]
-                                subclass_files = subclass_tup[1]
-                                subclass_obj = load_analysis_obj(subclass_files[rep_index])
-                                subclass_dict[subclass_label] = subclass_obj
-                            cl_input = Classification.ClInput(class_label, subclass_dict)
-                            all_replicates.append(cl_input)
-                        except IndexError:
-                            # not an even number of replicates in all files - skip odd numbers
-                            continue
-                    cl_inputs_by_label.append(all_replicates)
+                # # Generate class oriented files for crossval/classification
+                # for class_label in class_labels:
+                #     class_files = [x for x in files if class_label in x]
+                #
+                #     # generate dictionary of all subclass data
+                #     subclass_lists = []
+                #     if len(subclass_labels) == 0 or not subclass_mode:
+                #         # No subclasses in this analysis - use all class files with default subclass label
+                #         if subclass_mode:
+                #             subclass_labels.append('0')
+                #         subclass_lists.append(('0', class_files))
+                #         subclass_mode = False
+                #     else:
+                #         for subclass_label in subclass_labels:
+                #             subclass_files = [x for x in class_files if subclass_label in x]
+                #             subclass_lists.append((subclass_label, subclass_files))
+                #
+                #     # reorganize files into individual replicates, each containing all subclasses
+                #     all_replicates = []
+                #     for rep_index in range(len(subclass_lists[0][1])):
+                #         try:
+                #             subclass_dict = {}
+                #             for subclass_tup in subclass_lists:
+                #                 subclass_label = subclass_tup[0]
+                #                 subclass_files = subclass_tup[1]
+                #                 subclass_obj = load_analysis_obj(subclass_files[rep_index])
+                #                 subclass_dict[subclass_label] = subclass_obj
+                #             cl_input = Classification.ClInput(class_label, subclass_dict)
+                #             all_replicates.append(cl_input)
+                #         except IndexError:
+                #             # not an even number of replicates in all files - skip odd numbers
+                #             continue
+                #     cl_inputs_by_label.append(all_replicates)
 
                     # for class_label in class_labels:
                     #         # todo: add error checking here
@@ -1813,6 +1991,8 @@ def parse_classification_template(template_file):
             else:
                 # non-standard line - ignore
                 continue
+    if len(subclass_labels) == 0:
+        subclass_labels = ['0']
     return cl_inputs_by_label, subclass_labels
 
 

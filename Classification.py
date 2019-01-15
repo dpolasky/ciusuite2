@@ -593,7 +593,7 @@ def lda_ufs_best_features(features_list, analysis_obj_list_by_label, shaped_labe
     scheme.test_filenames = input_filenames
     scheme.params = clf.get_params()
     scheme.input_feats = input_feats
-    scheme.set_name()
+    scheme.name = generate_scheme_name(flat_label_list, [])
 
     # save_lda_output(x_lda, input_filenames, input_feats, scheme.name, output_dir, explained_variance_ratio=expl_var_r)
     x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file = [], [], [], []
@@ -1166,7 +1166,7 @@ def load_scheme(filepath):
     return scheme
 
 
-def multi_subclass_ufs(subclass_input_list, params_obj, output_path):
+def multi_subclass_ufs(subclass_input_list, params_obj, output_path, subclass_labels):
     """
     Perform univariate feature selection across classes using multiple subclasses (e.g. different charge states
     of CIU fingerprints). Essentially performs standard UFS on each subclass separately and combines
@@ -1179,6 +1179,7 @@ def multi_subclass_ufs(subclass_input_list, params_obj, output_path):
     :param params_obj: parameters information
     :type params_obj: Parameters
     :param output_path: directory in which to save plot
+    :param subclass_labels: list of strings for scheme name
     :return: list of all features, sorted in decreasing order of score from ALL subclasses
     :rtype: list[CFeature]
     """
@@ -1210,7 +1211,8 @@ def multi_subclass_ufs(subclass_input_list, params_obj, output_path):
         sorted_features = sorted(features, key=lambda x: x.mean_score, reverse=True)
 
     unique_labels = get_unique_labels([x for label_list in subclass_input_list[0].shaped_label_list for x in label_list])
-    scheme_name = '_'.join(unique_labels)
+    # scheme_name = '_'.join(unique_labels)
+    scheme_name = generate_scheme_name(unique_labels, subclass_labels)
     # plot_feature_scores(sorted_features, params_obj, scheme_name, output_path)
     plot_feature_scores_subclass(features_by_subclass, params_obj, scheme_name, output_path)
     return sorted_features
@@ -1245,7 +1247,7 @@ def main_build_classification_subclass(list_classif_inputs, params_obj, output_d
     """
     if known_feats is None:
         # run feature selection and crossvalidation to select best features automatically
-        all_features = multi_subclass_ufs(list_classif_inputs, params_obj, output_dir)
+        all_features = multi_subclass_ufs(list_classif_inputs, params_obj, output_dir, [])
 
         # assess all features to determine which to use in the final scheme
         best_features, crossval_score, all_crossval_data = crossval_main_subclass(list_classif_inputs, output_dir, params_obj, all_features)
@@ -1401,7 +1403,8 @@ def lda_best_features_subclass(features_list, classif_inputs, param_obj, output_
     scheme.test_filenames = filenames
     scheme.params = clf.get_params()
     scheme.input_feats = cvs
-    scheme.set_name()
+    # scheme.set_name()
+    scheme.name = generate_scheme_name(label_data, [])
 
     # Organize outputs by input file for easier viewing, then save
     x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file = prep_outputs_by_file(x_lda, y_pred, probs, filenames, file_ids)
@@ -1606,7 +1609,7 @@ def run_lda_svc(x_data, label_data):
     try:
         svm.fit(train_lda, label_data)
     except ValueError:
-        print('Error in SVM fitting. This should not be reached - check your input data for duplicates')
+        print('Error in SVM fitting. This should not be reached - check your input data for duplicates (same input used in multiple classes)')
 
     return svm, lda
 
@@ -1632,19 +1635,19 @@ def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_ob
         list_classif_inputs = subclass_inputs_from_class_inputs(cl_inputs_by_label, subclass_labels, class_labels)
 
         # run feature selection and crossvalidation to select best features automatically
-        all_features = multi_subclass_ufs(list_classif_inputs, params_obj, output_dir)
+        all_features = multi_subclass_ufs(list_classif_inputs, params_obj, output_dir, subclass_labels)
 
         # assess all features to determine which to use in the final scheme
-        best_features, crossval_score, all_crossval_data, best_crossval = crossval_main_new(cl_inputs_by_label, output_dir, params_obj, all_features)
+        best_features, crossval_score, all_crossval_data, best_crossval = crossval_main_new(cl_inputs_by_label, output_dir, params_obj, all_features, subclass_labels)
     else:
         # Manual mode: use the provided features and run limited crossvalidation
-        best_features, crossval_score, all_crossval_data, best_crossval = crossval_main_new(cl_inputs_by_label, output_dir, params_obj, known_feats)
+        best_features, crossval_score, all_crossval_data, best_crossval = crossval_main_new(cl_inputs_by_label, output_dir, params_obj, known_feats, subclass_labels)
         best_features = known_feats
 
     # perform LDA and classification on the selected/best features
     shaped_subsets = rearrange_ciu_by_feats(cl_inputs_by_label, best_features, params_obj)
     flat_subsets = [x for class_list in shaped_subsets for x in class_list]
-    constructed_scheme = lda_svc_best_feats(flat_subsets, best_features, params_obj, output_dir)
+    constructed_scheme = lda_svc_best_feats(flat_subsets, best_features, params_obj, output_dir, subclass_labels)
 
     # constructed_scheme = lda_best_features_subclass(best_features, list_classif_inputs, params_obj, output_dir)
     constructed_scheme.crossval_test_score = crossval_score
@@ -1681,7 +1684,7 @@ def subclass_inputs_from_class_inputs(cl_inputs_by_label, subclass_label_list, c
     return classif_inputs
 
 
-def lda_svc_best_feats(flat_subset_list, features_list, params_obj, output_dir):
+def lda_svc_best_feats(flat_subset_list, features_list, params_obj, output_dir, subclass_labels):
     """
     Generate a Scheme container by performing final LDA/SVM analysis on the provided data.
     :param flat_subset_list: list of DataSubset containers
@@ -1691,6 +1694,7 @@ def lda_svc_best_feats(flat_subset_list, features_list, params_obj, output_dir):
     :param params_obj: parameters
     :type params_obj: Parameters
     :param output_dir: directory in which to save output
+    :param subclass_labels: list of strings for scheme output naming
     :return: Scheme container
     :rtype: ClassificationScheme
     """
@@ -1721,7 +1725,7 @@ def lda_svc_best_feats(flat_subset_list, features_list, params_obj, output_dir):
     scheme.transformed_test_data = x_lda
     scheme.params = clf.get_params()
     scheme.input_feats = [feature.cv for feature in features_list]
-    scheme.set_name()
+    scheme.name = generate_scheme_name(train_string_labels, subclass_labels)
 
     # Organize outputs by input file for easier viewing, then save
     x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file = prep_outputs_by_file_new(x_lda, y_pred, probs, flat_subset_list)
@@ -1764,7 +1768,7 @@ def prep_outputs_by_file_new(x_lda, y_pred, probs, flat_subset_list):
     return x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file
 
 
-def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list):
+def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, subclass_labels):
     """
     Updated crossval method to allow multiple subclasses. Updated to reduce datasets to selected
     features first, then perform crossval with modular methods.
@@ -1775,6 +1779,7 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list):
     :type params_obj: Parameters
     :param features_list: List of CFeatures, sorted in decreasing order of score
     :type features_list: list[CFeature]
+    :param subclass_labels: list of strings for scheme naming purposes
     :return: list of selected features, test score for that # features, and all cross validation data
     """
     # determine training size as size of the smallest class - 1 (1 test file at a time)
@@ -1820,7 +1825,7 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list):
     # save and plot crossvalidation score information
     crossval_data = (train_score_means, train_score_stds, test_score_means, test_score_stds)
     unique_labels = get_unique_labels(label_list)
-    scheme_name = '_'.join(unique_labels)
+    scheme_name = generate_scheme_name(unique_labels, subclass_labels)
     save_crossval_score(crossval_data, scheme_name, outputdir)
     plot_crossval_scores(crossval_data, scheme_name, params_obj, outputdir)
 
@@ -1829,6 +1834,25 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list):
     output_features = features_list[0: best_num_feats]
     best_crossval = crossvals[best_num_feats - 1]   # 0 indexed vs 1 indexed
     return output_features, best_score, crossval_data, best_crossval
+
+
+def generate_scheme_name(class_labels, subclass_labels):
+    """
+    Generate the name of a classifying scheme to be a combination of the provided class labels
+    :param class_labels: list of strings
+    :param subclass_labels: list of strings
+    :return: string name
+    """
+    # Get class labels
+    unique_labels = get_unique_labels(class_labels)
+
+    # add number of subclasses if applicable
+    len_sublabels = len(subclass_labels)
+    if len_sublabels > 1:
+        name = '_'.join(unique_labels) + '_{}SubCl'.format(len_sublabels)
+    else:
+        name = '_'.join(unique_labels)
+    return name
 
 
 class ClInput(object):
@@ -1972,14 +1996,6 @@ class ClassificationScheme(object):
         label_string = ','.join(self.unique_labels)
         return '<Classif_Scheme> type: {}, data: {}'.format(self.classifier_type, label_string)
     __repr__ = __str__
-
-    def set_name(self):
-        """
-        set the name of the scheme to be a combination of the provided class labels
-        :return:
-        """
-        unique_labels = get_unique_labels(self.class_labels)
-        self.name = '_'.join(unique_labels)
 
     def get_subclass_labels(self):
         """
