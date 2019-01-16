@@ -161,6 +161,8 @@ class Parameters(object):
         self.classif_3_unk_mode = None
         self.classif_5_auto_featselect = None
         self.classif_7_max_feats_for_crossval = None
+        self.classif_8_max_crossval_iterations = None
+        self.classif_9_test_size = None
         self.silent_clf_4_num_gauss = None
 
         # Raw data import parameters

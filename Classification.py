@@ -7,13 +7,13 @@ Authors: Dan Polasky, Sugyan Dixit
 Date: 1/11/2018
 """
 from Gaussian_Fitting import Gaussian
-
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches
 import pickle
 import os
 import itertools
+import random
 from tkinter import messagebox
 from matplotlib.colors import ListedColormap
 from mpl_toolkits.mplot3d import Axes3D
@@ -61,10 +61,10 @@ def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_ob
         all_features = multi_subclass_ufs(list_classif_inputs, params_obj, output_dir, subclass_labels)
 
         # assess all features to determine which to use in the final scheme
-        best_features, crossval_score, all_crossval_data, best_crossval = crossval_main_new(cl_inputs_by_label, output_dir, params_obj, all_features, subclass_labels)
+        best_features, crossval_score, all_crossval_data = crossval_main_new(cl_inputs_by_label, output_dir, params_obj, all_features, subclass_labels)
     else:
         # Manual mode: use the provided features and run limited crossvalidation
-        best_features, crossval_score, all_crossval_data, best_crossval = crossval_main_new(cl_inputs_by_label, output_dir, params_obj, known_feats, subclass_labels)
+        best_features, crossval_score, all_crossval_data = crossval_main_new(cl_inputs_by_label, output_dir, params_obj, known_feats, subclass_labels)
         best_features = known_feats
 
     # perform LDA and classification on the selected/best features
@@ -126,9 +126,7 @@ def multi_subclass_ufs(subclass_input_list, params_obj, output_path, subclass_la
         sorted_features = sorted(features, key=lambda x: x.mean_score, reverse=True)
 
     unique_labels = get_unique_labels([x for label_list in subclass_input_list[0].shaped_label_list for x in label_list])
-    # scheme_name = '_'.join(unique_labels)
     scheme_name = generate_scheme_name(unique_labels, subclass_labels)
-    # plot_feature_scores(sorted_features, params_obj, scheme_name, output_path)
     plot_feature_scores_subclass(features_by_subclass, params_obj, scheme_name, output_path)
     return sorted_features
 
@@ -182,7 +180,10 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
     """
     # determine training size as size of the smallest class - 1 (1 test file at a time)
     min_class_size = np.min([len(x) for x in cl_inputs_by_label])
-    training_size = min_class_size - 1
+    training_size = min_class_size - params_obj.classif_9_test_size
+    if training_size < 2:
+        print('WARNING! Testing size provided ({}) was too large: at least one class had less than 2 replicates of training data. Test size of 1 used instead.'.format(params_obj.classif_9_test_size))
+        training_size = min_class_size - 1
     label_list = [class_list[0].class_label for class_list in cl_inputs_by_label]
 
     # optional max number of features to consider
@@ -193,11 +194,20 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
     else:
         max_features = len(features_list) + 1
 
+    # determine number of products. If less than # iterations (or if # iterations = 0), calculate out all products. Otherwise, randomly select to save memory
+    num_products = 1
+    for cl_input_list in cl_inputs_by_label:
+        num_products *= len(cl_input_list)
+    if num_products < params_obj.classif_8_max_crossval_iterations or params_obj.classif_8_max_crossval_iterations == 0:
+        calc_all_products = True
+    else:
+        calc_all_products = False
+
     current_features_list = []
     train_score_means, train_score_stds, test_score_means, test_score_stds, crossvals = [], [], [], [], []
     for ind, feature in enumerate(features_list[:max_features]):
         # Generate all combinations - NOTE: assumes that if subclasses are present, features know their subclass (should always be true)
-        print('Performing cross validation for {} features...'.format(ind + 1))
+        print('Performing cross validation for {} of {} features'.format(ind + 1, len(features_list[:max_features])))
         current_features_list.append(feature)
 
         # format all data
@@ -205,15 +215,17 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
 
         # perform the cross validation for this feature combination
         crossval_obj = CrossValRun(shaped_data_list, label_list, training_size, current_features_list)
-        crossval_obj.divide_data_and_run_lda()
-        crossval_obj.assemble_class_products()
+        if calc_all_products:
+            crossval_obj.divide_data_and_run_lda()
+            crossval_obj.assemble_class_products(params_obj.classif_8_max_crossval_iterations)
+        else:
+            crossval_obj.random_sample_run_lda(params_obj.classif_8_max_crossval_iterations)
 
         # save results
         train_score_means.append(crossval_obj.train_scores_mean)
         train_score_stds.append(crossval_obj.train_scores_std)
         test_score_means.append(crossval_obj.test_scores_mean)
         test_score_stds.append(crossval_obj.test_scores_std)
-        crossvals.append(crossval_obj)
 
     train_score_means = np.asarray(train_score_means)
     train_score_stds = np.asarray(train_score_stds)
@@ -230,8 +242,7 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
     # determine best features list from crossval scores
     best_num_feats, best_score = peak_crossval_score_detect(test_score_means, params_obj.classif_2_score_dif_tol)
     output_features = features_list[0: best_num_feats]
-    best_crossval = crossvals[best_num_feats - 1]   # 0 indexed vs 1 indexed
-    return output_features, best_score, crossval_data, best_crossval
+    return output_features, best_score, crossval_data
 
 
 def rearrange_ciu_by_feats(shaped_inputs_list, features_list, params_obj):
@@ -396,7 +407,7 @@ def run_lda_svc(x_data, label_data):
     train_lda = lda.transform(x_data)
 
     # max_iter=1000 needed to prevent occasional (and unpredictable) freezes with ridiculous iteration numbers
-    svm = SVC(kernel='linear', C=1, probability=True, max_iter=1000)
+    svm = SVC(kernel='linear', C=1, probability=True, max_iter=1000, cache_size=200)
     try:
         svm.fit(train_lda, label_data)
     except ValueError:
@@ -1498,6 +1509,68 @@ class CrossValRun(object):
         self.all_classes_combo_lists = []   # assembled data (combinations within one class)
         self.all_products = []      # assembled data (products of all combinations across all classes)
 
+    def random_sample_run_lda(self, num_iterations):
+        """
+        Alternative method to compute crossval scores for large datasets for which product/combination lists
+        are too large to fit in memory. Randomly samples individual combinations of training/test data from each
+        class, computes their product, runs lda, and stores the score in self.
+        :param num_iterations: How many cross validation runs to perform (int)
+        :return: void (saves scores to self)
+        """
+        # Randomly crossvalidate num_iterations times
+        for _ in range(num_iterations):
+            allclass_traintest_combos = []
+            # For each class, randomly select training and test datasets and generate a data combination
+            for class_index, class_subset_list in enumerate(self.data_list_by_label):
+                num_replicates = len(class_subset_list)
+                train_indices = random.sample(range(num_replicates), self.training_size)
+                test_indices = [x for x in range(num_replicates) if x not in train_indices]
+
+                training_subset_list = [class_subset_list[i] for i in train_indices]
+                test_subset_list = [class_subset_list[i] for i in test_indices]
+
+                # assemble LDA data here for train_subsets, train_labels (and test_subsets, test_labels)
+                train_lda_data, train_lda_labels, train_string_labels = arrange_lda_new(training_subset_list)
+                test_lda_data, test_lda_labels, test_string_labels = arrange_lda_new(test_subset_list)
+
+                # initialize container to hold this combination of datasets for eventual product against other class(es)
+                data_combo = CrossValData(train_lda_data, train_lda_labels, train_string_labels, test_lda_data, test_lda_labels, test_string_labels)
+                allclass_traintest_combos.append(data_combo)
+
+            # take the product of the generated random data combinations and save scores
+            for class_combo_pair in itertools.combinations(allclass_traintest_combos, 2):
+                final_train_data, final_train_labels = [], []
+                final_test_data, final_test_labels = [], []
+
+                # assemble training and test data into a single matrix (each) with a corresponding label matrix for each
+                for crossval_data in class_combo_pair:
+                    # crossval_data contains training and test data, each of which may have multiple columns. Combined into single matrix each
+                    for index in range(len(crossval_data.train_data)):
+                        final_train_data.append(crossval_data.train_data[index])
+                        final_train_labels.append(crossval_data.train_labels_num[index])
+                    for index in range(len(crossval_data.test_data)):
+                        final_test_data.append(crossval_data.test_data[index])
+                        final_test_labels.append(crossval_data.test_labels_num[index])
+
+                # Run LDA/SVC crossvalidation using the assembled data
+                svc, lda = run_lda_svc(final_train_data, final_train_labels)
+
+                # Generate an accuracy score for the training and test data against the classifier and save
+                train_lda = lda.transform(final_train_data)
+                test_lda = lda.transform(final_test_data)
+                train_score = svc.score(train_lda, final_train_labels)
+                test_score = svc.score(test_lda, final_test_labels)
+                self.train_scores.append(train_score)
+                self.test_scores.append(test_score)
+
+        # Save final scores and means to container
+        self.train_scores_mean = np.mean(self.train_scores)
+        self.train_scores_std = np.std(self.train_scores)
+        self.test_scores_mean = np.mean(self.test_scores)
+        self.test_scores_std = np.std(self.test_scores)
+        self.probs_mean = np.mean(self.probs)
+        self.probs_std = np.std(self.probs)
+
     def divide_data_and_run_lda(self):
         """
         Divide the data into each possible training and test arrangement and run LDA/SVC classification
@@ -1525,15 +1598,28 @@ class CrossValRun(object):
                 class_traintest_combo_list.append(data_combo)
             self.all_classes_combo_lists.append(class_traintest_combo_list)
 
-    def assemble_class_products(self):
+    def assemble_class_products(self, max_crossval_iterations):
         """
         Take divided train/test data combinations from self.divide_data and generate all products between
         classes. (e.g. for 2 classes, 3 replicates each, divide data assigns reps 1, 2 to train and 3 to test for
         one class (and all other combinations), and this method takes class 1, train 1 2 * class 2 train 1 2 to generate
         all combinations of training and test subsets for all classes).
+        :param max_crossval_iterations: Maximum number of class products to consider for crossval. Intended to prevent
+        running many thousands (or more) cross validations per feature when a smaller sample size would suffice.
         :return: void (saves to self.all_products)
         """
-        for class_combo_pair in itertools.product(*self.all_classes_combo_lists):
+        # Bootstrap (if required) by randomly sampling from all possible products of the class training/test datasets
+        if max_crossval_iterations == 0:
+            selected_products = itertools.product(*self.all_classes_combo_lists)
+        else:
+            try:
+                selected_products = random.sample(list(itertools.product(*self.all_classes_combo_lists)), max_crossval_iterations)
+            except ValueError:
+                # The total product population is less than the max number of iterations. Use the entire list
+                selected_products = itertools.product(*self.all_classes_combo_lists)
+
+        # for class_combo_pair in itertools.product(*self.all_classes_combo_lists):
+        for class_combo_pair in selected_products:
             final_train_data, final_train_labels = [], []
             final_test_data, final_test_labels = [], []
 
