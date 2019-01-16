@@ -781,8 +781,8 @@ class CIUSuite2(object):
                 self.display_analysis_files(new_file_list)
 
                 # prompt the user to run feature detection in Gaussian mode
-                if len(files_to_read) > 0:
-                    messagebox.showinfo('Success!', 'Gaussing fitting finished successfully. Please run Feature Detection in "gaussian" mode to finalize Gaussian assignments to features (this is required for CIU50 analysis, classification, and reconstruction).')
+                # if len(files_to_read) > 0:
+                #     messagebox.showinfo('Success!', 'Gaussing fitting finished successfully. Please run Feature Detection in "gaussian" mode to finalize Gaussian assignments to features (this is required for CIU50 analysis, classification, and reconstruction).')
         self.progress_done()
 
     def on_button_gaussian_reconstruct_clicked(self):
@@ -1150,7 +1150,6 @@ class CIUSuite2(object):
                 param_keys = [x for x in self.params_obj.params_dict.keys() if 'classif' in x]
                 param_success, param_dict = self.run_param_ui('Classification Parameters', param_keys)
                 if param_success:
-                    max_num_gaussians = 0
                     if self.params_obj.classif_3_unk_mode == 'Gaussian':
                         # Ensure Gaussian features are present and prepare them for classification
                         flat_input_list = [x for input_list in cl_inputs_by_label for x in input_list]
@@ -1171,7 +1170,6 @@ class CIUSuite2(object):
                         self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
                         scheme = Classification.main_build_classification_new(cl_inputs_by_label, subclass_labels, self.params_obj, self.output_dir)
                         scheme.final_axis_cropvals = equalized_axes
-                        scheme.num_gaussians = max_num_gaussians
                         Classification.save_scheme(scheme, self.output_dir, subclass_labels)
                     else:
                         # manual feature selection mode: run feature selection, pause, and THEN run LDA with user input
@@ -1193,7 +1191,6 @@ class CIUSuite2(object):
                         self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
                         scheme = Classification.main_build_classification_new(cl_inputs_by_label, subclass_labels, self.params_obj, self.output_dir, known_feats=selected_features)
                         scheme.final_axis_cropvals = equalized_axes
-                        scheme.num_gaussians = max_num_gaussians
                         Classification.save_scheme(scheme, self.output_dir, subclass_labels)
 
         self.progress_done()
@@ -1329,7 +1326,7 @@ class CIUSuite2(object):
                             messagebox.showerror('Non-Gaussian Scheme Selected', 'Gaussian mode specified, but the selected classification scheme (.clf file) is NOT a Gaussian classification scheme. No analysis will be performed.')
                             self.progress_done()
 
-                        if not check_classif_data_gaussians(replicate_inputs):
+                        if not check_classif_data_gaussians(replicate_inputs, max_gaussians_unk=scheme.num_gaussians):
                             self.progress_done()
                         # For each analysis_obj in all subclasses of each replicate container, prepare Gaussians for classification
                         # for rep_obj in replicate_objs:
@@ -1898,12 +1895,13 @@ def check_classif_data(cl_inputs_by_label, subclass_labels):
         return False
 
 
-def check_classif_data_gaussians(flat_clinput_list):
+def check_classif_data_gaussians(flat_clinput_list, max_gaussians_unk=None):
     """
     Ensure that all provided CIU analyses have Gaussian features fitted prior to attempting to
     perform Gaussian based classification.
     :param flat_clinput_list: list of ClInputs
     :type flat_clinput_list: list[Classification.ClInput]
+    :param max_gaussians_unk: For unknown mode, also check that all analyses have <= the max number of gaussians used in the classifying scheme
     :return: boolean: True if all data has Gaussian features fit, False if not
     """
     for cl_input in flat_clinput_list:
@@ -1915,6 +1913,18 @@ def check_classif_data_gaussians(flat_clinput_list):
                                      'Please run Gaussian Feature Detection on all files being used'
                                      'and try again.'.format(analysis_obj.short_filename))
                 return False
+
+            if max_gaussians_unk is not None:
+                # If using unknown mode, check to make sure there are no extrapolations beyond the max number of Gaussians used in the scheme
+                final_gaussians = Classification.prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
+                for gaussian_list in final_gaussians:
+                    if len(gaussian_list) > max_gaussians_unk:
+                        messagebox.showerror('Gaussian Extrapolation Error',
+                                             'Warning: there are more overlapping features in file {} than in any of the training data used the classification scheme. '
+                                             'To fit, ensure that the Gaussian Feature Detection outputs for this file are similar to the data used to build the chosen '
+                                             'classification scheme (especially in the maximum number of features that overlap at one CV)'.format(
+                                                 analysis_obj.short_filename))
+                        return False
     return True
 
 

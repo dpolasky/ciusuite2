@@ -86,6 +86,7 @@ def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_overrid
     :type params_obj: Parameters
     :param ufs_mode: boolean, True if using for UFS (feature selection), which requires only centroids from gaussian fitting
     :param num_gauss_override: MUST be provided for Unknown data fitting (in Gaussian mode ONLY) - the number of gaussians in the scheme being used
+    Set up this way to simplify moving the number through all crossval code/etc
     :param selected_cvs: for unknown analyses, only return the data in the specified CV columns
     :return: classification data matrix
     """
@@ -1552,7 +1553,7 @@ def rearrange_ciu_by_feats(shaped_inputs_list, features_list, params_obj):
     return shaped_output_list
 
 
-def rearrange_ciu_by_feats_helper(rep_obj, params_obj, features_list, class_numeric_label):
+def rearrange_ciu_by_feats_helper(rep_obj, params_obj, features_list, class_numeric_label, num_gaussian_override=None):
     """
     Rearrange CIU data in feature order for a single replicate to generate a single DataSubset
     container to return.
@@ -1563,6 +1564,7 @@ def rearrange_ciu_by_feats_helper(rep_obj, params_obj, features_list, class_nume
     :param features_list: list of features in decreasing order of score
     :type features_list: list[CFeature]
     :param class_numeric_label: (int) numeric label for scheme. Set to 0 for unknown data
+    :param num_gaussian_override: For Gaussian mode with unknowns - require that the max num gaussians be that of the previously saved classification scheme
     :return: DataSubset container with initialized data
     :rtype: DataSubset
     """
@@ -1584,7 +1586,7 @@ def rearrange_ciu_by_feats_helper(rep_obj, params_obj, features_list, class_nume
         # Determine the correct CV column to append to the growing matrix and do so
         current_cv_axis = subclass_obj.axes[1]
         this_cv_index = (np.abs(np.asarray(current_cv_axis) - feature.cv)).argmin()
-        raw_data = get_classif_data(subclass_obj, params_obj)
+        raw_data = get_classif_data(subclass_obj, params_obj, num_gauss_override=num_gaussian_override)
         cv_col = raw_data.T[this_cv_index]
         data_output.append(cv_col)
 
@@ -1639,6 +1641,32 @@ def run_lda_svc(x_data, label_data):
     return svm, lda
 
 
+def prep_all_gaussian_data_2d(cl_inputs_by_label, params_obj):
+    """
+    Wrapper method for 2D input list of ClInputs (for use in scheme construction) to ensure
+    all CIU analyses ultimately have the same size Gaussian data matrices for classification.
+    :param cl_inputs_by_label: lists of ClInput containers sorted by class label
+    :type cl_inputs_by_label: list[list[ClInput]]
+    :param params_obj: Parameters object with classification parameter information
+    :type params_obj: Parameters
+    :return: max number of Gaussians in the input data (also sets it to params_obj)
+    """
+    max_num_gaussians = 0
+    for input_list in cl_inputs_by_label:
+        for cl_input in input_list:
+            for subclass_label, analysis_obj in cl_input.subclass_dict.items():
+                # prepare gaussian features for classification
+                gaussians_by_cv = prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
+
+                # update the max number of gaussians if necessary
+                for gaussian_list in gaussians_by_cv:
+                    if len(gaussian_list) > max_num_gaussians:
+                        max_num_gaussians = len(gaussian_list)
+                # save num Gaussians to ensure all matrices same size
+                params_obj.silent_clf_4_num_gauss = max_num_gaussians
+    return max_num_gaussians
+
+
 def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_obj, output_dir, known_feats=None):
     """
     Main method for classification. Performs feature selection followed by LDA and classification
@@ -1654,6 +1682,12 @@ def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_ob
     :return: ClassificationScheme object with the generated scheme
     :rtype: ClassificationScheme
     """
+    # Assemble Gaussian feature information if using Gaussian mode
+    if params_obj.classif_3_unk_mode == 'Gaussian':
+        max_num_gaussians = prep_all_gaussian_data_2d(cl_inputs_by_label, params_obj)
+    else:
+        max_num_gaussians = 0
+
     if known_feats is None:
         # convert to subclass oriented data (if no subclasses, will be a single entry in a list)
         class_labels = [class_list[0].class_label for class_list in cl_inputs_by_label]
@@ -1672,7 +1706,7 @@ def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_ob
     # perform LDA and classification on the selected/best features
     shaped_subsets = rearrange_ciu_by_feats(cl_inputs_by_label, best_features, params_obj)
     flat_subsets = [x for class_list in shaped_subsets for x in class_list]
-    constructed_scheme = lda_svc_best_feats(flat_subsets, best_features, params_obj, output_dir, subclass_labels)
+    constructed_scheme = lda_svc_best_feats(flat_subsets, best_features, params_obj, output_dir, subclass_labels, max_num_gaussians)
 
     # constructed_scheme = lda_best_features_subclass(best_features, list_classif_inputs, params_obj, output_dir)
     constructed_scheme.crossval_test_score = crossval_score
@@ -1709,7 +1743,7 @@ def subclass_inputs_from_class_inputs(cl_inputs_by_label, subclass_label_list, c
     return classif_inputs
 
 
-def lda_svc_best_feats(flat_subset_list, features_list, params_obj, output_dir, subclass_labels):
+def lda_svc_best_feats(flat_subset_list, features_list, params_obj, output_dir, subclass_labels, max_num_gaussians=0):
     """
     Generate a Scheme container by performing final LDA/SVM analysis on the provided data.
     :param flat_subset_list: list of DataSubset containers
@@ -1720,6 +1754,7 @@ def lda_svc_best_feats(flat_subset_list, features_list, params_obj, output_dir, 
     :type params_obj: Parameters
     :param output_dir: directory in which to save output
     :param subclass_labels: list of strings for scheme output naming
+    :param max_num_gaussians: for Gaussian mode, the max number of Gaussians to record in the scheme
     :return: Scheme container
     :rtype: ClassificationScheme
     """
@@ -1751,6 +1786,7 @@ def lda_svc_best_feats(flat_subset_list, features_list, params_obj, output_dir, 
     scheme.params = clf.get_params()
     scheme.input_feats = [feature.cv for feature in features_list]
     scheme.name = generate_scheme_name(train_string_labels, subclass_labels)
+    scheme.num_gaussians = max_num_gaussians
 
     # Organize outputs by input file for easier viewing, then save
     x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file = prep_outputs_by_file_new(x_lda, y_pred, probs, flat_subset_list)
@@ -2153,7 +2189,7 @@ class ClassificationScheme(object):
         :rtype: ClInput
         """
         # Assemble feature data for fitting
-        unk_subset = rearrange_ciu_by_feats_helper(unk_cl_input, params_obj, self.selected_features, class_numeric_label=0)
+        unk_subset = rearrange_ciu_by_feats_helper(unk_cl_input, params_obj, self.selected_features, class_numeric_label=0, num_gaussian_override=self.num_gaussians)
         unk_x_data, numeric_labels, string_labels = arrange_lda_new([unk_subset])
 
         # Fit/classify data according to scheme LDA and classifier
