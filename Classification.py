@@ -14,7 +14,9 @@ import pickle
 import os
 import itertools
 import random
+import tkinter
 from tkinter import messagebox
+from tkinter import ttk
 from matplotlib.colors import ListedColormap
 from mpl_toolkits.mplot3d import Axes3D
 from sklearn.preprocessing import LabelEncoder
@@ -1730,6 +1732,99 @@ class UFSResult(object):
         label_string = ','.join(self.labels_input)
         return '<UFSResult> labels: {}'.format(label_string)
     __repr__ = __str__
+
+
+class ManualFeatureUI(tkinter.Toplevel):
+    """
+    Popup for manual feature selection. Displays a list of features with a checkbox for each
+    to include in scheme. Supports subclasses.
+    """
+    def __init__(self, ordered_features):
+        """
+        Display a list of features (in order) with checkboxes to include
+        :param ordered_features: list of features in descending order of score from UFS
+        :type ordered_features: list[CFeature]
+        """
+        tkinter.Toplevel.__init__(self)
+        self.title('Choose which features to include in classification: ("sc" = score)')
+
+        # output features
+        self.return_features = []
+        self.feat_var_tups = []
+
+        # initialize graphical elements
+        main_frame = ttk.Frame(self, relief='raised', padding='2 2 2 2')
+        main_frame.grid(column=0, row=0)
+        num_rows = 25
+        row_index = -1
+        col_index = 0
+        for index, feature in enumerate(ordered_features):
+            row_index += 1
+            if row_index > num_rows:
+                row_index = 0
+                col_index += 1
+
+            # create a checkbutton for this feature
+            if feature.subclass_label is not None:
+                feat_text = '{}V, {}, sc: {:.2f}'.format(feature.cv, feature.subclass_label, feature.mean_score)
+            else:
+                feat_text = '{}V, sc: {:.2f}'.format(feature.cv, feature.mean_score)
+            feat_var = tkinter.IntVar()
+            current_button = ttk.Checkbutton(main_frame, text=feat_text, variable=feat_var).grid(row=row_index, column=col_index)
+            self.feat_var_tups.append((feature, feat_var))
+
+        # Finally, add 'okay' and 'cancel' buttons to the bottom of the dialog
+        button_frame = ttk.Frame(self, padding='5 5 5 5')
+        button_frame.grid(column=0, row=1)
+        ttk.Button(button_frame, text='Cancel', command=self.cancel_button_click).grid(row=0, column=0, sticky='w')
+        ttk.Button(button_frame, text='OK', command=self.ok_button_click).grid(row=0, column=1, sticky='e')
+        # for button_index in range(col_index - 2):
+        #     button_index += 2
+        #     ttk.Label(button_frame, text='                                                        ').grid(row=0, column=button_index)
+
+    def cancel_button_click(self):
+        """
+        Cancel classification
+        :return: void
+        """
+        self.return_features = []
+        self.on_close_window()
+
+    def ok_button_click(self):
+        """
+        Figure out which checkboxes are checked and set self's list of features to those selected.
+        :return: selected features list
+        :rtype: list[CFeature]
+        """
+        for feature, feat_var in self.feat_var_tups:
+            if feat_var.get() == 1:
+                # select this feature
+                self.return_features.append(feature)
+        self.on_close_window()
+
+    def on_close_window(self):
+        """
+        Close the window
+        :return: void
+        """
+        self.quit()
+        self.destroy()
+
+
+def get_manual_classif_feats(features_list):
+    """
+    Run classification manual feature selection UI to get selected features for classification.
+    :param features_list: list of features
+    :type features_list: list[CFeature]
+    :return: list[CFeature]
+    """
+    feat_ui = ManualFeatureUI(features_list)
+    feat_ui.lift()
+    feat_ui.grab_set()  # prevent users from hitting multiple windows simultaneously
+    feat_ui.wait_window()
+    feat_ui.grab_release()
+
+    return feat_ui.return_features
 
 
 # if __name__ == '__main__':

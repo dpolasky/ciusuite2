@@ -1059,19 +1059,16 @@ class CIUSuite2(object):
                         class_labels = [class_list[0].class_label for class_list in cl_inputs_by_label]
                         list_classif_inputs = Classification.subclass_inputs_from_class_inputs(cl_inputs_by_label, subclass_labels, class_labels)
 
-                        Classification.multi_subclass_ufs(list_classif_inputs, self.params_obj, self.output_dir, subclass_labels)
-
-                        # prompt for user input to select desired features
-                        input_success_flag = False
-                        selected_features = []
-                        while not input_success_flag:
-                            input_success_flag, selected_features = parse_user_cvfeats_input()
-
-                        # Run LDA using selected features
-                        self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
-                        scheme = Classification.main_build_classification_new(cl_inputs_by_label, subclass_labels, self.params_obj, self.output_dir, known_feats=selected_features)
-                        scheme.final_axis_cropvals = equalized_axes
-                        Classification.save_scheme(scheme, self.output_dir, subclass_labels)
+                        sorted_features = Classification.multi_subclass_ufs(list_classif_inputs, self.params_obj, self.output_dir, subclass_labels)
+                        selected_features = Classification.get_manual_classif_feats(sorted_features)
+                        if len(selected_features) > 0:
+                            # Run LDA using selected features
+                            self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
+                            scheme = Classification.main_build_classification_new(cl_inputs_by_label, subclass_labels, self.params_obj, self.output_dir, known_feats=selected_features)
+                            scheme.final_axis_cropvals = equalized_axes
+                            Classification.save_scheme(scheme, self.output_dir, subclass_labels)
+                        else:
+                            print('Classification canceled: no features selected')
 
         self.progress_done()
 
@@ -1141,7 +1138,7 @@ class CIUSuite2(object):
             return [], [], []
 
         # Determine the number of classes
-        class_string = simpledialog.askstring('Enter Class Labels, Separated by Commas','Enter the Labels for each Class, separated by commas. NOTE: the labels entered must EXACTLY match a part of the file name for each class or the data will not be loaded properly!')
+        class_string = simpledialog.askstring('Enter Class Labels, Separated by Commas', 'Enter the Labels for each Class, separated by commas. NOTE: the labels entered must EXACTLY match a part of the file name for each class or the data will not be loaded properly!')
         if class_string is not None:
             class_splits = class_string.split(',')
             class_labels = []
@@ -1749,7 +1746,7 @@ def save_analysis_obj(analysis_obj, params_dict, outputdir, filename_append=''):
             pickle.dump(analysis_obj, pkfile)
     except IOError:
         if len_flag:
-            messagebox.showerror('File path too long!','The requested save path (filename + folder) is longer than the maximum length allowed by Windows and cannot be saved! Please shorten the name of the raw file or save directory so Windows can save your file.')
+            messagebox.showerror('File path too long!', 'The requested save path (filename + folder) is longer than the maximum length allowed by Windows and cannot be saved! Please shorten the name of the raw file or save directory so Windows can save your file.')
         else:
             messagebox.showerror('File Save Error', 'Error: file {} could not be saved!'.format(picklefile))
 
