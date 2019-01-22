@@ -1060,6 +1060,7 @@ class CIUSuite2(object):
                         list_classif_inputs = Classification.subclass_inputs_from_class_inputs(cl_inputs_by_label, subclass_labels, class_labels)
 
                         sorted_features = Classification.multi_subclass_ufs(list_classif_inputs, self.params_obj, self.output_dir, subclass_labels)
+                        sorted_features = sorted_features[:self.params_obj.classif_7_max_feats_for_crossval]    # only display set number of features for selection
                         selected_features = Classification.get_manual_classif_feats(sorted_features)
                         if len(selected_features) > 0:
                             # Run LDA using selected features

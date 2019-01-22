@@ -1766,9 +1766,9 @@ class ManualFeatureUI(tkinter.Toplevel):
 
             # create a checkbutton for this feature
             if feature.subclass_label is not None:
-                feat_text = '{}V, {}, sc: {:.2f}'.format(feature.cv, feature.subclass_label, feature.mean_score)
+                feat_text = '{}) {}V, {}, sc: {:.2f}'.format(index + 1, feature.cv, feature.subclass_label, feature.mean_score)
             else:
-                feat_text = '{}V, sc: {:.2f}'.format(feature.cv, feature.mean_score)
+                feat_text = '{}) {}V, sc: {:.2f}'.format(index + 1, feature.cv, feature.mean_score)
             feat_var = tkinter.IntVar()
             current_button = ttk.Checkbutton(main_frame, text=feat_text, variable=feat_var).grid(row=row_index, column=col_index)
             self.feat_var_tups.append((feature, feat_var))
@@ -1778,9 +1778,6 @@ class ManualFeatureUI(tkinter.Toplevel):
         button_frame.grid(column=0, row=1)
         ttk.Button(button_frame, text='Cancel', command=self.cancel_button_click).grid(row=0, column=0, sticky='w')
         ttk.Button(button_frame, text='OK', command=self.ok_button_click).grid(row=0, column=1, sticky='e')
-        # for button_index in range(col_index - 2):
-        #     button_index += 2
-        #     ttk.Label(button_frame, text='                                                        ').grid(row=0, column=button_index)
 
     def cancel_button_click(self):
         """
