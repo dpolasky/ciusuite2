@@ -1,14 +1,19 @@
 
-Use the "Help" button in CIUSuite 2 or the start menu shortcut to access the 
-CIUSuite 2 manual for detailed instructions and the user guide. 
+Welcome to CIUSuite 2! 
+
+Please view the user manual (CIUSuite2_Manual.pdf) for detailed instructions.
+You can access the manual using the "Help" button in CIUSuite 2 or from the 
+start menu shortcut in the CIUSuite2 folder. 
 
 *****************************************************************
 
-Any publications that result from use of the software must cite:
+Any publications that utilize the software must cite:
 
-Polasky et al. "CIUSuite 2: Next Generation Softare for the Analysis 
-of Gas-phase Unfolding Data." Anal. Chem. 2018. In press. 
+Daniel A Polasky, Sugyan M Dixit, Sarah M Fantin, and Brandon T. Ruotolo. 
+"CIUSuite 2: Next-Generation Softare for the Analysis of Gas-phase Protein 
+Unfolding Data." Anal. Chem. 2019. DOI: 10.1021/acs.analchem.8b05762
 
+https://pubs.acs.org/doi/10.1021/acs.analchem.8b05762
 
 *****************************************************************
 
