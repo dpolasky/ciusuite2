@@ -5,6 +5,7 @@ Copyright (C) 2018 Daniel Polasky and Sugyan Dixit
 Module for classification schemes for CIU data groups
 Authors: Dan Polasky, Sugyan Dixit
 Date: 1/11/2018
+
 """
 from Gaussian_Fitting import Gaussian
 import numpy as np
