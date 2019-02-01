@@ -5,7 +5,6 @@ Copyright (C) 2018 Daniel Polasky and Sugyan Dixit
 Module for classification schemes for CIU data groups
 Authors: Dan Polasky, Sugyan Dixit
 Date: 1/11/2018
-
 """
 from Gaussian_Fitting import Gaussian
 import numpy as np
@@ -18,13 +17,17 @@ import random
 import tkinter
 from tkinter import messagebox
 from tkinter import ttk
+from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.colors import ListedColormap
 from mpl_toolkits.mplot3d import Axes3D
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, label_binarize
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.metrics import precision_score
+from sklearn.metrics import precision_score, roc_curve, auc
 from sklearn.feature_selection import f_classif, GenericUnivariateSelect
 from sklearn.svm import SVC
+from sklearn.multiclass import OneVsRestClassifier
+from scipy import interp
+
 
 from typing import List
 from typing import TYPE_CHECKING
@@ -167,6 +170,106 @@ def generate_products_for_ufs(analysis_obj_list_by_label, shaped_label_list, par
     return products
 
 
+def roc_curve_area_multiclass(x_train, y_train, x_test, y_test):
+    """
+    creates a one vs all classifer
+    calculates the roc fpr, tpr, for each class with one vs all, micro-average roc, and macro-average roc
+    :param x_test: x_test lda
+    :param x_train: x_train lda
+    :param y_train: y_train labels
+    :param y_test: y_test labels
+    :return: fpr, tpr, and roc_auc for class specific, micro-average, and macro-average
+    """
+
+    temp_fpr = np.linspace(0, 1, 100)
+
+    unique_class_labels = np.unique(y_train)
+    y_train_binary = label_binarize(y_train, classes=unique_class_labels)
+    n_classes = y_train_binary.shape[1]
+
+    y_test_binary = label_binarize(y_test, classes=unique_class_labels)
+
+    # the estimator should be the same as used for normal classification
+    clf = OneVsRestClassifier(SVC(kernel='linear', C=1, probability=True, max_iter=1000)).fit(x_train, y_train_binary)
+    y_score = clf.decision_function(x_test)
+
+
+    # compute ROC curve and ROC area for each class
+    # create dicts for fpr, tpr, and roc_auc
+    fpr_class = [[] for _ in range(n_classes)]
+    tpr_class = [[] for _ in range(n_classes)]
+    interp_tpr_class = [[] for _ in range(n_classes)]
+    # roc_auc_class = [[] for _ in range(n_classes)]
+    roc_auc_class_interp = [[] for _ in range(n_classes)]
+
+    for index in range(n_classes):
+        fpr_class[index], tpr_class[index], _ = roc_curve(y_test_binary[:, index], y_score[:, index])
+        interp_tpr = 0.0
+        interp_tpr += interp(temp_fpr, fpr_class[index], tpr_class[index])
+        interp_tpr[0] = 0
+        interp_tpr_class[index].append(interp_tpr)
+        # roc_auc_class[index] = auc(fpr_class[index], tpr_class[index])
+        roc_auc_class_interp[index] = auc(temp_fpr, interp_tpr_class[index][0])
+    roc_auc_class_interp = np.asarray(roc_auc_class_interp)
+    interp_tpr_class = np.asarray(interp_tpr_class)
+
+    # compute micro-average ROC curve and ROC area
+    fpr_micro, tpr_micro, _ = roc_curve(y_test_binary.ravel(), y_score.ravel())
+    interp_tpr_micro = 0.0
+    interp_tpr_micro += interp(temp_fpr, fpr_micro, tpr_micro)
+    interp_tpr_micro[0] = 0
+    roc_auc_micro_interp = auc(temp_fpr, interp_tpr_micro)
+    # roc_auc_micro = auc(fpr_micro, tpr_micro)
+
+
+    #compute macro-average ROC curve and ROC area
+    all_fpr = np.unique(np.concatenate([fpr_class[x] for x in range(n_classes)]))
+
+    # interpolate all ROC curves at these fpr points
+    mean_tpr = np.zeros_like(all_fpr)
+    for index in range(n_classes):
+        mean_tpr += interp(all_fpr, fpr_class[index], tpr_class[index])
+
+    # average tpr and compute AUC
+    mean_tpr /= n_classes
+
+    interp_tpr_macro = 0.0
+    interp_tpr_macro += interp(temp_fpr, all_fpr, mean_tpr)
+    interp_tpr_macro[0] = 0
+
+    roc_auc_macro_interp = auc(temp_fpr, interp_tpr_macro)
+
+    return temp_fpr, interp_tpr_class, roc_auc_class_interp, interp_tpr_micro, roc_auc_micro_interp, interp_tpr_macro, roc_auc_macro_interp
+
+
+def plot_roc_cuve(roc_data, schem_name, dirpath, all_features=True):
+    tmp_fpr = roc_data[0]
+    tpr_class_mean, tpr_class_std, roc_auc_class_mean, roc_auc_class_std = roc_data[1], roc_data[2], roc_data[3], roc_data[4]
+    tpr_micro_mean, tpr_micro_std, roc_auc_micro_mean, roc_auc_micro_std = roc_data[5], roc_data[6], roc_data[7], roc_data[8]
+    tpr_macro_mean, tpr_macro_std, roc_auc_macro_mean, roc_auc_macro_std = roc_data[9], roc_data[10], roc_data[11], roc_data[12]
+
+    if all_features:
+        pdf_output = os.path.join(dirpath, schem_name + '_roc_curves.pdf')
+        with PdfPages(pdf_output) as pdf:
+            for index in range(len(tpr_class_mean)):
+                for num, (tpr_class_mean_, tpr_class_std_, roc_auc_class_mean_, roc_auc_class_std_) in enumerate(zip(tpr_class_mean[index], tpr_class_std[index], roc_auc_class_mean[index], roc_auc_class_std[index])):
+                    print('heho')
+                    plt.plot(tmp_fpr, tpr_class_mean_[0], linestyle=':', label='roc_auc_class_{0} {1:0.2f} +/- {2:0.2f}'.format(num, roc_auc_class_mean_, roc_auc_class_std_))
+                    plt.fill_between(tmp_fpr, tpr_class_mean_[0] + tpr_class_std_[0], tpr_class_mean_[0] - tpr_class_std_[0], alpha=0.2)
+                plt.plot(tmp_fpr, tpr_micro_mean[index], linestyle='--', color='black', label='roc_auc_micro {0:0.2f} +/- {1:0.2f}'.format(roc_auc_micro_mean[index], roc_auc_micro_std[index]))
+                plt.fill_between(tmp_fpr, tpr_micro_mean[index] + tpr_micro_std[index], tpr_micro_mean[index] - tpr_micro_std[index], color='black', alpha=0.4)
+                plt.plot(tmp_fpr, tpr_macro_mean[index], linestyle='--', color='red', label='roc_auc_macro {0:0.2f} +/- {1:0.2f}'.format(roc_auc_macro_mean[index], roc_auc_macro_std[index]))
+                plt.fill_between(tmp_fpr, tpr_macro_mean[index] + tpr_macro_std[index], tpr_macro_mean[index] - tpr_macro_std[index], color='red', alpha=0.4)
+
+                plt.legend(loc='best', fontsize='small')
+
+                pdf.savefig()
+                plt.close()
+                # plt.show()
+                print('heho')
+    print('haho')
+
+
 def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, subclass_labels):
     """
     Updated crossval method to allow multiple subclasses. Updated to reduce datasets to selected
@@ -208,6 +311,9 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
 
     current_features_list = []
     train_score_means, train_score_stds, test_score_means, test_score_stds, crossvals = [], [], [], [], []
+    tpr_class_mean, tpr_class_std, roc_auc_class_mean, roc_auc_class_std = [],[],[],[]
+    tpr_micro_mean, tpr_micro_std, roc_auc_micro_mean, roc_auc_micro_std = [],[],[],[]
+    tpr_macro_mean, tpr_macro_std, roc_auc_macro_mean, roc_auc_macro_std = [],[],[],[]
     for ind, feature in enumerate(features_list[:max_features]):
         # Generate all combinations - NOTE: assumes that if subclasses are present, features know their subclass (should always be true)
         print('Performing cross validation for {} of {} features'.format(ind + 1, len(features_list[:max_features])))
@@ -230,10 +336,32 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
         test_score_means.append(crossval_obj.test_scores_mean)
         test_score_stds.append(crossval_obj.test_scores_std)
 
+        tpr_class_mean.append(crossval_obj.tpr_class_mean)
+        tpr_class_std.append(crossval_obj.tpr_class_std)
+        roc_auc_class_mean.append(crossval_obj.roc_auc_class_mean)
+        roc_auc_class_std.append(crossval_obj.roc_auc_class_std)
+        tpr_micro_mean.append(crossval_obj.tpr_micro_mean)
+        tpr_micro_std.append(crossval_obj.tpr_micro_std)
+        roc_auc_micro_mean.append(crossval_obj.roc_auc_micro_mean)
+        roc_auc_micro_std.append(crossval_obj.roc_auc_micro_std)
+        tpr_macro_mean.append(crossval_obj.tpr_macro_mean)
+        tpr_macro_std.append(crossval_obj.tpr_macro_std)
+        roc_auc_macro_mean.append(crossval_obj.roc_auc_macro_mean)
+        roc_auc_macro_std.append(crossval_obj.roc_auc_macro_std)
+
+
+
     train_score_means = np.asarray(train_score_means)
     train_score_stds = np.asarray(train_score_stds)
     test_score_means = np.asarray(test_score_means)
     test_score_stds = np.asarray(test_score_stds)
+
+    # save and plot roc output
+    roc_data = (crossval_obj.tmp_fpr, tpr_class_mean, tpr_class_std, roc_auc_class_mean, roc_auc_class_std, tpr_micro_mean,
+                tpr_micro_std, roc_auc_micro_mean, roc_auc_micro_std, tpr_macro_mean, tpr_macro_std,
+                roc_auc_macro_mean, roc_auc_macro_std)
+
+    # plot_roc_cuve(roc_data, outputdir, all_features=True)
 
     # save and plot crossvalidation score information
     crossval_data = (train_score_means, train_score_stds, test_score_means, test_score_stds)
@@ -241,6 +369,9 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
     scheme_name = generate_scheme_name(unique_labels, subclass_labels)
     save_crossval_score(crossval_data, scheme_name, outputdir)
     plot_crossval_scores(crossval_data, scheme_name, params_obj, outputdir)
+
+    plot_roc_cuve(roc_data, scheme_name, outputdir, all_features=True)
+
 
     # determine best features list from crossval scores
     best_num_feats, best_score = peak_crossval_score_detect(test_score_means, params_obj.classif_2_score_dif_tol)
@@ -1509,6 +1640,29 @@ class CrossValRun(object):
         self.probs_mean = None
         self.probs_std = None
 
+        # for roc metrics
+        self.tmp_fpr = []
+        self.tpr_class = []
+        self.tpr_class_mean = None
+        self.tpr_class_std = None
+        self.roc_auc_class = []
+        self.roc_auc_class_mean = None
+        self.roc_auc_class_std = None
+        self.tpr_micro = []
+        self.tpr_micro_mean = None
+        self.tpr_micro_std = None
+        self.roc_auc_micro = []
+        self.roc_auc_micro_mean = None
+        self.roc_auc_micro_std = None
+        self.tpr_macro = []
+        self.tpr_macro_mean = None
+        self.tpr_macro_std = None
+        self.roc_auc_macro = []
+        self.roc_auc_macro_mean = None
+        self.roc_auc_macro_std = None
+
+
+
         self.all_classes_combo_lists = []   # assembled data (combinations within one class)
         self.all_products = []      # assembled data (products of all combinations across all classes)
 
@@ -1561,6 +1715,10 @@ class CrossValRun(object):
                 # Generate an accuracy score for the training and test data against the classifier and save
                 train_lda = lda.transform(final_train_data)
                 test_lda = lda.transform(final_test_data)
+
+
+
+
                 train_score = svc.score(train_lda, final_train_labels)
                 test_score = svc.score(test_lda, final_test_labels)
                 self.train_scores.append(train_score)
@@ -1621,6 +1779,10 @@ class CrossValRun(object):
                 # The total product population is less than the max number of iterations. Use the entire list
                 selected_products = itertools.product(*self.all_classes_combo_lists)
 
+        # arrays to store roc metrics output
+        tmp_fpr, tpr_class, roc_auc_class, tpr_micro, roc_auc_micro, tpr_macro, roc_auc_macro = [],[],[],[],[],[],[]
+
+
         # for class_combo_pair in itertools.product(*self.all_classes_combo_lists):
         for class_combo_pair in selected_products:
             final_train_data, final_train_labels = [], []
@@ -1642,10 +1804,42 @@ class CrossValRun(object):
             # Generate an accuracy score for the training and test data against the classifier and save
             train_lda = lda.transform(final_train_data)
             test_lda = lda.transform(final_test_data)
+
+            #todo: ask dan whether this needs to go in the random sample run lda method
+            # return fpr_class, fpr_micro, fpr_macro, tpr_class, tpr_micro, tpr_macro, roc_auc_class, roc_auc_micro, roc_auc_macro
+            roc_curve_multiclass_out = roc_curve_area_multiclass(train_lda, final_train_labels, test_lda, final_test_labels)
+            tmp_fpr.append(roc_curve_multiclass_out[0])
+            tpr_class.append(roc_curve_multiclass_out[1])
+            roc_auc_class.append(roc_curve_multiclass_out[2])
+            tpr_micro.append(roc_curve_multiclass_out[3])
+            roc_auc_micro.append(roc_curve_multiclass_out[4])
+            tpr_macro.append(roc_curve_multiclass_out[5])
+            roc_auc_macro.append(roc_curve_multiclass_out[6])
+
+
             train_score = svc.score(train_lda, final_train_labels)
             test_score = svc.score(test_lda, final_test_labels)
             self.train_scores.append(train_score)
             self.test_scores.append(test_score)
+
+        # compute the mean and stds for roc metrics
+        self.tmp_fpr = tmp_fpr[0]
+
+        self.tpr_class_mean = np.mean(tpr_class, axis=0)
+        self.tpr_class_std = np.std(tpr_class, axis=0)
+        self.roc_auc_class_mean = np.mean(roc_auc_class, axis=0)
+        self.roc_auc_class_std = np.std(roc_auc_class, axis=0)
+
+        self.tpr_micro_mean = np.mean(tpr_micro, axis=0)
+        self.tpr_micro_std = np.std(tpr_micro, axis=0)
+        self.roc_auc_micro_mean = np.mean(roc_auc_micro)
+        self.roc_auc_micro_std = np.std(roc_auc_micro)
+
+        self.tpr_macro_mean = np.mean(tpr_macro, axis=0)
+        self.tpr_macro_std = np.std(tpr_macro, axis=0)
+        self.roc_auc_macro_mean = np.mean(roc_auc_macro)
+        self.roc_auc_macro_std = np.std(roc_auc_macro)
+
 
         # Save final scores and means to container
         self.train_scores_mean = np.mean(self.train_scores)
