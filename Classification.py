@@ -133,6 +133,7 @@ def multi_subclass_ufs(subclass_input_list, params_obj, output_path, subclass_la
     unique_labels = get_unique_labels([x for label_list in subclass_input_list[0].shaped_label_list for x in label_list])
     scheme_name = generate_scheme_name(unique_labels, subclass_labels)
     plot_feature_scores_subclass(features_by_subclass, params_obj, scheme_name, output_path)
+    save_feature_scores(features_by_subclass, scheme_name, output_path)
     return sorted_features
 
 
@@ -169,7 +170,7 @@ def generate_products_for_ufs(analysis_obj_list_by_label, shaped_label_list, par
     return products
 
 
-def roc_curve_area_multiclass(x_train, y_train, x_test, y_test):
+def roc_curve_area_multiclass(x_train, y_train, x_test, y_test, svc=None):
     """
     creates a one vs all classifer
     calculates the roc fpr, tpr, for each class with one vs all, micro-average roc, and macro-average roc
@@ -177,6 +178,7 @@ def roc_curve_area_multiclass(x_train, y_train, x_test, y_test):
     :param x_train: x_train lda
     :param y_train: y_train labels
     :param y_test: y_test labels
+    :param svc: SVC classifier from cross validation to use for binary classifications. None for multiclass
     :return: fpr, tpr, and roc_auc for class specific, micro-average, and macro-average
     :rtype: dict
     """
@@ -188,7 +190,11 @@ def roc_curve_area_multiclass(x_train, y_train, x_test, y_test):
         # only 2 classes, and thus only 1 classifier. No OneVsRest classification needed
         y_train_binary = binarize_2class(unique_class_labels, y_train)
         y_test_binary = binarize_2class(unique_class_labels, y_test)
-        clf = SVC(kernel='linear', C=1, probability=True, max_iter=1000)
+        # use saved classifier for binary if available
+        if svc is not None:
+            clf = svc
+        else:
+            clf = SVC(kernel='linear', C=1, probability=True, max_iter=1000)
         clf.fit(x_train, y_train_binary)
         y_score = clf.decision_function(x_test)
 
@@ -279,14 +285,16 @@ def binarize_2class(unique_class_labels, label_data):
     return output_data
 
 
-def plot_roc_cuve(roc_data, schem_name, dirpath, all_features=True):
+def plot_roc_cuve(roc_data, schem_name, dirpath, params_obj, selected_features=None):
     """
     Plot ROC curves for each number of features in a single PDF document. roc_data input is the
     saved results dictionary from a CrossValRun container.
     :param roc_data: saved results dictionary from a CrossValRun container.
     :param schem_name:
     :param dirpath:
-    :param all_features:
+    :param selected_features:
+    :param params_obj: parameters
+    :type params_obj: Parameters
     :return:
     """
     tmp_fpr = roc_data['tmp_fpr'][0]
@@ -294,28 +302,83 @@ def plot_roc_cuve(roc_data, schem_name, dirpath, all_features=True):
     tpr_micro_mean, tpr_micro_std, roc_auc_micro_mean, roc_auc_micro_std = roc_data['tpr_micro_mean'], roc_data['tpr_micro_std'], roc_data['roc_auc_micro_mean'], roc_data['roc_auc_micro_std']
     tpr_macro_mean, tpr_macro_std, roc_auc_macro_mean, roc_auc_macro_std = roc_data['tpr_macro_mean'], roc_data['tpr_macro_std'], roc_data['roc_auc_macro_mean'], roc_data['roc_auc_macro_std']
 
-    if all_features:
-        pdf_output = os.path.join(dirpath, schem_name + '_roc_curves.pdf')
+    if selected_features is None:
+        pdf_output = os.path.join(dirpath, schem_name + '_ROC_curves.pdf')
         with PdfPages(pdf_output) as pdf:
             for index in range(len(tpr_class_mean)):
                 for num, (tpr_class_mean_, tpr_class_std_, roc_auc_class_mean_, roc_auc_class_std_) in enumerate(zip(tpr_class_mean[index], tpr_class_std[index], roc_auc_class_mean[index], roc_auc_class_std[index])):
-                    plt.plot(tmp_fpr, tpr_class_mean_[0], linestyle=':', label='roc_auc_class_{0} {1:0.2f} +/- {2:0.2f}'.format(num, roc_auc_class_mean_, roc_auc_class_std_))
+                    plt.plot(tmp_fpr, tpr_class_mean_[0], linestyle=':', label='Class_{0} {1:0.2f} +/- {2:0.2f}'.format(num + 1, roc_auc_class_mean_, roc_auc_class_std_))
                     plt.fill_between(tmp_fpr, tpr_class_mean_[0] + tpr_class_std_[0], tpr_class_mean_[0] - tpr_class_std_[0], alpha=0.2)
 
                 # plot macro/micro averages only if more than one classifier
                 if len(tpr_class_mean[0]) > 1:
-                    plt.plot(tmp_fpr, tpr_micro_mean[index], color='navy', label='roc_auc_micro {0:0.2f} +/- {1:0.2f}'.format(roc_auc_micro_mean[index], roc_auc_micro_std[index]))
+                    plt.plot(tmp_fpr, tpr_micro_mean[index], color='navy', label='ROC_micro {0:0.2f} +/- {1:0.2f}'.format(roc_auc_micro_mean[index], roc_auc_micro_std[index]))
                     plt.fill_between(tmp_fpr, tpr_micro_mean[index] + tpr_micro_std[index], tpr_micro_mean[index] - tpr_micro_std[index], color='black', alpha=0.4)
-                    plt.plot(tmp_fpr, tpr_macro_mean[index], color='red', label='roc_auc_macro {0:0.2f} +/- {1:0.2f}'.format(roc_auc_macro_mean[index], roc_auc_macro_std[index]))
+                    plt.plot(tmp_fpr, tpr_macro_mean[index], color='red', label='ROC_macro {0:0.2f} +/- {1:0.2f}'.format(roc_auc_macro_mean[index], roc_auc_macro_std[index]))
                     plt.fill_between(tmp_fpr, tpr_macro_mean[index] + tpr_macro_std[index], tpr_macro_mean[index] - tpr_macro_std[index], color='red', alpha=0.4)
                 plt.plot([0, 1], [0, 1], color='black', linestyle='--')
                 plt.xlim([0.0, 1.0])
                 plt.ylim([0.0, 1.05])
 
-                plt.legend(loc='best', fontsize='small')
+                # plot titles, labels, and legends
+                if params_obj.plot_12_custom_title is not None:
+                    plot_title = params_obj.plot_12_custom_title
+                    plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+                elif params_obj.plot_11_show_title:
+                    plot_title = 'ROC: {} Features'.format(index)
+                    plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+                if params_obj.plot_08_show_axes_titles:
+                    plt.xlabel('False Positive Rate', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+                    plt.ylabel('True Positive Rate', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+                plt.xticks(fontsize=params_obj.plot_13_font_size)
+                plt.yticks(fontsize=params_obj.plot_13_font_size)
+                if params_obj.plot_07_show_legend:
+                    plt.legend(loc='best', fontsize=params_obj.plot_13_font_size)
 
-                pdf.savefig()
+                try:
+                    pdf.savefig()
+                except PermissionError:
+                    messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(pdf_output))
+                    plt.savefig()
                 plt.close()
+    else:
+        # plot ROC curve for single number of selected features
+        index = len(selected_features)
+        for num, (tpr_class_mean_, tpr_class_std_, roc_auc_class_mean_, roc_auc_class_std_) in enumerate(zip(tpr_class_mean[index], tpr_class_std[index], roc_auc_class_mean[index], roc_auc_class_std[index])):
+            plt.plot(tmp_fpr, tpr_class_mean_[0], linestyle=':', label='Class_{0} {1:0.2f} +/- {2:0.2f}'.format(num + 1, roc_auc_class_mean_, roc_auc_class_std_))
+            plt.fill_between(tmp_fpr, tpr_class_mean_[0] + tpr_class_std_[0], tpr_class_mean_[0] - tpr_class_std_[0], alpha=0.2)
+
+        # plot macro/micro averages only if more than one classifier
+        if len(tpr_class_mean[0]) > 1:
+            plt.plot(tmp_fpr, tpr_micro_mean[index], color='navy', label='ROC_micro {0:0.2f} +/- {1:0.2f}'.format(roc_auc_micro_mean[index], roc_auc_micro_std[index]))
+            plt.fill_between(tmp_fpr, tpr_micro_mean[index] + tpr_micro_std[index], tpr_micro_mean[index] - tpr_micro_std[index], color='black', alpha=0.4)
+            plt.plot(tmp_fpr, tpr_macro_mean[index], color='red', label='ROC_macro {0:0.2f} +/- {1:0.2f}'.format(roc_auc_macro_mean[index], roc_auc_macro_std[index]))
+            plt.fill_between(tmp_fpr, tpr_macro_mean[index] + tpr_macro_std[index], tpr_macro_mean[index] - tpr_macro_std[index], color='red', alpha=0.4)
+        plt.plot([0, 1], [0, 1], color='black', linestyle='--')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+
+        # plot titles, labels, and legends
+        if params_obj.plot_12_custom_title is not None:
+            plot_title = params_obj.plot_12_custom_title
+            plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        elif params_obj.plot_11_show_title:
+            plot_title = 'ROC: {} Features'.format(len(selected_features))
+            plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        if params_obj.plot_08_show_axes_titles:
+            plt.xlabel('False Positive Rate', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+            plt.ylabel('True Positive Rate', fontsize=params_obj.plot_13_font_size, fontweight='bold')
+        plt.xticks(fontsize=params_obj.plot_13_font_size)
+        plt.yticks(fontsize=params_obj.plot_13_font_size)
+        if params_obj.plot_07_show_legend:
+            plt.legend(loc='best', fontsize='small')
+        output_name = os.path.join(dirpath, schem_name + '_final-ROC' + params_obj.plot_02_extension)
+        try:
+            plt.savefig(output_name)
+        except PermissionError:
+            messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_name))
+            plt.savefig(output_name)
+        plt.close()
 
 
 def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, subclass_labels):
@@ -391,14 +454,16 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
     crossval_acc_data = (all_results_by_feats['train_scores_mean'], all_results_by_feats['train_scores_std'], all_results_by_feats['test_scores_mean'], all_results_by_feats['test_scores_std'])
     unique_labels = get_unique_labels(label_list)
     scheme_name = generate_scheme_name(unique_labels, subclass_labels)
-    save_crossval_score(crossval_acc_data, scheme_name, outputdir)
+    crossval_file = save_crossval_score(crossval_acc_data, scheme_name, outputdir)
+    save_roc_data(all_results_by_feats, scheme_name, crossval_file)
     plot_crossval_scores(crossval_acc_data, scheme_name, params_obj, outputdir)
-    plot_roc_cuve(all_results_by_feats, scheme_name, outputdir, all_features=True)
-    plot_crossval_auc(all_results_by_feats['roc_auc_micro_mean'], all_results_by_feats['roc_auc_micro_std'], scheme_name, params_obj, outputdir)
+    plot_roc_cuve(all_results_by_feats, scheme_name, outputdir, params_obj)
+    # plot_crossval_auc(all_results_by_feats['roc_auc_micro_mean'], all_results_by_feats['roc_auc_micro_std'], scheme_name, params_obj, outputdir)
 
     # determine best features list from crossval scores
     best_num_feats, best_score = peak_crossval_score_detect(all_results_by_feats['test_scores_mean'], params_obj.classif_2_score_dif_tol)
     output_features = features_list[0: best_num_feats]
+    plot_roc_cuve(all_results_by_feats, scheme_name, outputdir, params_obj, selected_features=output_features)
     return output_features, best_score, crossval_acc_data
 
 
@@ -547,7 +612,7 @@ def lda_svc_best_feats(flat_subset_list, features_list, params_obj, output_dir, 
     # Organize outputs by input file for easier viewing, then save
     x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file = prep_outputs_by_file_new(x_lda, y_pred, probs, flat_subset_list)
     save_lda_and_predictions(scheme, x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file, output_dir, unknowns_bool=False)
-    plot_probabilities(params_obj, scheme, probs_by_file, output_dir, unknown_bool=False)
+    # plot_probabilities(params_obj, scheme, probs_by_file, output_dir, unknown_bool=False)
     return scheme
 
 
@@ -1294,6 +1359,39 @@ def plot_sklearn_lda_1ld(class_scheme, marker, color, dot_size):
                     alpha=0.9, label=unique_labels[label], s=dot_size ** 2 * 2, edgecolors='black')
 
 
+def save_feature_scores(features_by_subclass, scheme_name, output_path):
+    """
+    Save CSV output of feature scores
+    :param features_by_subclass: list of CFeatures
+    :type features_by_subclass: list[list[CFeature]]
+    :param scheme_name: (string) name of scheme for labeling purposes
+    :param output_path: directory in which to save output
+    :return: void
+    """
+    outfilename = os.path.join(output_path, scheme_name + '_UFS.csv')
+    output_string = 'UFS (Feature Selection) Results\n'
+
+    lineheader = 'Collision Voltage (V),Mean Score,StDev Score\n'
+    output_string += lineheader
+    for feature_list in features_by_subclass:
+        if feature_list[0].subclass_label is not '0':
+            output_string += 'Subclass: {}\n'.format(feature_list[0].subclass_label)
+        for feature in feature_list:
+            line = '{},{:.4f},{:.4f}\n'.format(feature.cv, feature.mean_score, feature.std_dev_score)
+            output_string += line
+
+    try:
+        with open(outfilename, 'w') as outfile:
+            outfile.write(output_string)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving',
+                             'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(
+                                 outfilename))
+        with open(outfilename, 'w') as outfile:
+            outfile.write(output_string)
+    return outfilename
+
+
 def save_lda_and_predictions(scheme, lda_transform_data_by_file, predicted_class_by_file, probs_by_file, filenames, output_path, unknowns_bool):
     """
     Unified CSV output method for saving classification results (data transformed along LD axes and predicted
@@ -1362,16 +1460,16 @@ def save_crossval_score(crossval_data, scheme_name, outputpath):
     :param crossval_data: tuple of (training means, training stds, test means, test stds) lists
     :param scheme_name: (string) name of scheme for labeling purposes
     :param outputpath: directory in which to save output
-    :return: void
+    :return: filepath saved
     """
     train_score_means = crossval_data[0]
     train_score_stds = crossval_data[1]
     test_score_means = crossval_data[2]
     test_score_stds = crossval_data[3]
     outfilename = os.path.join(outputpath, scheme_name + '_crossval.csv')
-    output_string = ''
+    output_string = 'Cross Validation Accuracy results\n'
 
-    lineheader = 'num_feats, train_score_mean, train_score_std, test_score_mean, test_score_std, \n'
+    lineheader = 'Num_Features, train_score_mean, train_score_std, test_score_mean, test_score_std, \n'
     output_string += lineheader
     for ind in range(len(train_score_means)):
         line = '{}, {}, {}, {}, {}, \n'.format(ind+1, train_score_means[ind], train_score_stds[ind],
@@ -1384,6 +1482,52 @@ def save_crossval_score(crossval_data, scheme_name, outputpath):
     except PermissionError:
         messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(outfilename))
         with open(outfilename, 'w') as outfile:
+            outfile.write(output_string)
+    return outfilename
+
+
+def save_roc_data(roc_data, scheme_name, outputname):
+    """
+    Save ROC information from scheme training to CSV file for reference. Opens previously saved
+    crossval.csv file in append mode.
+    :param roc_data: dictionary of lists of ROC/AUC data. See CrossValRun container save_results
+    method for more information
+    :param scheme_name: string
+    :param outputname: full file path to append to
+    :return: void
+    """
+    tpr_class_mean, tpr_class_std, roc_auc_class_mean, roc_auc_class_std = roc_data['tpr_class_mean'], roc_data['tpr_class_std'], roc_data['roc_auc_class_mean'], roc_data['roc_auc_class_std']
+    tpr_micro_mean, tpr_micro_std, roc_auc_micro_mean, roc_auc_micro_std = roc_data['tpr_micro_mean'], roc_data['tpr_micro_std'], roc_data['roc_auc_micro_mean'], roc_data['roc_auc_micro_std']
+    tpr_macro_mean, tpr_macro_std, roc_auc_macro_mean, roc_auc_macro_std = roc_data['tpr_macro_mean'], roc_data['tpr_macro_std'], roc_data['roc_auc_macro_mean'], roc_data['roc_auc_macro_std']
+    num_classes = len(tpr_class_mean[0])
+
+    # outfilename = os.path.join(outputpath, scheme_name + '_auc.csv')
+    output_string = '\nAUC (Area Under ROC Curve) Results\n'
+
+    # write header
+    if num_classes == 1:
+        lineheader = 'Num_Features,AUC Avg,AUC StDev\n'
+    else:
+        class_header1 = ','.join(['Class {} Avg'.format(x + 1) for x in range(num_classes)])
+        class_header2 = ','.join(['Class {} StDev'.format(x + 1) for x in range(num_classes)])
+        lineheader = 'Num_Features,{},{},Micro Avg,Micro StDev,Macro Avg,Macro StDev\n'.format(class_header1, class_header2)
+    output_string += lineheader
+
+    for ind in range(len(tpr_class_mean)):
+        if num_classes == 1:
+            line = '{},{:.4f},{:.4f}\n'.format(ind + 1, roc_auc_class_mean[ind][0], roc_auc_class_std[ind][0])
+        else:
+            class_auc_means = ','.join(['{:.4f}'.format(x) for x in roc_auc_class_mean[ind]])
+            class_auc_stds = ','.join(['{:.4f}'.format(x) for x in roc_auc_class_std[ind]])
+            line = '{},{},{},{:.4f},{:.4f},{:.4f},{:.4f}\n'.format(ind + 1, class_auc_means, class_auc_stds, roc_auc_micro_mean[ind], roc_auc_micro_std[ind], roc_auc_macro_mean[ind], roc_auc_macro_std[ind])
+        output_string += line
+
+    try:
+        with open(outputname, 'a') as outfile:
+            outfile.write(output_string)
+    except PermissionError:
+        messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(outputname))
+        with open(outputname, 'a') as outfile:
             outfile.write(output_string)
 
 
@@ -1787,7 +1931,7 @@ class CrossValRun(object):
                 train_lda = lda.transform(final_train_data)
                 test_lda = lda.transform(final_test_data)
 
-                this_roc_output = roc_curve_area_multiclass(train_lda, final_train_labels, test_lda, final_test_labels)
+                this_roc_output = roc_curve_area_multiclass(train_lda, final_train_labels, test_lda, final_test_labels, svc)
                 roc_outputs.append(this_roc_output)
 
                 train_score = svc.score(train_lda, final_train_labels)
@@ -1870,7 +2014,7 @@ class CrossValRun(object):
             train_lda = lda.transform(final_train_data)
             test_lda = lda.transform(final_test_data)
 
-            roc_curve_multiclass_out = roc_curve_area_multiclass(train_lda, final_train_labels, test_lda, final_test_labels)
+            roc_curve_multiclass_out = roc_curve_area_multiclass(train_lda, final_train_labels, test_lda, final_test_labels, svc)
             roc_outputs.append(roc_curve_multiclass_out)
 
             train_score = svc.score(train_lda, final_train_labels)
