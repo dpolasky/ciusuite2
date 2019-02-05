@@ -195,7 +195,7 @@ def roc_curve_area_multiclass(x_train, y_train, x_test, y_test, svc=None):
             clf = svc
         else:
             clf = SVC(kernel='linear', C=1, probability=True, max_iter=1000)
-        clf.fit(x_train, y_train_binary)
+            clf.fit(x_train, y_train_binary)
         y_score = clf.decision_function(x_test)
 
         # generate ROC curve
@@ -325,7 +325,7 @@ def plot_roc_cuve(roc_data, schem_name, dirpath, params_obj, selected_features=N
                     plot_title = params_obj.plot_12_custom_title
                     plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
                 elif params_obj.plot_11_show_title:
-                    plot_title = 'ROC: {} Features'.format(index)
+                    plot_title = 'ROC: {} Features'.format(index + 1)
                     plt.title(plot_title, fontsize=params_obj.plot_13_font_size, fontweight='bold')
                 if params_obj.plot_08_show_axes_titles:
                     plt.xlabel('False Positive Rate', fontsize=params_obj.plot_13_font_size, fontweight='bold')
@@ -464,6 +464,7 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
     best_num_feats, best_score = peak_crossval_score_detect(all_results_by_feats['test_scores_mean'], params_obj.classif_2_score_dif_tol)
     output_features = features_list[0: best_num_feats]
     plot_roc_cuve(all_results_by_feats, scheme_name, outputdir, params_obj, selected_features=output_features)
+    print('Cross validation complete!')
     return output_features, best_score, crossval_acc_data
 
 

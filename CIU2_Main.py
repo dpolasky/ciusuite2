@@ -17,8 +17,6 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-test
 """
 if __name__ == '__main__':
     print('Loading CIUSuite 2...')
@@ -1692,7 +1690,7 @@ def parse_classification_template(template_file):
                 subclass_labels = splits[1:]
                 for index, subclass_label in enumerate(subclass_labels):
                     if subclass_label is '':
-                        subclass_labels[index] = None
+                        subclass_labels.remove(subclass_labels[index])
 
             elif line.lower().startswith('folder'):
                 splits = line.rstrip('\n').split(',')
