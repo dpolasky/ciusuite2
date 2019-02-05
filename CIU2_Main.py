@@ -30,6 +30,7 @@ import subprocess
 import pickle
 import sys
 import multiprocessing
+import logging
 
 from CIU_analysis_obj import CIUAnalysisObj
 import CIU_Params
@@ -64,6 +65,7 @@ hard_agilent_ext_path = os.path.join(root_dir, os.path.join('Agilent_Extractor',
 hard_tooltips_file = os.path.join(root_dir, 'tooltips.txt')
 help_file = os.path.join(root_dir, 'CIUSuite2_Manual.pdf')
 about_file = os.path.join(root_dir, 'README.txt')
+log_file = os.path.join(root_dir, 'ciu2.log')
 
 
 class CIUSuite2(object):
@@ -1772,12 +1774,46 @@ def load_analysis_obj(analysis_filename):
     return analysis_obj
 
 
+def init_logs():
+    """
+    Initialize logging code for CIUSuite 2. Logs debug information to file, warning and above to file and
+    console output. NOTE: using the WARNING level really as INFO to avoid GUI builder logs from
+    image creation being displayed on program start.
+    :return: logger
+    """
+    # logging.basicConfig(level=logging.INFO, filename='ciu2.log')
+    # mylogger = logging.getLogger(__name__)
+    mylogger = logging.getLogger()
+    mylogger.setLevel(logging.DEBUG)
+
+    # create file handler which logs even debug messages
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.DEBUG)
+    file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    file_handler.setFormatter(file_formatter)
+    mylogger.addHandler(file_handler)
+
+    # create console handler with a higher log level
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.WARNING)
+    console_formatter = logging.Formatter('%(message)s')
+    console_handler.setFormatter(console_formatter)
+    mylogger.addHandler(console_handler)
+    return mylogger
+
+
 if __name__ == '__main__':
     # Build the GUI and start its mainloop (run) method
+    logger = init_logs()
     multiprocessing.freeze_support()
     root = tk.Tk()
     root.withdraw()
-    print('building GUI...')
+    logging.warning('Building GUI...')
     ciu_app = CIUSuite2(root)
-    print('Starting CIUSuite 2')
+    logging.warning('Starting CIUSuite 2')
     ciu_app.run()
+
+    # closer handlers once finished
+    for handler in logger.handlers:
+        handler.close()
+        logger.removeFilter(handler)

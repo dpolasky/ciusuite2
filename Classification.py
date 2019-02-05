@@ -14,6 +14,8 @@ import pickle
 import os
 import itertools
 import random
+import logging
+import time
 import tkinter
 from tkinter import messagebox
 from tkinter import ttk
@@ -51,6 +53,7 @@ def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_ob
     :return: ClassificationScheme object with the generated scheme
     :rtype: ClassificationScheme
     """
+    start_time = time.time()
     # Assemble Gaussian feature information if using Gaussian mode
     if params_obj.classif_3_unk_mode == 'Gaussian':
         max_num_gaussians = prep_all_gaussian_data_2d(cl_inputs_by_label, params_obj)
@@ -64,6 +67,7 @@ def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_ob
 
         # run feature selection and crossvalidation to select best features automatically
         all_features = multi_subclass_ufs(list_classif_inputs, params_obj, output_dir, subclass_labels)
+        logging.debug('UFS finished: {:.2f}s'.format(time.time() - start_time))
 
         # assess all features to determine which to use in the final scheme
         best_features, crossval_score, all_crossval_data = crossval_main_new(cl_inputs_by_label, output_dir, params_obj, all_features, subclass_labels)
@@ -71,6 +75,7 @@ def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_ob
         # Manual mode: use the provided features and run limited crossvalidation
         best_features, crossval_score, all_crossval_data = crossval_main_new(cl_inputs_by_label, output_dir, params_obj, known_feats, subclass_labels)
         best_features = known_feats
+    logging.debug('crossval finished: {:.2f}s'.format(time.time() - start_time))
 
     # perform LDA and classification on the selected/best features
     shaped_subsets = rearrange_ciu_by_feats(cl_inputs_by_label, best_features, params_obj)
@@ -83,6 +88,7 @@ def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_ob
 
     # plot output here for now, will probably move eventually
     plot_classification_decision_regions(constructed_scheme, params_obj, output_dir)
+    logging.debug('classif (scheme = {}) finished: {:.2f}s'.format(constructed_scheme.name, time.time() - start_time))
     return constructed_scheme
 
 
@@ -399,7 +405,7 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
     min_class_size = np.min([len(x) for x in cl_inputs_by_label])
     training_size = min_class_size - params_obj.classif_9_test_size
     if training_size < 2:
-        print('WARNING! Testing size provided ({}) was too large: at least one class had less than 2 replicates of training data. Test size of 1 used instead.'.format(params_obj.classif_9_test_size))
+        logging.warning('WARNING! Testing size provided ({}) was too large: at least one class had less than 2 replicates of training data. Test size of 1 used instead.'.format(params_obj.classif_9_test_size))
         training_size = min_class_size - 1
     label_list = [class_list[0].class_label for class_list in cl_inputs_by_label]
 
@@ -424,7 +430,8 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
     all_results_by_feats = {}
     for ind, feature in enumerate(features_list[:max_features]):
         # Generate all combinations - NOTE: assumes that if subclasses are present, features know their subclass (should always be true)
-        print('Performing cross validation for {} of {} features'.format(ind + 1, len(features_list[:max_features])))
+        logging.warning('Performing cross validation for {} of {} features'.format(ind + 1, len(features_list[:max_features])))
+        # print('Performing cross validation for {} of {} features'.format(ind + 1, len(features_list[:max_features])))
         current_features_list.append(feature)
 
         # format all data
@@ -464,7 +471,7 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
     best_num_feats, best_score = peak_crossval_score_detect(all_results_by_feats['test_scores_mean'], params_obj.classif_2_score_dif_tol)
     output_features = features_list[0: best_num_feats]
     plot_roc_cuve(all_results_by_feats, scheme_name, outputdir, params_obj, selected_features=output_features)
-    print('Cross validation complete!')
+    logging.warning('Cross validation complete!')
     return output_features, best_score, crossval_acc_data
 
 
@@ -1891,6 +1898,8 @@ class CrossValRun(object):
         roc_outputs = []
 
         # Randomly crossvalidate num_iterations times
+        iteration_times = []
+        current_time = time.time()
         for _ in range(num_iterations):
             allclass_traintest_combos = []
             # For each class, randomly select training and test datasets and generate a data combination
@@ -1939,9 +1948,12 @@ class CrossValRun(object):
                 test_score = svc.score(test_lda, final_test_labels)
                 self.train_scores.append(train_score)
                 self.test_scores.append(test_score)
+            iteration_times.append(time.time() - current_time)
+            current_time = time.time()
 
         # Save final scores and means to container
         self.save_results(roc_outputs)
+        logging.debug('Avg crossval iteration: {:.3f}s, total: {:.2f}s'.format(np.mean(iteration_times), np.sum(iteration_times)))
 
     def divide_data_and_run_lda(self):
         """
@@ -1980,6 +1992,8 @@ class CrossValRun(object):
         running many thousands (or more) cross validations per feature when a smaller sample size would suffice.
         :return: void (saves to self.all_products)
         """
+        iteration_times = []
+        current_time = time.time()
         # Bootstrap (if required) by randomly sampling from all possible products of the class training/test datasets
         if max_crossval_iterations == 0:
             selected_products = itertools.product(*self.all_classes_combo_lists)
@@ -2022,9 +2036,12 @@ class CrossValRun(object):
             test_score = svc.score(test_lda, final_test_labels)
             self.train_scores.append(train_score)
             self.test_scores.append(test_score)
+            iteration_times.append(time.time() - current_time)
+            current_time = time.time()
 
         # compute the mean and stds for roc metrics and crossval accuracy
         self.save_results(roc_outputs)
+        logging.debug('Avg crossval iteration: {:.3f}s, total: {:.2f}s'.format(np.mean(iteration_times), np.sum(iteration_times)))
 
     def save_results(self, roc_outputs):
         """
