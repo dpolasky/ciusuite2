@@ -37,6 +37,9 @@ if TYPE_CHECKING:
     from CIU_Params import Parameters
     from Feature_Detection import Feature
 
+# load main logger
+logger = logging.getLogger('main')
+
 
 def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_obj, output_dir, known_feats=None):
     """
@@ -67,7 +70,7 @@ def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_ob
 
         # run feature selection and crossvalidation to select best features automatically
         all_features = multi_subclass_ufs(list_classif_inputs, params_obj, output_dir, subclass_labels)
-        logging.debug('UFS finished: {:.2f}s'.format(time.time() - start_time))
+        logger.debug('UFS finished: {:.2f}s'.format(time.time() - start_time))
 
         # assess all features to determine which to use in the final scheme
         best_features, crossval_score, all_crossval_data = crossval_main_new(cl_inputs_by_label, output_dir, params_obj, all_features, subclass_labels)
@@ -75,7 +78,7 @@ def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_ob
         # Manual mode: use the provided features and run limited crossvalidation
         best_features, crossval_score, all_crossval_data = crossval_main_new(cl_inputs_by_label, output_dir, params_obj, known_feats, subclass_labels)
         best_features = known_feats
-    logging.debug('crossval finished: {:.2f}s'.format(time.time() - start_time))
+    logger.debug('crossval finished: {:.2f}s'.format(time.time() - start_time))
 
     # perform LDA and classification on the selected/best features
     shaped_subsets = rearrange_ciu_by_feats(cl_inputs_by_label, best_features, params_obj)
@@ -88,7 +91,7 @@ def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_ob
 
     # plot output here for now, will probably move eventually
     plot_classification_decision_regions(constructed_scheme, params_obj, output_dir)
-    logging.debug('classif (scheme = {}) finished: {:.2f}s'.format(constructed_scheme.name, time.time() - start_time))
+    logger.debug('classif (scheme = {}) finished: {:.2f}s'.format(constructed_scheme.name, time.time() - start_time))
     return constructed_scheme
 
 
@@ -405,7 +408,7 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
     min_class_size = np.min([len(x) for x in cl_inputs_by_label])
     training_size = min_class_size - params_obj.classif_9_test_size
     if training_size < 2:
-        logging.warning('WARNING! Testing size provided ({}) was too large: at least one class had less than 2 replicates of training data. Test size of 1 used instead.'.format(params_obj.classif_9_test_size))
+        logger.warning('WARNING! Testing size provided ({}) was too large: at least one class had less than 2 replicates of training data. Test size of 1 used instead.'.format(params_obj.classif_9_test_size))
         training_size = min_class_size - 1
     label_list = [class_list[0].class_label for class_list in cl_inputs_by_label]
 
@@ -430,8 +433,7 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
     all_results_by_feats = {}
     for ind, feature in enumerate(features_list[:max_features]):
         # Generate all combinations - NOTE: assumes that if subclasses are present, features know their subclass (should always be true)
-        logging.warning('Performing cross validation for {} of {} features'.format(ind + 1, len(features_list[:max_features])))
-        # print('Performing cross validation for {} of {} features'.format(ind + 1, len(features_list[:max_features])))
+        logger.info('Performing cross validation for {} of {} features'.format(ind + 1, len(features_list[:max_features])))
         current_features_list.append(feature)
 
         # format all data
@@ -471,7 +473,7 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
     best_num_feats, best_score = peak_crossval_score_detect(all_results_by_feats['test_scores_mean'], params_obj.classif_2_score_dif_tol)
     output_features = features_list[0: best_num_feats]
     plot_roc_cuve(all_results_by_feats, scheme_name, outputdir, params_obj, selected_features=output_features)
-    logging.warning('Cross validation complete!')
+    logger.info('Cross validation complete!')
     return output_features, best_score, crossval_acc_data
 
 
@@ -641,7 +643,7 @@ def run_lda_svc(x_data, label_data):
     try:
         svm.fit(train_lda, label_data)
     except ValueError:
-        print('Error in SVM fitting. This should not be reached - check your input data for duplicates (same input used in multiple classes)')
+        logger.error('Error in SVM fitting. This should not be reached - check your input data for duplicates (same input used in multiple classes)')
 
     return svm, lda
 
@@ -719,7 +721,7 @@ def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_overrid
                 classif_data.append(cent_list)
             classif_data = np.asarray(classif_data).T
     else:
-        print('WARNING: INVALID CLASSIFICATION MODE: {}'.format(params_obj.classif_3_unk_mode))
+        logger.error('WARNING: INVALID CLASSIFICATION MODE: {}'.format(params_obj.classif_3_unk_mode))
 
     return classif_data
 
@@ -752,7 +754,7 @@ def prep_gaussfeats_for_classif(features_list, analysis_obj):
                 cv_index = np.where(analysis_obj.axes[1] == cv)[0][0]
             except IndexError:
                 # A gaussian had a CV that was not in the analysis object's CV axis! This should be caught elsewhere
-                print('Gaussian had CV {}, but that CV is not in the CV axis of this file (after axes were equalized across all files). It will be ignored.'.format(cv))
+                logger.warning('Gaussian had CV {}, but that CV is not in the CV axis of this file (after axes were equalized across all files). It will be ignored.'.format(cv))
                 continue
 
             this_cv_gaussian = [x for x in feature.gaussians if x.cv == cv]
@@ -1271,7 +1273,7 @@ def plot_classification_decision_regions(class_scheme, params_obj, output_path, 
                             alpha=0.5, label=unknown_tup[1], s=params_obj.plot_14_dot_size ** 2, edgecolors='black')
 
     if shape_lda[1] == 3:
-        print('NOTE: 3D plots are not fully optimized. Labels and font sizes may not be perfect.')
+        logger.info('NOTE: 3D plots are not fully optimized. Labels and font sizes may not be perfect.')
         ax = Axes3D(fig)
         plot_data = class_scheme.transformed_test_data
         y_values = class_scheme.numeric_labels
@@ -1699,7 +1701,7 @@ class ClInput(object):
             if subclass_label is None:
                 # no label provided - this is for non-subclass mode, where the dict will have only 1 entry. Return it (and warn if >1 entry)
                 if len(self.subclass_dict) > 1:
-                    print('WARNING: single subclass requested but there are more than one. Erratic returns possible')
+                    logger.warning('WARNING: single subclass requested but there are more than one. Erratic returns possible')
                 for key, obj in self.subclass_dict.items():
                     return obj
             else:
@@ -1790,7 +1792,7 @@ class ClassifInput(object):
             flat_obj_list = [x for analysis_obj_list in self.analysis_objs_by_label for x in analysis_obj_list]
             return flat_obj_list
         else:
-            print('Invalid type request. Valid values are "label" or "obj"')
+            logger.warning('Invalid type request. Valid values are "label" or "obj"')
 
     def __str__(self):
         """
@@ -1953,7 +1955,7 @@ class CrossValRun(object):
 
         # Save final scores and means to container
         self.save_results(roc_outputs)
-        logging.debug('Avg crossval iteration: {:.3f}s, total: {:.2f}s'.format(np.mean(iteration_times), np.sum(iteration_times)))
+        logger.debug('Avg crossval iteration: {:.3f}s, total: {:.2f}s, {} iterations'.format(np.mean(iteration_times), np.sum(iteration_times), len(iteration_times)))
 
     def divide_data_and_run_lda(self):
         """
@@ -2041,7 +2043,7 @@ class CrossValRun(object):
 
         # compute the mean and stds for roc metrics and crossval accuracy
         self.save_results(roc_outputs)
-        logging.debug('Avg crossval iteration: {:.3f}s, total: {:.2f}s'.format(np.mean(iteration_times), np.sum(iteration_times)))
+        logger.debug('Avg crossval iteration: {:.3f}s, total: {:.2f}s, {} iterations'.format(np.mean(iteration_times), np.sum(iteration_times), len(iteration_times)))
 
     def save_results(self, roc_outputs):
         """

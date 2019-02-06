@@ -31,7 +31,7 @@ import pickle
 import sys
 import multiprocessing
 import logging
-
+from logging.handlers import RotatingFileHandler
 from CIU_analysis_obj import CIUAnalysisObj
 import CIU_Params
 import Raw_Processing
@@ -1782,20 +1782,21 @@ def init_logs():
     :return: logger
     """
     # logging.basicConfig(level=logging.INFO, filename='ciu2.log')
-    # mylogger = logging.getLogger(__name__)
-    mylogger = logging.getLogger()
+    mylogger = logging.getLogger('main')
     mylogger.setLevel(logging.DEBUG)
 
     # create file handler which logs even debug messages
-    file_handler = logging.FileHandler(log_file)
+    # file_handler = logging.FileHandler(log_file)
+    file_handler = RotatingFileHandler(log_file, maxBytes=10 * 1024 * 1024, backupCount=1)
+
     file_handler.setLevel(logging.DEBUG)
-    file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     file_handler.setFormatter(file_formatter)
     mylogger.addHandler(file_handler)
 
     # create console handler with a higher log level
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.WARNING)
+    console_handler.setLevel(logging.INFO)
     console_formatter = logging.Formatter('%(message)s')
     console_handler.setFormatter(console_formatter)
     mylogger.addHandler(console_handler)
@@ -1808,9 +1809,9 @@ if __name__ == '__main__':
     multiprocessing.freeze_support()
     root = tk.Tk()
     root.withdraw()
-    logging.warning('Building GUI...')
+    logger.info('Building GUI...')
     ciu_app = CIUSuite2(root)
-    logging.warning('Starting CIUSuite 2')
+    logger.info('Starting CIUSuite 2')
     ciu_app.run()
 
     # closer handlers once finished
