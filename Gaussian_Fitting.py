@@ -15,6 +15,7 @@ import os
 import math
 import peakutils
 import pickle
+import logging
 import tkinter
 from tkinter import filedialog
 import scipy.signal
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
 protein_prefix = 'p'
 nonprotein_prefix = 'np'
 baseline_prefix = 'b'
+logger = logging.getLogger('main')
 
 
 class Gaussian(object):
@@ -229,7 +231,7 @@ def main_gaussian_lmfit(analysis_obj, params_obj, outputpath):
     :return: updated analysis object
     :rtype: CIUAnalysisObj
     """
-    print('Fitting Gaussians for file {}...\n'.format(analysis_obj.short_filename))
+    logger.info('Fitting Gaussians for file {}...\n'.format(analysis_obj.short_filename))
     start_time = time.time()
 
     cv_col_data = np.swapaxes(analysis_obj.ciu_data, 0, 1)
@@ -251,7 +253,7 @@ def main_gaussian_lmfit(analysis_obj, params_obj, outputpath):
             cv = analysis_obj.axes[1][cv_index]
             gaussian_guess_list = guess_gauss_init(cv_col_intensities, analysis_obj.axes[0], cv, rsq_cutoff=0.99, amp_cutoff=params_obj.gaussian_2_int_threshold)
 
-            print('Starting fit at CV {} of {}'.format(cv_index + 1, len(cv_col_data)))
+            logger.info('Starting fit at CV {} of {}'.format(cv_index + 1, len(cv_col_data)))
 
             # Run fitting and scoring across the provided range of peak options with multiprocessing
             argslist = [analysis_obj.axes[0], cv_col_intensities, gaussian_guess_list, params_obj, outputfolder]
@@ -291,7 +293,7 @@ def main_gaussian_lmfit(analysis_obj, params_obj, outputpath):
 
     # output final results
     fit_time = time.time() - start_time
-    print('fitting done in {:.2f} s'.format(fit_time))
+    logger.info('fitting done in {:.2f} s'.format(fit_time))
 
     prot_gaussians = [fit.gaussians_protein for fit in best_fits_by_cv]
     nonprot_gaussians = [fit.gaussians_nonprotein for fit in best_fits_by_cv]
@@ -314,7 +316,7 @@ def main_gaussian_lmfit(analysis_obj, params_obj, outputpath):
     save_fits_pdf_new(analysis_obj, params_obj, best_fits_by_cv, outputpath)
     combined_output = save_gauss_params(analysis_obj, outputpath, combine=params_obj.gaussian_5_combine_outputs)
     plot_time = time.time() - start_time - fit_time
-    print('plotting/pdf output done in {:.2f} s'.format(plot_time))
+    logger.info('plotting/pdf output done in {:.2f} s'.format(plot_time))
 
     return analysis_obj, combined_output
 
@@ -389,8 +391,8 @@ def sequential_fit_rsq(all_peak_guesses, dt_axis, cv_col_intensities, cv, conver
             fit_bounds_upper.extend(fit_bounds_upper_append)
         except IndexError:
             # No converge with all estimated peaks. Continue with final estimate
-            print('Included all {} peaks found, but r^2 still less than convergence criterion. '
-                  'Poor fitting possible'.format(i + 1))
+            logger.warning('Included all {} peaks found, but r^2 still less than convergence criterion. '
+                           'Poor fitting possible'.format(i + 1))
             break
 
         # Run fitting (round 1)
@@ -987,7 +989,7 @@ def compute_area_penalty(gaussian, list_of_gaussians, dt_axis, penalty_mode):
         elif penalty_mode == 'relaxed':
             my_penalty = (shared_area_ratio - 0.4) ** 4
         else:
-            print('invalid penalty mode: {}. Penalty set to 0'.format(penalty_mode))
+            logger.error('invalid penalty mode: {}. Penalty set to 0'.format(penalty_mode))
             my_penalty = 0
 
         total_penalty += my_penalty
@@ -1306,7 +1308,7 @@ def parse_gaussian_list_from_file(filepath):
                 try:
                     dt_axis = np.asarray([float(x) for x in splits[1:]])
                 except ValueError:
-                    print('DT axis could not be read. Line was: {}'.format(line))
+                    logger.error('DT axis could not be read. Line was: {}'.format(line))
                     dt_axis = []
                 continue
 
@@ -1315,7 +1317,7 @@ def parse_gaussian_list_from_file(filepath):
                 cv = float(splits[0])
                 cvs.append(cv)
             except ValueError:
-                print('Invalid CV in line: {}; value must be a number. Skipping this line'.format(line))
+                logger.error('Invalid CV in line: {}; value must be a number. Skipping this line'.format(line))
                 continue
             except IndexError:
                 # no data on this line, continue
@@ -1332,7 +1334,7 @@ def parse_gaussian_list_from_file(filepath):
                     width = fwhm_to_sigma(float(splits[index + 3]))
                     gaussians.append(Gaussian(amp, cent, width, cv, pcov=None, protein_bool=True))
                 except (IndexError, ValueError):
-                    print('Invalid values for Gaussian. Values were: {}. Gaussian could not be parsed and was skipped'.format(splits[index:index + 3]))
+                    logger.error('Invalid values for Gaussian. Values were: {}. Gaussian could not be parsed and was skipped'.format(splits[index:index + 3]))
                 index += 4
             gaussian_list_by_cv.append(gaussians)
 

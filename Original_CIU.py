@@ -10,6 +10,7 @@ import numpy as np
 import os
 import scipy.interpolate
 from tkinter import messagebox
+import logging
 
 from CIU_analysis_obj import CIUAnalysisObj
 from CIU_Params import Parameters
@@ -19,6 +20,7 @@ from CIU_raw import CIURaw
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
+logger = logging.getLogger('main')
 
 
 def ciu_plot(analysis_obj, params_obj, output_dir):
@@ -425,7 +427,7 @@ def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir, no_pl
     # ensure that the data are the same in both dimensions, and interpolate if not matched in either
     if not len(analysis_obj1.axes[0]) == len(analysis_obj2.axes[0]) or not len(analysis_obj1.axes[1]) == len(analysis_obj2.axes[1]):
         interp_flag = True
-        print('axes in files {}, {} did not match; interpolating to compare'.format(
+        logger.warning('axes in files {}, {} did not match; interpolating to compare'.format(
             os.path.basename(analysis_obj1.filename),
             os.path.basename(analysis_obj2.filename)))
         num_bins_dt = np.max([len(analysis_obj1.axes[0]), len(analysis_obj2.axes[0])])  # length of the DT axis

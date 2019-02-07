@@ -476,7 +476,11 @@ def check_axes_crop(analysis_obj_list):
         if np.median(bin_spacings_cv) < min_cv_spacing:
             min_cv_spacing = scipy.stats.mode(bin_spacings_cv)[0][0]
 
-    return [dt_start_max, dt_end_min, cv_start_max, cv_end_min], [min_dt_spacing, min_cv_spacing]
+    crop_vals = [dt_start_max, dt_end_min, cv_start_max, cv_end_min], [min_dt_spacing, min_cv_spacing]
+    for val in crop_vals:
+        if val < 0:
+            logger.error('Negative value found in axes checking. Errors possible. Please check the raw data')
+    return crop_vals
 
 
 def check_axes_interp(crop_vals, axes_spacings):

@@ -19,7 +19,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 if __name__ == '__main__':
-    print('Loading CIUSuite 2...')
+    print('Loading CIUSuite 2 modules...')
 import pygubu
 import tkinter as tk
 from tkinter import filedialog
@@ -748,7 +748,7 @@ class CIUSuite2(object):
                 # Determine if a file range has been specified
                 files_to_read = self.check_file_range_entries()
                 self.progress_started()
-                print('\n**** Starting Gaussian Fitting - THIS MAY TAKE SOME TIME - CIUSuite 2 will not respond until fitting is completed ****')
+                logger.info('\n**** Starting Gaussian Fitting - THIS MAY TAKE SOME TIME - CIUSuite 2 will not respond until fitting is completed ****')
 
                 new_file_list = []
                 all_output = ''
@@ -1071,7 +1071,7 @@ class CIUSuite2(object):
                             scheme.final_axis_cropvals = equalized_axes
                             Classification.save_scheme(scheme, self.output_dir, subclass_labels)
                         else:
-                            print('Classification canceled: no features selected')
+                            logger.warning('Classification canceled: no features selected')
 
         self.progress_done()
 
@@ -1165,7 +1165,7 @@ class CIUSuite2(object):
             else:
                 subclass_labels = []
             if len(subclass_labels) < 2:
-                print('Warning: No (or only 1) subclass labels read from input! Classification will NOT use subclasses')
+                logger.warning('No (or only 1) subclass labels read from input! Classification will NOT use subclasses')
         else:
             subclass_labels = ['0']
 
@@ -1357,12 +1357,43 @@ class CIUSuite2(object):
                                 # Finally, load the provided raw files
                                 self.load_raw_files(raw_files)
                             else:
-                                print('Error: no raw files found! Check the chosen save directory')
+                                logger.error('No raw files found! Check the chosen save directory')
 
             else:
-                print('Invalid vendor, no files loaded')
+                logger.error('Invalid vendor, no files loaded')
 
         self.progress_done()
+
+
+class CIU2ConsoleFormatter(logging.Formatter):
+    """
+    Custom format handler for printing info/warnings/errors with various formatting to console
+    """
+    info_format = '%(message)s'     # for INFO level, only pass the message contents
+    err_format = '[%(levelname)s]: %(message)s'     # for warnings and errors, pass additional information
+
+    def __init__(self):
+        super().__init__()
+
+    def format(self, record):
+        """
+        override formatter to allow for custom formats for various levels
+        :param record: log record to format
+        :return: formatted string
+        """
+        # save original format to restore later
+        original_fmt = self._style._fmt
+
+        if record.levelno == logging.INFO or record.levelno == logging.DEBUG:
+            self._style._fmt = CIU2ConsoleFormatter.info_format
+
+        elif record.levelno == logging.WARNING or record.levelno == logging.ERROR or record.levelno == logging.CRITICAL:
+            self._style._fmt = CIU2ConsoleFormatter.err_format
+
+        output = logging.Formatter.format(self, record)
+        self._style._fmt = original_fmt
+
+        return output
 
 
 # ****** CIU Main I/O methods ******
@@ -1450,12 +1481,12 @@ def parse_tooltips_file(tooltips_file):
                     value = splits[1].strip()
                     tooltip_dict[key] = value
                 except ValueError:
-                    print('Tooltip not parsed for line: {}'.format(line))
+                    logger.warning('Tooltip not parsed for line: {}'.format(line))
                     continue
         return tooltip_dict
 
     except FileNotFoundError:
-        print('params file not found!')
+        logger.error('params file not found!')
 
 
 def classif_dialogs_run():
@@ -1471,18 +1502,18 @@ def classif_dialogs_run():
     num_classes = simpledialog.askinteger('Class Number', 'Into how many classes do you want to group?')
     if num_classes is None:
         # user hit cancel - return
-        print('classification canceled')
+        logger.info('classification canceled (at number of classes selection)')
         return [], [], ''
 
     for index in range(0, num_classes):
         # Read in the .CIU files and labels for each class, canceling the process if the user hits 'cancel'
         class_label = simpledialog.askstring('Class Name', 'Enter the name (class label) for class {}'.format(index + 1))
         if class_label is None:
-            print('classification canceled')
+            logger.info('classification canceled (at class label selection)')
             return [], [], ''
         files = filedialog.askopenfilenames(filetypes=[('CIU', '.ciu')])
         if len(files) == 0:
-            print('classification canceled')
+            logger.info('classification canceled (at class file selection)')
             return [], [], ''
         if len(files) < 3:
             messagebox.showerror('Not Enough Files', 'At least 3 replicates are required for classification. Please select at least 3 files per class and try again.')
@@ -1544,7 +1575,7 @@ def load_classif_inputs_from_files(files, class_labels, subclass_labels):
                 all_replicates.append(cl_input)
             except IndexError:
                 # not an even number of replicates in all files - skip odd numbers
-                print('Not all subclasses had {} replicates. Only {} replicates generated.'.format(rep_index + 1, rep_index))
+                logger.info('Not all subclasses had {} replicates. Only {} replicates generated.'.format(rep_index + 1, rep_index))
                 continue
         cl_inputs_by_label.append(all_replicates)
     return cl_inputs_by_label
@@ -1584,7 +1615,7 @@ def load_classif_inputs_unknowns(files, subclass_labels):
             all_replicates.append(cl_input)
         except IndexError:
             # not an even number of replicates in all files - skip odd numbers
-            print('Not all subclasses had {} replicates. Only {} replicates generated.'.format(rep_index + 1, rep_index))
+            logger.info('Not all subclasses had {} replicates. Only {} replicates generated.'.format(rep_index + 1, rep_index))
             continue
     return all_replicates
 
@@ -1607,7 +1638,7 @@ def check_classif_data(cl_inputs_by_label, subclass_labels):
                     class_label = class_list[0].class_label
                 except IndexError:
                     class_label = '(No data in class)'
-                print('Only {} replicates in class {}. At least 3 are required for each class. Classification canceled.'.format(len(class_list), class_label))
+                logger.error('Only {} replicates in class {}. At least 3 are required for each class. Classification canceled.'.format(len(class_list), class_label))
                 return False
 
             # make sure all replicates have same subclasses
@@ -1616,18 +1647,18 @@ def check_classif_data(cl_inputs_by_label, subclass_labels):
                 if not subclass_len == len(subclass_labels):
                     # if '0' not in cl_input.subclass_dict.keys() and subclass_len == 1:
                     # not correct number of subclasses
-                    print('Should have {} subclasses, but replicate had {}. Check input data and try again.'.format(len(cl_input.subclass_dict.keys()), len(subclass_labels)))
+                    logger.error('Should have {} subclasses, but replicate had {}. Check input data and try again.'.format(len(cl_input.subclass_dict.keys()), len(subclass_labels)))
                     return False
                 for subclass_label in cl_input.subclass_dict.keys():
                     if subclass_label not in subclass_labels:
-                        print('Subclass label {} was not supposed to be present! Classification canceled'.format(subclass_label))
+                        logger.error('Subclass label {} was not supposed to be present! Classification canceled'.format(subclass_label))
                         return False
 
         # no errors - return True
         return True
     else:
         # no data (or only one class) loaded! return false
-        print('Only {} complete classes; at least 2 are required. Classification canceled.'.format(len(cl_inputs_by_label)))
+        logger.error('Only {} complete classes; at least 2 are required. Classification canceled.'.format(len(cl_inputs_by_label)))
         return False
 
 
@@ -1797,7 +1828,7 @@ def init_logs():
     # create console handler with a higher log level
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
-    console_formatter = logging.Formatter('%(message)s')
+    console_formatter = CIU2ConsoleFormatter()
     console_handler.setFormatter(console_formatter)
     mylogger.addHandler(console_handler)
     return mylogger
@@ -1809,7 +1840,6 @@ if __name__ == '__main__':
     multiprocessing.freeze_support()
     root = tk.Tk()
     root.withdraw()
-    logger.info('Building GUI...')
     ciu_app = CIUSuite2(root)
     logger.info('Starting CIUSuite 2')
     ciu_app.run()

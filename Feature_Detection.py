@@ -14,6 +14,7 @@ import scipy.optimize
 import scipy.interpolate
 import os
 import math
+import logging
 import Raw_Processing
 import Gaussian_Fitting
 import Original_CIU
@@ -26,7 +27,7 @@ if TYPE_CHECKING:
     from CIU_Params import Parameters
 
 np.warnings.filterwarnings('ignore')
-
+logger = logging.getLogger('main')
 TRANS_COLOR_DICT = {6: 'white',
                     0: 'red',
                     5: 'blue',
@@ -59,7 +60,7 @@ def feature_detect_col_max(analysis_obj, params_obj):
         new_num_bins = len(np.arange(cv_axis[0], cv_axis[-1], min(unique_spacings))) + 1
         cv_axis = np.linspace(cv_axis[0], cv_axis[-1], new_num_bins)
         analysis_obj = Raw_Processing.interpolate_axes(analysis_obj, [analysis_obj.axes[0], cv_axis])
-        print('NOTE: CV axis in file {} was not evenly spaced; Feature Detection requires even spacing. Axis has been interpolated to fit. Use "Restore Original Data" button to undo interpolation'.format(analysis_obj.short_filename))
+        logger.warning('NOTE: CV axis in file {} was not evenly spaced; Feature Detection requires even spacing. Axis has been interpolated to fit. Use "Restore Original Data" button to undo interpolation'.format(analysis_obj.short_filename))
 
     # compute width tolerance in DT units, CV gap in bins (NOT cv axis units)
     width_tol_dt = params_obj.feature_t2_2_width_tol  # * analysis_obj.bin_spacing
@@ -235,7 +236,7 @@ def ciu50_main(features_list, analysis_obj, params_obj, outputdir, gaussian_bool
     :return: updated analysis object with feature detect information saved
     """
     if len(features_list) <= 1:
-        print('Not enough features (<=1) in file {}. No transition analysis performed'.format(
+        logger.warning('Not enough features (<=1) in file {}. No transition analysis performed'.format(
             analysis_obj.short_filename))
         return analysis_obj
 
@@ -250,7 +251,7 @@ def ciu50_main(features_list, analysis_obj, params_obj, outputdir, gaussian_bool
     # compute transitions
     transitions_list = compute_transitions(analysis_obj, params_obj, adjusted_features, gaussian_bool)
     if len(transitions_list) == 0:
-        print('No transitions found for file {}'.format(os.path.basename(analysis_obj.filename).rstrip('.ciu')))
+        logger.info('No transitions found for file {}'.format(os.path.basename(analysis_obj.filename).rstrip('.ciu')))
 
     # generate output plot
     plot_transitions(transitions_list, analysis_obj, params_obj, outputdir)
@@ -323,7 +324,7 @@ def filter_features(features, min_feature_length, mode):
             if len(feature.cvs) >= min_feature_length:
                 filtered_list.append(feature)
         else:
-            print('invalid mode')
+            logger.error('invalid mode')
     return filtered_list
 
 
@@ -411,7 +412,7 @@ def adjust_gauss_features(features_list, analysis_obj, params_obj):
             adjusted_features.append(adj_feature)
             adj_feature.gaussians = feature.gaussians
         else:
-            print('Feature {} (range {}-{}) never reaches max relative intensity, no transition will be fit'.format(index + 1, feature.cvs[0], feature.cvs[-1]))
+            logger.info('Feature {} (range {}-{}) never reaches max relative intensity, no transition will be fit'.format(index + 1, feature.cvs[0], feature.cvs[-1]))
     return adjusted_features
 
 
@@ -493,7 +494,7 @@ def plot_features(feature_list, analysis_obj, params_obj, outputdir, filename_ap
             feature_index += 1
             plt.setp(lines, linewidth=3)
     else:
-        print('invalid mode')
+        logger.error('invalid mode')
 
     # plot titles, labels, and legends
     if params_obj.plot_12_custom_title is not None:
@@ -808,7 +809,7 @@ def fit_logistic(x_axis, y_data, guess_center, guess_min, guess_max, steepness_g
         popt, pcov = scipy.optimize.curve_fit(logistic_func, x_axis, y_data, p0=p0,
                                               bounds=(fit_bounds_lower, fit_bounds_upper))
     except ValueError:
-        print('Error: fitting failed due to bad input values. Please try additional smoothing and/or interpolating data')
+        logger.warning('Error: fitting failed due to bad input values. Please try additional smoothing and/or interpolating data')
         popt, pcov = [0, 0, 0, 0], []
     # popt, pcov = scipy.optimize.curve_fit(logistic_func, x_axis, y_data, p0=p0, maxfev=5000)
     return popt, pcov
@@ -1151,7 +1152,7 @@ class Transition(object):
             perr = np.sqrt(np.diag(pcov))
             self.fit_param_errors = perr
         except RuntimeError:
-            print('fitting failed for {} in file {}'.format(self, self.filename))
+            logger.error('fitting failed for {} in file {}'.format(self, self.filename))
             popt = [0, 0, 0, 0]
             pcov = []
 
@@ -1161,7 +1162,7 @@ class Transition(object):
         rsq = rvalue ** 2
 
         if popt[2] < 0:
-            print('WARNING: poor performance from logistic fitting for {} in file {}'.format(self.__str__(), self.filename))
+            logger.warning('WARNING: poor performance from logistic fitting for {} in file {}'.format(self.__str__(), self.filename))
         self.ciu50 = popt[2]
         self.fit_params = popt
         self.fit_covariances = pcov

@@ -9,6 +9,9 @@ import tkinter
 import numpy as np
 from tkinter import messagebox
 from tkinter import ttk
+import logging
+
+logger = logging.getLogger('main')
 
 
 def parse_param_descriptions(param_file):
@@ -70,7 +73,7 @@ def parse_param_descriptions(param_file):
             elif param_type == 'anystring':
                 reqs[key] = (param_type, [])
             else:
-                print('invalid type, parsing failed for line: {}'.format(line))
+                logger.error('invalid type, parsing failed for line: {}'.format(line))
 
     return names, descriptions, reqs
 
@@ -182,7 +185,7 @@ class Parameters(object):
                 self.__setattr__(name, value)
             except AttributeError:
                 # no such parameter
-                print('No parameter name for param: ' + name)
+                logger.warning('No parameter name for param: ' + name)
                 continue
         self.update_dict()
 
@@ -256,7 +259,7 @@ def parse_params_file_newcsv(params_file):
                             param_dict[splits[0].strip()] = splits[1].strip()
         return param_dict
     except FileNotFoundError:
-        print('params file not found!')
+        logger.error('params file not found!')
 
 
 def update_param_csv(params_obj, params_filepath):
@@ -285,7 +288,7 @@ def update_param_csv(params_obj, params_filepath):
                     new_value = str(params_obj.params_dict[current_key])
                 except KeyError:
                     new_value = splits[1].strip()
-                    print('Error: parameter {} not found, default unchanged').format(current_key)
+                    logger.error('Parameter {} not found, default unchanged').format(current_key)
                 splits[1] = new_value
                 new_line = ','.join(splits) + '\n'
                 edited_lines.append(new_line)
@@ -296,7 +299,7 @@ def update_param_csv(params_obj, params_filepath):
                 pfile.write(line)
 
     except FileNotFoundError:
-        print('Error: parameters file {} not found! Default values not changed'.format(params_filepath))
+        logger.error('Parameters file {} not found! Default values not changed'.format(params_filepath))
 
 
 def update_specific_param_vals(dict_of_updates, params_filepath):
@@ -328,7 +331,7 @@ def update_specific_param_vals(dict_of_updates, params_filepath):
                         new_value = splits[1].strip()
                 except KeyError:
                     new_value = splits[1].strip()
-                    print('Error: parameter {} not found, default unchanged').format(current_key)
+                    logger.error('Parameter {} not found, default unchanged').format(current_key)
                 splits[1] = new_value
                 new_line = ','.join(splits) + '\n'
                 edited_lines.append(new_line)
@@ -339,7 +342,7 @@ def update_specific_param_vals(dict_of_updates, params_filepath):
                 pfile.write(line)
 
     except FileNotFoundError:
-        print('Error: parameters file {} not found! Values not updated'.format(params_filepath))
+        logger.error('Parameters file {} not found! Values not updated'.format(params_filepath))
 
 
 def parse_params_file(params_file):
@@ -383,7 +386,7 @@ def parse_params_file(params_file):
 
         return param_dict
     except FileNotFoundError:
-        print('params file not found!')
+        logger.error('params file not found!')
 
 
 def parse_param_value(param_string):
