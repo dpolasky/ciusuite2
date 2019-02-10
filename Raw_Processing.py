@@ -476,11 +476,11 @@ def check_axes_crop(analysis_obj_list):
         if np.median(bin_spacings_cv) < min_cv_spacing:
             min_cv_spacing = scipy.stats.mode(bin_spacings_cv)[0][0]
 
-    crop_vals = [dt_start_max, dt_end_min, cv_start_max, cv_end_min], [min_dt_spacing, min_cv_spacing]
-    for val in crop_vals:
+    crop_vals_all = [dt_start_max, dt_end_min, cv_start_max, cv_end_min, min_dt_spacing, min_cv_spacing]
+    for val in crop_vals_all:
         if val < 0:
             logger.error('Negative value found in axes checking. Errors possible. Please check the raw data')
-    return crop_vals
+    return [dt_start_max, dt_end_min, cv_start_max, cv_end_min], [min_dt_spacing, min_cv_spacing]
 
 
 def check_axes_interp(crop_vals, axes_spacings):
@@ -623,178 +623,61 @@ def equalize_axes_2d_list_subclass(cl_input_list_by_label):
     return cl_input_list_by_label, final_axes
 
 
-# todo: deprecate
-# def equalize_axes_classifinputs(list_classif_inputs):
-#     """
-#     Axis checking for list of classification input lists - handle checking complex lists in place
-#     (as in equalize axes 2d inputs)
-#     :param list_classif_inputs: list of ClassifInput objects
-#     :type list_classif_inputs: list[ClassifInput]
-#     :return: list of classification inputs with any objects cropped/edited that needed to be, equalized axes
-#     """
-#     flat_obj_list = []
-#     for subclass_input in list_classif_inputs:
-#         flat_obj_list.extend(subclass_input.get_flat_list(get_type='obj'))
-#
-#     # check axes for cropping (ensure that region of interest is equal)
-#     crop_vals, axes_spacings = check_axes_crop(flat_obj_list)
-#     final_axes = check_axes_interp(crop_vals, axes_spacings)
-#
-#     # Check all objects in original data structure and make adjustments in place as needed
-#     for subclass_input in list_classif_inputs:
-#         for analysis_obj_list in subclass_input.analysis_objs_by_label:
-#             for analysis_obj in analysis_obj_list:
-#                 analysis_obj, adj_flag = equalize_obj(analysis_obj, final_axes)
-#
-#     return list_classif_inputs, final_axes
-
-
-def equalize_unk_axes_classif_new(flat_unknown_list, final_axes, scheme_cvs_list, gaussian_mode=False):
+def equalize_unk_axes_clinput(flat_unknown_list, final_axes, scheme_feats_list, gaussian_mode=False):
     """
     Specialized equalization method for unknown classification data. Equalizes DT axis by cropping,
-    and reduces CV axis to only the selected voltages in the scheme.
+    and CHECKS cv axis (does NOT equalize/reduce) to ensure all required feature inputs are present.
     :param flat_unknown_list: list of CIUAnalysis objects to be equalized
     :type flat_unknown_list: list[Classification.ClInput]
     :param final_axes: crop values from the Scheme to equalize to
-    :param scheme_cvs_list: List of collision voltage values (floats) from the classification scheme being used
+    :param scheme_feats_list: List of CFeature containers from the classification scheme being used
+    :type scheme_feats_list: list[Classification.CFeature]
     :param gaussian_mode: (optional) if True, does NOT adjust DT axis (only CV), as Gaussian fitted data doesn't need DT adjustment
     :return: updated object list with axes cropped (if needed)
     :rtype: list[CIUAnalysisObj]
     """
+    valid_inputs = []
     # adjust ALL files to the same final axes
     for cl_input in flat_unknown_list:
         for subclass_label, analysis_obj in cl_input.subclass_dict.items():
-            # interpolate DT axis ONLY - leave CV axis alone by passing the existing CV axis as the "new" axis
-            # if not gaussian_mode:
-            adjusted_axes = [final_axes[0], analysis_obj.axes[1]]
-            analysis_obj, adj_flag = equalize_obj(analysis_obj, adjusted_axes)
+            # no alterations to "DT" data if using Gaussian mode, as the raw Gaussian data will be gathered elsewhere
+            if not gaussian_mode:
+                # interpolate DT axis ONLY - leave CV axis alone by passing the existing CV axis as the "new" axis
+                adjusted_axes = [final_axes[0], analysis_obj.axes[1]]
+                analysis_obj, adj_flag = equalize_obj(analysis_obj, adjusted_axes)
 
-            # Remove all CVs except those required by the scheme (raises errors if those are not found)
-            final_ciu_matrix = []
-            ciu_data_matrix = analysis_obj.ciu_data.T     # transpose to access CV columns
-            cv_axis = []
-            for cv in scheme_cvs_list:
-                # Get the index of this collision voltage in the object and add that column of the ciu_data to the output
-                cv_index = find_nearest(analysis_obj.axes[1], cv)
+        # Check that all required feature CVs (including subclass if required) are present
+        valid_input = True
+        for feature in scheme_feats_list:
+            # Get CIU container for the feature's subclass label
+            if feature.subclass_label is not None:
+                try:
+                    subclass_obj = cl_input.subclass_dict[feature.subclass_label]
+                    filename = subclass_obj.short_filename
+                    cv_axis = subclass_obj.axes[1]
+                except KeyError:
+                    valid_input = False
+                    cv_axis = []
+                    filename = '<No Subclass File!>'
+                    logger.error(
+                        'Unknown replicate {} does not have the required subclass label {} from this classification scheme. Classification cannot be performed'.format(cl_input.name, feature.subclass_label))
+                    # raise ValueError(
+                    #     'Unknown replicate {} does not have the required subclass label {} from this classification scheme. Classification cannot be performed'.format(cl_input.name, feature.subclass_label))
+            else:
+                subclass_obj = cl_input.subclass_dict['0']
+                filename = subclass_obj.short_filename
+                cv_axis = subclass_obj.axes[1]
 
-                # make sure this is an exact match
-                if not analysis_obj.axes[1][cv_index] == cv:
-                    logger.error('Unknown CV axis does not have a value required for this classification scheme. Classification cannot be performed', analysis_obj.short_filename, cv)
-                    raise ValueError('Unknown CV axis does not have a value required for this classification scheme. Classification cannot be performed', analysis_obj.short_filename, cv)
-
-                final_ciu_matrix.append(ciu_data_matrix[cv_index])
-                cv_axis.append(cv)
-
-            new_axes = [adjusted_axes[0], cv_axis]  # preserve the adjusted DT axis as well as the new CV axis
-            final_ciu_matrix = np.asarray(final_ciu_matrix).T   # tranpose back to original dimensions
-
-            # save final data into existing object
-            analysis_obj.axes = new_axes
-            analysis_obj.ciu_data = final_ciu_matrix
-
-    return flat_unknown_list
-
-
-# todo: deprecate
-# def equalize_unk_axes_classif(flat_unknown_list, final_axes, scheme_cvs_list, gaussian_mode=False):
-#     """
-#     Specialized equalization method for unknown classification data. Equalizes DT axis by cropping,
-#     and reduces CV axis to only the selected voltages in the scheme.
-#     :param flat_unknown_list: list of CIUAnalysis objects to be equalized
-#     :type flat_unknown_list: list[CIUAnalysisObj]
-#     :param final_axes: crop values from the Scheme to equalize to
-#     :param scheme_cvs_list: List of collision voltage values (floats) from the classification scheme being used
-#     :param gaussian_mode: (optional) if True, does NOT adjust DT axis (only CV), as Gaussian fitted data doesn't need DT adjustment
-#     :return: updated object list with axes cropped (if needed)
-#     :rtype: list[CIUAnalysisObj]
-#     """
-#     output_obj_list = []
-#
-#     # adjust ALL files to the same final axes
-#     for analysis_obj in flat_unknown_list:
-#         # interpolate DT axis ONLY - leave CV axis alone by passing the existing CV axis as the "new" axis
-#         # if not gaussian_mode:
-#         adjusted_axes = [final_axes[0], analysis_obj.axes[1]]
-#         analysis_obj, adj_flag = equalize_obj(analysis_obj, adjusted_axes)
-#
-#         # Remove all CVs except those required by the scheme (raises errors if those are not found)
-#         final_ciu_matrix = []
-#         ciu_data_matrix = analysis_obj.ciu_data.T     # transpose to access CV columns
-#         cv_axis = []
-#         for cv in scheme_cvs_list:
-#             # Get the index of this collision voltage in the object and add that column of the ciu_data to the output
-#             cv_index = find_nearest(analysis_obj.axes[1], cv)
-#
-#             # make sure this is an exact match
-#             if not analysis_obj.axes[1][cv_index] == cv:
-#                 raise ValueError('Unknown CV axis does not have a value required for this classification scheme. Classification cannot be performed', analysis_obj.short_filename, cv)
-#
-#             final_ciu_matrix.append(ciu_data_matrix[cv_index])
-#             cv_axis.append(cv)
-#
-#         new_axes = [adjusted_axes[0], cv_axis]  # preserve the adjusted DT axis as well as the new CV axis
-#         final_ciu_matrix = np.asarray(final_ciu_matrix).T   # tranpose back to original dimensions
-#
-#         # save final data into existing object
-#         analysis_obj.axes = new_axes
-#         analysis_obj.ciu_data = final_ciu_matrix
-#         output_obj_list.append(analysis_obj)
-#
-#     return output_obj_list
-
-
-# def equalize_unk_axes_subclass(subclass_obj_list, final_axes, scheme_feats_list):
-#     """
-#     Specialized equalization method for unknown classification data. Equalizes DT axis by cropping,
-#     and reduces CV axis to only the selected voltages in the scheme.
-#     :param subclass_obj_list: list of SubclassUnknown objects containing CIUAnalysisObjs to equalize
-#     :type subclass_obj_list: list[Classification.SubclassUnknown]
-#     :param final_axes: crop values from the Scheme to equalize to
-#     :param scheme_feats_list: List of CFeatures from the classification scheme being used
-#     :type scheme_feats_list: list[Classification.CFeature]
-#     :return: updated object list with axes cropped (if needed)
-#     :rtype: list[Classification.SubclassUnknown]
-#     """
-#     output_obj_list = []
-#
-#     # adjust ALL files to the same final axes
-#     for subclass_obj in subclass_obj_list:
-#         for subclass_label, analysis_obj_list in subclass_obj.subclass_dict.items():
-#             # Get CVs for this subclass label only
-#             subclass_cvs = []
-#             for feature in scheme_feats_list:
-#                 if feature.subclass_label == subclass_label:
-#                     subclass_cvs.append(feature.cv)
-#
-#             for analysis_obj in analysis_obj_list:
-#                 # interpolate DT axis ONLY - leave CV axis alone by passing the existing CV axis as the "new" axis
-#                 adjusted_axes = [final_axes[0], analysis_obj.axes[1]]
-#                 analysis_obj, adj_flag = equalize_obj(analysis_obj, adjusted_axes)
-#
-#                 # Remove all CVs except those required by the scheme (raises errors if those are not found)
-#                 final_ciu_matrix = []
-#                 ciu_data_matrix = analysis_obj.ciu_data.T     # transpose to access CV columns
-#                 cv_axis = []
-#                 for cv in subclass_cvs:
-#                     # Get the index of this collision voltage in the object and add that column of the ciu_data to the output
-#                     cv_index = find_nearest(analysis_obj.axes[1], cv)
-#
-#                     # make sure this is an exact match
-#                     if not analysis_obj.axes[1][cv_index] == cv:
-#                         raise ValueError('Unknown CV axis does not have a value required for this classification scheme. Classification cannot be performed', analysis_obj.short_filename, cv)
-#
-#                     final_ciu_matrix.append(ciu_data_matrix[cv_index])
-#                     cv_axis.append(cv)
-#
-#                 new_axes = [adjusted_axes[0], cv_axis]  # preserve the adjusted DT axis as well as the new CV axis
-#                 final_ciu_matrix = np.asarray(final_ciu_matrix).T   # tranpose back to original dimensions
-#
-#                 # save final data into existing object
-#                 analysis_obj.axes = new_axes
-#                 analysis_obj.ciu_data = final_ciu_matrix
-#                 # output_obj_list.append(analysis_obj)
-#         output_obj_list.append(subclass_obj)
-#     return output_obj_list
+            # Confirm that the Feature CV is in the subclass container's CV axis
+            if feature.cv not in cv_axis:
+                valid_input = False
+                logger.error(
+                    'CIU dataset {} does not have CV value {} required for this classification scheme. Classification cannot be performed'.format(filename, feature.cv))
+                # raise ValueError(
+                #     'CIU dataset {} does not have CV value {} required for this classification scheme. Classification cannot be performed'.format(subclass_obj.short_filename, feature.cv))
+        if valid_input:
+            valid_inputs.append(cl_input)
+    return valid_inputs
 
 
 class CropUI(object):
