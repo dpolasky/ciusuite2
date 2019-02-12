@@ -78,14 +78,13 @@ def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_ob
         # Manual mode: use the provided features and run limited crossvalidation
         best_features, crossval_score, all_crossval_data = crossval_main_new(cl_inputs_by_label, output_dir, params_obj, known_feats, subclass_labels)
         best_features = known_feats
+        all_features = known_feats
     logger.debug('crossval finished: {:.2f}s'.format(time.time() - start_time))
 
     # perform LDA and classification on the selected/best features
     shaped_subsets = rearrange_ciu_by_feats(cl_inputs_by_label, best_features, params_obj)
     flat_subsets = [x for class_list in shaped_subsets for x in class_list]
-    constructed_scheme = lda_svc_best_feats(flat_subsets, best_features, params_obj, output_dir, subclass_labels, max_num_gaussians)
-
-    # constructed_scheme = lda_best_features_subclass(best_features, list_classif_inputs, params_obj, output_dir)
+    constructed_scheme = lda_svc_best_feats(flat_subsets, best_features, all_features, output_dir, subclass_labels, max_num_gaussians)
     constructed_scheme.crossval_test_score = crossval_score
     constructed_scheme.all_crossval_data = all_crossval_data
 
@@ -464,7 +463,7 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
     unique_labels = get_unique_labels(label_list)
     scheme_name = generate_scheme_name(unique_labels, subclass_labels)
     crossval_file = save_crossval_score(crossval_acc_data, scheme_name, outputdir)
-    save_roc_data(all_results_by_feats, scheme_name, crossval_file)
+    save_roc_data(all_results_by_feats, crossval_file)
     plot_crossval_scores(crossval_acc_data, scheme_name, params_obj, outputdir)
     plot_roc_cuve(all_results_by_feats, scheme_name, outputdir, params_obj)
     # plot_crossval_auc(all_results_by_feats['roc_auc_micro_mean'], all_results_by_feats['roc_auc_micro_std'], scheme_name, params_obj, outputdir)
@@ -546,7 +545,7 @@ def rearrange_ciu_by_feats_helper(rep_obj, params_obj, features_list, class_nume
         data_output.append(cv_col)
 
     # generate a subset container to hold the extracted data and associated metadata
-    rep_subset = DataSubset(data_output, rep_obj.class_label, class_numeric_label, file_id, features_list)
+    rep_subset = DataSubset(data_output, rep_obj.class_label, class_numeric_label, file_id, rep_obj.all_filenames, features_list)
     return rep_subset
 
 
@@ -574,15 +573,15 @@ def arrange_lda_new(subset_list):
     return x_data, numeric_labels, string_labels
 
 
-def lda_svc_best_feats(flat_subset_list, features_list, params_obj, output_dir, subclass_labels, max_num_gaussians=0):
+def lda_svc_best_feats(flat_subset_list, selected_features, all_features, output_dir, subclass_labels, max_num_gaussians=0):
     """
     Generate a Scheme container by performing final LDA/SVM analysis on the provided data.
     :param flat_subset_list: list of DataSubset containers
     :type flat_subset_list: list[DataSubset]
-    :param features_list: selected (best) features to use in scheme construction
-    :type features_list: list[CFeature]
-    :param params_obj: parameters
-    :type params_obj: Parameters
+    :param selected_features: selected (best) features to use in scheme construction
+    :type selected_features: list[CFeature]
+    :param all_features: list of all features input for reference
+    :type all_features: list[CFeature]
     :param output_dir: directory in which to save output
     :param subclass_labels: list of strings for scheme output naming
     :param max_num_gaussians: for Gaussian mode, the max number of Gaussians to record in the scheme
@@ -604,7 +603,8 @@ def lda_svc_best_feats(flat_subset_list, features_list, params_obj, output_dir, 
 
     # initialize classification scheme object and return it
     scheme = ClassificationScheme()
-    scheme.selected_features = features_list
+    scheme.all_features = all_features
+    scheme.selected_features = selected_features
     scheme.classifier = clf
     scheme.classifier_type = 'SVC'
     scheme.classif_prec_score = prec_score
@@ -615,14 +615,13 @@ def lda_svc_best_feats(flat_subset_list, features_list, params_obj, output_dir, 
     scheme.unique_labels = get_unique_labels(train_string_labels)
     scheme.transformed_test_data = x_lda
     scheme.params = clf.get_params()
-    scheme.input_feats = [feature.cv for feature in features_list]
+    scheme.input_feats = [feature.cv for feature in selected_features]
     scheme.name = generate_scheme_name(train_string_labels, subclass_labels)
     scheme.num_gaussians = max_num_gaussians
 
     # Organize outputs by input file for easier viewing, then save
-    x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file = prep_outputs_by_file_new(x_lda, y_pred, probs, flat_subset_list)
-    save_lda_and_predictions(scheme, x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file, output_dir, unknowns_bool=False)
-    # plot_probabilities(params_obj, scheme, probs_by_file, output_dir, unknown_bool=False)
+    x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file, combined_filenames = prep_outputs_by_file_new(x_lda, y_pred, probs, flat_subset_list)
+    save_lda_and_predictions(scheme, x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file, combined_filenames, output_dir, unknowns_bool=False)
     return scheme
 
 
@@ -923,7 +922,7 @@ def prep_outputs_by_file_new(x_lda, y_pred, probs, flat_subset_list):
     :type flat_subset_list: list[DataSubset]
     :return: sublist of each input list that is all the entries corresponding to the specific file
     """
-    x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file = [], [], [], []
+    x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file, combined_filenames = [], [], [], [], []
 
     num_features = len(flat_subset_list[0].features)
 
@@ -941,8 +940,9 @@ def prep_outputs_by_file_new(x_lda, y_pred, probs, flat_subset_list):
         y_pred_by_file.append(file_ypred)
         probs_by_file.append(file_probs)
         filenames_by_file.append(subset.file_id)
+        combined_filenames.append(subset.all_filenames)
 
-    return x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file
+    return x_lda_by_file, y_pred_by_file, probs_by_file, filenames_by_file, combined_filenames
 
 
 def generate_scheme_name(class_labels, subclass_labels):
@@ -1402,7 +1402,7 @@ def save_feature_scores(features_by_subclass, scheme_name, output_path):
     return outfilename
 
 
-def save_lda_and_predictions(scheme, lda_transform_data_by_file, predicted_class_by_file, probs_by_file, filenames, output_path, unknowns_bool):
+def save_lda_and_predictions(scheme, lda_transform_data_by_file, predicted_class_by_file, probs_by_file, filenames, combined_filenames, output_path, unknowns_bool):
     """
     Unified CSV output method for saving classification results (data transformed along LD axes and predicted
     classes and probabilities from the SVM). Used both when building a classification scheme and when
@@ -1413,10 +1413,12 @@ def save_lda_and_predictions(scheme, lda_transform_data_by_file, predicted_class
     :param predicted_class_by_file: list of lists of predicted classes, same format as lda_transform data (except listed by each class, not each LD axis)
     :param probs_by_file: list of lists of probabilities for each class, same format as predicted class data
     :param filenames: list of input filenames
+    :param combined_filenames: list of combined input filenames (for subclass mode). In regular mode, will be same as filenames
     :param output_path: directory in which to save output
     :param unknowns_bool: True if saving unknown data
     :return: void
     """
+    subclass_mode = scheme.get_subclass_mode()
     if unknowns_bool:
         outputname = os.path.join(output_path, scheme.name + '_Results-unknowns.csv')
     else:
@@ -1426,7 +1428,10 @@ def save_lda_and_predictions(scheme, lda_transform_data_by_file, predicted_class
     predict_labels = ','.join(['{} Probability'.format(x) for x in scheme.unique_labels])
     ld_dim_list = np.arange(1, len(lda_transform_data_by_file[0][0]) + 1)
     lda_header = ','.join('LD {} (linear discriminant dimension {})'.format(x, x) for x in ld_dim_list)
-    header = 'File,Feature,{},Class Prediction,{}\n'.format(lda_header, predict_labels)
+    if subclass_mode:
+        header = 'File ID,All Subclass Files,Feature,Feature Subclass,{},Class Prediction,{}\n'.format(lda_header, predict_labels)
+    else:
+        header = 'File,Feature,{},Class Prediction,{}\n'.format(lda_header, predict_labels)
     output_string = header
 
     # loop over each file and each CV ("feature")
@@ -1434,20 +1439,31 @@ def save_lda_and_predictions(scheme, lda_transform_data_by_file, predicted_class
         transforms_by_cv = lda_transform_data_by_file[file_index]
         classes_by_cv = predicted_class_by_file[file_index]
         probs_by_cv = probs_by_file[file_index]
+        if subclass_mode:
+            file_string = '{},{}'.format(filenames[file_index], combined_filenames[file_index])
+        else:
+            file_string = '{}'.format(filenames[file_index])
 
         for feat_index in range(len(transforms_by_cv)):
+            if subclass_mode:
+                feat_string = '{},{}'.format(scheme.selected_features[feat_index].cv, scheme.selected_features[feat_index].subclass_label)
+            else:
+                feat_string = '{}'.format(scheme.selected_features[feat_index].cv)
             ld_data = ','.join(['{:.2f}'.format(x) for x in transforms_by_cv[feat_index]])
             class_pred = scheme.unique_labels[classes_by_cv[feat_index] - 1]
             probs_data = ','.join(['{:.3f}'.format(x) for x in probs_by_cv[feat_index]])
 
-            line = '{},{},{},{},{}\n'.format(filenames[file_index], scheme.input_feats[feat_index], ld_data, class_pred, probs_data)
+            line = '{},{},{},{},{}\n'.format(file_string, feat_string, ld_data, class_pred, probs_data)
             output_string += line
 
         # Add 'combined' probabilities at end of each file
         class_mode = scheme.unique_labels[np.argmax(np.bincount(classes_by_cv)) - 1]
         avg_probs = ','.join(['{:.3f}'.format(x) for x in np.average(probs_by_file[file_index], axis=0)])
         buffer_string = ','.join(['' for _ in range(len(ld_dim_list))])     # don't write anything into LD columns
-        output_string += '{},{},{},{},{}\n'.format(filenames[file_index], 'Combined', buffer_string, class_mode, avg_probs)
+        if subclass_mode:
+            output_string += '{},{},{},{},{},{}\n'.format(file_string, 'Combined', '', buffer_string, class_mode, avg_probs)
+        else:
+            output_string += '{},{},{},{},{}\n'.format(file_string, 'Combined', buffer_string, class_mode, avg_probs)
 
     # Add explained variance ratio at the end of all files
     if scheme.explained_variance_ratio is not None:
@@ -1496,13 +1512,12 @@ def save_crossval_score(crossval_data, scheme_name, outputpath):
     return outfilename
 
 
-def save_roc_data(roc_data, scheme_name, outputname):
+def save_roc_data(roc_data, outputname):
     """
     Save ROC information from scheme training to CSV file for reference. Opens previously saved
     crossval.csv file in append mode.
     :param roc_data: dictionary of lists of ROC/AUC data. See CrossValRun container save_results
     method for more information
-    :param scheme_name: string
     :param outputname: full file path to append to
     :return: void
     """
@@ -1620,6 +1635,29 @@ class ClassificationScheme(object):
                     subclass_labels.append(feature.subclass_label)
         return subclass_labels
 
+    def get_subclass_mode(self):
+        """
+        Return a boolean signifying whether this scheme uses subclasses or not. Searches the scheme's
+        all features list for any features with subclass information.
+        :return: boolean: True if subclass mode, False if not
+        :rtype: bool
+        """
+        subclass_labels = []
+        for feature in self.all_features:
+            if feature.subclass_label is not None:
+                if feature.subclass_label not in subclass_labels:
+                    subclass_labels.append(feature.subclass_label)
+
+        if len(subclass_labels) > 1:
+            return True
+        else:
+            return False
+
+        # for feature in self.selected_features:
+        #     if feature.subclass_label is not ['0']:
+        #         subclass_mode = True
+        # return subclass_mode
+
     def classify_unknown_clinput(self, unk_cl_input, params_obj):
         """
         Classify a test dataset according to this classification scheme. Selects features from
@@ -1683,6 +1721,7 @@ class ClInput(object):
         self.class_label = label
         self.subclass_dict = dict_subclass_objs
         self.name = self.get_name()
+        self.all_filenames = self.get_all_filenames()
 
         # output storage
         self.predicted_label = None
@@ -1712,7 +1751,7 @@ class ClInput(object):
 
     def get_name(self):
         """
-        Generate a name from the input data and subclasses. Primarily intended for unknown data
+        Generate a single (short) name from the input data and subclasses for reference (a replicate ID).
         :return: string name
         """
         first_key = sorted([x for x in self.subclass_dict.keys()])[0]
@@ -1721,6 +1760,19 @@ class ClInput(object):
         else:
             name = self.subclass_dict[first_key].short_filename
         return name
+
+    def get_all_filenames(self):
+        """
+        Concatenate filenames for all subclasses into a single output for later reference
+        :return: string
+        """
+        # all_filenames = ''
+        # # iterate through subclasses in order of subclass label
+        # for key, subclass_obj in sorted(self.subclass_dict.items(), key=lambda x: x[0]):
+        #     all_filenames += '{};'.format(subclass_obj.short_filename)
+        # all_filenames.rstrip(';')
+        all_filenames = ';'.join([x[1].short_filename for x in sorted(self.subclass_dict.items(), key=lambda x: x[0])])
+        return all_filenames
 
     def __str__(self):
         """
@@ -1736,13 +1788,14 @@ class DataSubset(object):
     does NOT have subclasses because only the data from best features has been selected for the
     classifying scheme.
     """
-    def __init__(self, data, class_label, numeric_label, file_id, features):
+    def __init__(self, data, class_label, numeric_label, file_id, all_filenames, features):
         """
         Initialize new subset container
         :param data: dataset arranged using rearrange CIU by feats method (2D numpy array)
         :param class_label: class label
         :param numeric_label: (int) numeric label corresponding to the class label of this subset
         :param file_id: (string) file identifier (CIUAnalysisObj.short_filename). In subclass mode, this should be a combination of filenames for each subclass obj.
+        :param all_filenames: (string) combined filenames for all CIU files that comprise the subset
         :param features: list of features used in arranging data
         :type features: list[CFeature]
         """
@@ -1751,6 +1804,7 @@ class DataSubset(object):
         self.numeric_label = numeric_label
         self.features = features
         self.file_id = file_id
+        self.all_filenames = all_filenames
 
 
 class ClassifInput(object):

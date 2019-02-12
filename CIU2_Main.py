@@ -1054,7 +1054,7 @@ class CIUSuite2(object):
 
                     # Run the classification
                     if self.params_obj.classif_5_auto_featselect == 'automatic':
-                        self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
+                        self.progress_print_text('Classification in progress (may take a few minutes - see console for progress)...', 50)
                         scheme = Classification.main_build_classification_new(cl_inputs_by_label, subclass_labels, self.params_obj, self.output_dir)
                         scheme.final_axis_cropvals = equalized_axes
                         Classification.save_scheme(scheme, self.output_dir, subclass_labels)
@@ -1071,7 +1071,7 @@ class CIUSuite2(object):
                         selected_features = Classification.get_manual_classif_feats(sorted_features)
                         if len(selected_features) > 0:
                             # Run LDA using selected features
-                            self.progress_print_text('LDA in progress (may take a few minutes)...', 50)
+                            self.progress_print_text('Classification in progress (may take a few minutes - see console for progress)...', 50)
                             scheme = Classification.main_build_classification_new(cl_inputs_by_label, subclass_labels, self.params_obj, self.output_dir, known_feats=selected_features)
                             scheme.final_axis_cropvals = equalized_axes
                             Classification.save_scheme(scheme, self.output_dir, subclass_labels)
@@ -1133,9 +1133,10 @@ class CIUSuite2(object):
                         # compile all successfully fitted LDA and prediction data for output csv
                         all_transform_data = [x.transformed_data for x in successful_inputs_for_plot]
                         all_filenames = [x.name for x in successful_inputs_for_plot]
+                        all_combined_filenames = [x.all_filenames for x in successful_inputs_for_plot]
                         all_predictions = [x.predicted_label for x in successful_inputs_for_plot]
                         all_probs = [x.probs_by_cv for x in successful_inputs_for_plot]
-                        Classification.save_lda_and_predictions(scheme, all_transform_data, all_predictions, all_probs, all_filenames, self.output_dir, True)
+                        Classification.save_lda_and_predictions(scheme, all_transform_data, all_predictions, all_probs, all_filenames, all_combined_filenames, self.output_dir, True)
                         Classification.plot_probabilities(self.params_obj, scheme, all_probs, self.output_dir, unknown_bool=True)
                 else:
                     messagebox.showerror('Not Enough Replicates', 'Not enough replicates in all subclasses could be generated, so no classification was performed.')
@@ -1856,7 +1857,7 @@ def init_logs():
 
     # create file handler which logs even debug messages
     # file_handler = logging.FileHandler(log_file)
-    file_handler = RotatingFileHandler(log_file, maxBytes=10 * 1024 * 1024, backupCount=1)
+    file_handler = RotatingFileHandler(log_file, maxBytes=1 * 1024 * 1024, backupCount=1)
 
     file_handler.setLevel(logging.DEBUG)
     file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
