@@ -574,26 +574,27 @@ def equalize_axes_main(list_of_analysis_objs):
     return list_of_analysis_objs, final_axes, any_adjust_flag
 
 
-def equalize_axes_2d_list(analysis_obj_list_by_label):
-    """
-    Axis checking method for 2D lists (e.g. in classification) where list order/shape must be
-    preserved. Axes are equalized across ALL sublists (every object anywhere in the 2D list)
-    :param analysis_obj_list_by_label: list of lists of CIUAnalysisObjs
-    :type analysis_obj_list_by_label: list[list[CIUAnalysisObj]]
-    :return: updated list of lists with axes equalized, final axes list
-    :rtype: list[list[CIUAnalysisObj]], output_axes_list
-    """
-    flat_obj_list = [x for analysis_obj_list in analysis_obj_list_by_label for x in analysis_obj_list]
-
-    # check axes for cropping (ensure that region of interest is equal)
-    crop_vals, axes_spacings = check_axes_crop(flat_obj_list)
-    final_axes = check_axes_interp(crop_vals, axes_spacings)
-
-    for obj_list in analysis_obj_list_by_label:
-        for analysis_obj in obj_list:
-            analysis_obj, adj_flag = equalize_obj(analysis_obj, final_axes)
-
-    return analysis_obj_list_by_label, final_axes
+# todo: deprecate
+# def equalize_axes_2d_list(analysis_obj_list_by_label):
+#     """
+#     Axis checking method for 2D lists (e.g. in classification) where list order/shape must be
+#     preserved. Axes are equalized across ALL sublists (every object anywhere in the 2D list)
+#     :param analysis_obj_list_by_label: list of lists of CIUAnalysisObjs
+#     :type analysis_obj_list_by_label: list[list[CIUAnalysisObj]]
+#     :return: updated list of lists with axes equalized, final axes list
+#     :rtype: list[list[CIUAnalysisObj]], output_axes_list
+#     """
+#     flat_obj_list = [x for analysis_obj_list in analysis_obj_list_by_label for x in analysis_obj_list]
+#
+#     # check axes for cropping (ensure that region of interest is equal)
+#     crop_vals, axes_spacings = check_axes_crop(flat_obj_list)
+#     final_axes = check_axes_interp(crop_vals, axes_spacings)
+#
+#     for obj_list in analysis_obj_list_by_label:
+#         for analysis_obj in obj_list:
+#             analysis_obj, adj_flag = equalize_obj(analysis_obj, final_axes)
+#
+#     return analysis_obj_list_by_label, final_axes
 
 
 def equalize_axes_2d_list_subclass(cl_input_list_by_label):

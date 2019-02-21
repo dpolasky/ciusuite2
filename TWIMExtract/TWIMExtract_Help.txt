@@ -52,9 +52,16 @@ Basic Use:
 	4) Choose your extraction settings. These can be adjusted using the options menu (top) and the check boxes (bottom)
 	   of the extractor interface. The primary options are:
 		- Range or Rule file mode: whether to use range (.txt) or rule (.rul) files for the extraction
-		- Combine Outputs: whether to combine the output of multiple ranges (extractions) on the SAME raw file into
-			a single output file, or to leave them separate and generate multiple output files. Different
-			raw files will always generate a new output file. 
+		- Combine Raw: 3 options - "ALL", "BY FUNCTN", and "NO". Whether to combine across raw files. If "ALL" 
+			is selected, data from all raw files present in the table will be combined into a single output
+			csv file. If "BY FUNCTN" is selected, all Functions from a single raw file will be combined into a 
+			single output csv, but separate raw files will each generate their own output csv. If "NO" is selected,
+			no raw data will be combined and all functions and raw files will get their own output csv. 
+		- Combine Range: "YES" or "NO". If yes, extracted data from all selected range files will be combined into
+			a single output csv file. If no, each range file will result it a separate output csv file. 
+		NOTE: If combining "ALL" raw files AND ALSO combining across range files, it is possible to use excessive memory
+			and cause computer problems/crashes if extracting huge amounts of data (1000s of raw/range files). 
+			If extracting large amounts of data, it is strongly recommended not to use this mode. 
 		- Save info: Whether to save any information about the file (collision voltages or IM settings) to the
 			output file as a header. 
 		- For DT (drift time) extractions, output can be saved in milliseconds (ms) or bins. ms is the default,
@@ -79,17 +86,17 @@ Advanced/Other modes:
 	- Legacy range file mode: If you used the beta version of TWIMExtract and have old format range files (containing 9 fields
 		instead of 6), those files can still be used by selected 'Legacy range file mode' in the Advanced menu. 
 
-	- Careful mode: **most users should not have to worry about this at all**
+	- Careful mode: **most users should not have to worry about this**
 		- If a raw file contains multiple functions to be extracted, the default behavior of TWIMExtract is to use the
 		same number of bins for each function, since getting bin sizes takes as long as actually extracting the data. 
-		This should not be a problem unless two functions within the same raw file have mass ranges that differ by an
-		order of magnitude or more in size (e.g. function 1 is from 500-1000 m/z and function 2 is from 100-100000 m/z). 
+		This should not be a problem unless two functions within the same raw file have mass ranges that differ 
+		significantly in size (e.g. function 1 is from 500-1000 m/z and function 2 is from 100-10000 m/z). 
 		In that example, function 2 would have fewer m/z bins than it should, possibly resulting in artifical loss of 
 		resolution. 
 		- Careful mode gets the number of bins individually for each function to avoid resolution losses, but is slower
 		than normal mode as a result.  
 
-	- Command line arguments: can be used for scripting with TWIMExtract. 
+	- Command line arguments: can be used for scripting with TWIMExtract. NOTE: not all features are available in command line mode.
 		General use: java -jar TWIMExtract.jar [ARGS]
 		Help: java -jar TWIMExtract.jar -h
 		

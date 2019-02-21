@@ -1,1 +1,1 @@
-start java -jar jars\TWIMExtract.jar
+start java -jar C:\TWIMExtract\jars\TWIMExtract.jar

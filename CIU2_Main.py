@@ -65,7 +65,7 @@ hard_agilent_ext_path = os.path.join(root_dir, os.path.join('Agilent_Extractor',
 hard_tooltips_file = os.path.join(root_dir, 'tooltips.txt')
 help_file = os.path.join(root_dir, 'CIUSuite2_Manual.pdf')
 about_file = os.path.join(root_dir, 'README.txt')
-log_file = os.path.join(root_dir, 'ciu2.log')
+log_file = os.path.join(program_data_dir, 'ciu2.log')
 
 
 class CIUSuite2(object):
@@ -1040,6 +1040,7 @@ class CIUSuite2(object):
             # Once data has been loaded, check it (appropriate number of classes, files, subclasses, etc)
             if check_classif_data(cl_inputs_by_label, subclass_labels):
                 # check axes
+                # todo: add a fail/message here if equalization fails to prevent downstream crashes (?)
                 cl_inputs_by_label, equalized_axes = Raw_Processing.equalize_axes_2d_list_subclass(cl_inputs_by_label)
 
                 # get classification parameters
