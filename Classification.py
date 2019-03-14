@@ -312,6 +312,14 @@ def plot_roc_cuve(roc_data, schem_name, dirpath, params_obj, selected_features=N
 
     if selected_features is None:
         pdf_output = os.path.join(dirpath, schem_name + '_ROC_curves.pdf')
+        try:
+            testfile = open(pdf_output, 'a')
+            testfile.close()
+        except PermissionError:
+            messagebox.showerror('Please Close the File Before Saving',
+                                 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(
+                                     pdf_output))
+
         with PdfPages(pdf_output) as pdf:
             for index in range(len(tpr_class_mean)):
                 for num, (tpr_class_mean_, tpr_class_std_, roc_auc_class_mean_, roc_auc_class_std_) in enumerate(zip(tpr_class_mean[index], tpr_class_std[index], roc_auc_class_mean[index], roc_auc_class_std[index])):
@@ -351,7 +359,7 @@ def plot_roc_cuve(roc_data, schem_name, dirpath, params_obj, selected_features=N
                 plt.close()
     else:
         # plot ROC curve for single number of selected features
-        index = len(selected_features)
+        index = len(selected_features) - 1  # indexed from 0 in the lists, not 1
         for num, (tpr_class_mean_, tpr_class_std_, roc_auc_class_mean_, roc_auc_class_std_) in enumerate(zip(tpr_class_mean[index], tpr_class_std[index], roc_auc_class_mean[index], roc_auc_class_std[index])):
             plt.plot(tmp_fpr, tpr_class_mean_[0], linestyle=':', label='Class_{0} {1:0.2f} +/- {2:0.2f}'.format(num + 1, roc_auc_class_mean_, roc_auc_class_std_))
             plt.fill_between(tmp_fpr, tpr_class_mean_[0] + tpr_class_std_[0], tpr_class_mean_[0] - tpr_class_std_[0], alpha=0.2)
