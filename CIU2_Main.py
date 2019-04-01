@@ -752,10 +752,14 @@ class CIUSuite2(object):
 
                 new_file_list = []
                 all_output = ''
+                all_file_gaussians = []
+                gauss_filenames = []
                 for file in files_to_read:
                     analysis_obj = load_analysis_obj(file)
-                    analysis_obj, csv_output = Gaussian_Fitting.main_gaussian_lmfit(analysis_obj, self.params_obj, self.output_dir)
+                    analysis_obj, csv_output, cv_gaussians = Gaussian_Fitting.main_gaussian_lmfit(analysis_obj, self.params_obj, self.output_dir)
                     all_output += csv_output
+                    all_file_gaussians.append(cv_gaussians)
+                    gauss_filenames.append(analysis_obj.short_filename)
 
                     t2_param_dict.update(t1_param_dict)
                     filename = save_analysis_obj(analysis_obj, t2_param_dict, outputdir=self.output_dir)
@@ -764,6 +768,8 @@ class CIUSuite2(object):
 
                 if self.params_obj.gaussian_5_combine_outputs:
                     outputpath = os.path.join(self.output_dir, 'All_gaussians.csv')
+                    all_output_append = Gaussian_Fitting.print_combined_params(all_file_gaussians, gauss_filenames)
+                    all_output += all_output_append
                     try:
                         with open(outputpath, 'w') as output:
                             output.write(all_output)

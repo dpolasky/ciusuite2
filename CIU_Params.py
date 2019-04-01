@@ -132,6 +132,7 @@ class Parameters(object):
         self.gaussian_2_int_threshold = None
         self.gaussian_4_save_diagnostics = None
         self.gaussian_5_combine_outputs = None
+        self.gaussian_51_sort_outputs_by = None
         self.gaussian_61_num_cores = None
         self.gaussian_71_max_prot_components = None
         self.gaussian_72_prot_peak_width = None

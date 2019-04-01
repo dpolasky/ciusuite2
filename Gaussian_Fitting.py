@@ -314,11 +314,11 @@ def main_gaussian_lmfit(analysis_obj, params_obj, outputpath):
 
     # save output
     save_fits_pdf_new(analysis_obj, params_obj, best_fits_by_cv, outputpath)
-    combined_output = save_gauss_params(analysis_obj, outputpath, combine=params_obj.gaussian_5_combine_outputs)
+    combined_output, sorted_gauss_by_cv = save_gauss_params(analysis_obj, outputpath, params_obj.gaussian_51_sort_outputs_by, combine=params_obj.gaussian_5_combine_outputs, protein_only=params_obj.gauss_t1_1_protein_mode)
     plot_time = time.time() - start_time - fit_time
     logger.info('plotting/pdf output done in {:.2f} s'.format(plot_time))
 
-    return analysis_obj, combined_output
+    return analysis_obj, combined_output, sorted_gauss_by_cv
 
 
 def guess_gauss_init(ciu_col, dt_axis, cv, rsq_cutoff, amp_cutoff):
@@ -1164,14 +1164,16 @@ def plot_centroids(centroid_lists_by_cv, analysis_obj, params_obj, outputpath, n
     plt.close()
 
 
-def save_gauss_params(analysis_obj, outputpath, combine=False):
+def save_gauss_params(analysis_obj, outputpath, sort_type, combine=False, protein_only=False):
     """
     Save all gaussian information to file
     :param analysis_obj: container with gaussian fits to save
     :type analysis_obj: CIUAnalysisObj
     :param outputpath: directory in which to save output
     :param combine: whether to return the string to be combined with other files (True) or save this file without combining (False)
-    :return: void
+    :param sort_type: string: 'centroid', 'amplitude', or 'width'. How to sort the output Gaussians
+    :param protein_only: whether using protein only mode. Saves non-protein (noise) information if not
+    :return: if combine is True, returns formatted output string and list of sorted gaussians (protein only)
     """
     output_name = analysis_obj.short_filename + '_gaussians.csv'
     output_string = ''
@@ -1180,27 +1182,39 @@ def save_gauss_params(analysis_obj, outputpath, combine=False):
     output_string += '# {}'.format(analysis_obj.short_filename)
     dt_line = ','.join([str(x) for x in analysis_obj.axes[0]])
     output_string += 'Drift axis:,' + dt_line + '\n'
-    output_string += '# Protein Gaussians\n'
+    if not protein_only:
+        output_string += '# Protein Gaussians\n'
     output_string += '# CV,Amplitude,Centroid,Peak Width (FWHM)\n'
     index = 0
+    sorted_gaussians_by_cv = []
     while index < len(analysis_obj.axes[1]):
-        outputline = ','.join([gaussian.print_info() for gaussian in analysis_obj.raw_protein_gaussians[index]])
+        if sort_type == 'amplitude':
+            # sort in decreasing amplitude order (rather than increasing, as in centroid/width)
+            sorted_gaussians = sorted(analysis_obj.raw_protein_gaussians[index], key=lambda x: x.__getattribute__(sort_type), reverse=True)
+        else:
+            sorted_gaussians = sorted(analysis_obj.raw_protein_gaussians[index], key=lambda x: x.__getattribute__(sort_type))
+        outputline = ','.join([gaussian.print_info() for gaussian in sorted_gaussians])
         output_string += outputline + '\n'
+        sorted_gaussians_by_cv.append(sorted_gaussians)
         index += 1
 
-    if analysis_obj.raw_nonprotein_gaussians is not None:
+    if not protein_only:
         index = 0
         output_string += '# Non-Protein Gaussians\n'
         output_string += '# CV,Amplitude,Centroid,Peak Width (FWHM)\n'
         while index < len(analysis_obj.axes[1]):
             if len(analysis_obj.raw_nonprotein_gaussians[index]) > 0:
-                gauss_line = ','.join([gaussian.print_info() for gaussian in analysis_obj.raw_nonprotein_gaussians[index]])
+                if sort_type == 'amplitude':
+                    sorted_gaussians = sorted(analysis_obj.raw_nonprotein_gaussians[index], key=lambda x: x.__getattribute__(sort_type), reverse=True)
+                else:
+                    sorted_gaussians = sorted(analysis_obj.raw_nonprotein_gaussians[index], key=lambda x: x.__getattribute__(sort_type))
+                gauss_line = ','.join([gaussian.print_info() for gaussian in sorted_gaussians])
                 output_string += gauss_line + '\n'
             index += 1
 
     if combine:
-        output_string += '\n'
-        return output_string
+        # output_string += '\n'
+        return output_string, sorted_gaussians_by_cv
     else:
         try:
             with open(os.path.join(outputpath, output_name), 'w') as output:
@@ -1210,6 +1224,27 @@ def save_gauss_params(analysis_obj, outputpath, combine=False):
             with open(os.path.join(outputpath, output_name), 'w') as output:
                 output.write(output_string)
         return ''
+
+
+def print_combined_params(all_files_gaussians_by_cv, filenames):
+    """
+    Takes input sorted Gaussian lists from all files being combined (and all CVs within each file) and
+    assembles lists of outputs sorted by parameter type (i.e. a list of centroids, then a list of amplitudes, etc).
+    :param all_files_gaussians_by_cv: list of files[list of CVs in each file[list of Gaussians at each CV]]]
+    :param filenames: list of filenames to coordinate outputs from each file
+    :return: string formatted for output
+    """
+    output_string = '\n'
+    params = ['centroid', 'amplitude', 'width']
+    for param in params:
+        param_string = 'File,CV,' + param + '\n'
+        for index, file_lists in enumerate(all_files_gaussians_by_cv):
+            for cv_list in file_lists:
+                cv_line = '{},{},'.format(filenames[index], cv_list[0].cv)
+                cv_line += ','.join(['{:.2f}'.format(gaussian.__getattribute__(param)) for gaussian in cv_list])
+                param_string += cv_line + '\n'
+        output_string += param_string
+    return output_string
 
 
 def reconstruct_from_fits(gaussian_lists_by_cv, axes, new_filename, params_obj):
