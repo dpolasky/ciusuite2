@@ -64,7 +64,7 @@ def get_data(filename):
         rawdata = np.genfromtxt(filename, missing_values=[""], filling_values=[0], delimiter=",")
     except ValueError:
         # bad characters in file, or other numpy import errors
-        logger.error('Data import error in File: ', os.path.basename(filename), 'Illegal characters or other error in importing data. This file will NOT be processed')
+        logger.error('Data import error in File: {}. Illegal characters or other error in importing data. This file will NOT be processed'.format(os.path.basename(filename)))
         raise ValueError('Data import error in File: ', os.path.basename(filename), 'Illegal characters or other error in importing data. This file will NOT be processed')
     row_axis = rawdata[1:, 0]
     col_axis = rawdata[0, 1:]
@@ -73,22 +73,22 @@ def get_data(filename):
     prev_val = 0
     for value in row_axis:
         if value < prev_val:
-            logger.error(('Data import error in File: ', os.path.basename(filename), 'Mobility axis has decreasing or negative values. All axis values must be positive and increasing. This file will NOT be processed'))
+            logger.error('Data import error in File: {}. Mobility axis has decreasing or negative values. All axis values must be positive and increasing. This file will NOT be processed'.format(os.path.basename(filename)))
             raise ValueError('Data import error in File: ', os.path.basename(filename), 'Mobility axis has decreasing or negative values. All axis values must be positive and increasing. This file will NOT be processed')
     prev_val = 0
     for value in col_axis:
         if value < prev_val:
-            logger.error(('Data import error in File: ', os.path.basename(filename), 'Activation axis has decreasing or negative values. All axis values must be positive and increasing. This file will NOT be processed'))
+            logger.error('Data import error in File: {}. Activation axis has decreasing or negative values. All axis values must be positive and increasing. This file will NOT be processed'.format(os.path.basename(filename)))
             raise ValueError('Data import error in File: ', os.path.basename(filename), 'Activation axis has decreasing or negative values. All axis values must be positive and increasing. This file will NOT be processed')
 
     # check for duplicate values in axes
     unique_row, row_counts = np.unique(row_axis, return_counts=True)
     if np.max(row_counts) > 1:
-        logger.error('Data import error in File: ', os.path.basename(filename), 'Duplicate row (DT) values. This file will NOT be processed')
+        logger.error('Data import error in File: {}. Duplicate row (DT) values. This file will NOT be processed'.format(os.path.basename(filename)))
         raise ValueError('Data import error in File: ', os.path.basename(filename), 'Duplicate row (DT) values. This file will NOT be processed')
     unique_col, col_counts = np.unique(col_axis, return_counts=True)
     if np.max(col_counts) > 1:
-        logger.error('Data import error in File: ', os.path.basename(filename), 'Duplicate column (CV) values. This file will NOT be processed.')
+        logger.error('Data import error in File: {}. Duplicate column (CV) values. This file will NOT be processed.'.format(os.path.basename(filename)))
         raise ValueError('Data import error in File: ', os.path.basename(filename), 'Duplicate column (CV) values. This file will NOT be processed.')
 
     raw_obj = CIU_raw.CIURaw(rawdata[1:, 1:], row_axis, col_axis, filename)

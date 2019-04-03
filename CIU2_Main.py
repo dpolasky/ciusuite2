@@ -196,7 +196,7 @@ class CIUSuite2(object):
                     try:
                         raw_obj = Raw_Processing.get_data(raw_file)
                     except ValueError as err:
-                        messagebox.showerror('Data Import Error', message='{}{}. Problem: {}. Press OK to continue'.format(*err.args))
+                        messagebox.showerror('Data Import Error', message='{}{}. \nProblem: {}. Press OK to continue'.format(*err.args))
                         continue
 
                     try:
