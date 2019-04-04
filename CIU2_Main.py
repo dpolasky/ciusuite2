@@ -1053,7 +1053,7 @@ class CIUSuite2(object):
                 param_keys = [x for x in self.params_obj.params_dict.keys() if 'classif' in x]
                 param_success, param_dict = self.run_param_ui('Classification Parameters', param_keys)
                 if param_success:
-                    if self.params_obj.classif_3_unk_mode == 'Gaussian':
+                    if self.params_obj.classif_1_unk_mode == 'Gaussian':
                         # Ensure Gaussian features are present and prepare them for classification
                         flat_input_list = [x for input_list in cl_inputs_by_label for x in input_list]
                         if not check_classif_data_gaussians(flat_input_list):
@@ -1108,7 +1108,7 @@ class CIUSuite2(object):
 
                 if len(replicate_inputs) > 0:
                     # ensure Gaussian features are present if requested
-                    if self.params_obj.classif_3_unk_mode == 'Gaussian':
+                    if self.params_obj.classif_1_unk_mode == 'Gaussian':
                         # make sure the scheme is in Gaussian mode, cancel classification if not
                         if scheme.num_gaussians == 0:
                             messagebox.showerror('Non-Gaussian Scheme Selected', 'Gaussian mode specified, but the selected classification scheme (.clf file) is NOT a Gaussian classification scheme. No analysis will be performed.')

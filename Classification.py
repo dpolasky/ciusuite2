@@ -58,7 +58,7 @@ def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_ob
     """
     start_time = time.time()
     # Assemble Gaussian feature information if using Gaussian mode
-    if params_obj.classif_3_unk_mode == 'Gaussian':
+    if params_obj.classif_1_unk_mode == 'Gaussian':
         max_num_gaussians = prep_all_gaussian_data_2d(cl_inputs_by_label, params_obj)
     else:
         max_num_gaussians = 0
@@ -467,7 +467,8 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
     all_results_by_feats['test_scores_std'] = np.asarray(all_results_by_feats['test_scores_std'])
 
     # save and plot crossvalidation score information
-    crossval_acc_data = (all_results_by_feats['train_scores_mean'], all_results_by_feats['train_scores_std'], all_results_by_feats['test_scores_mean'], all_results_by_feats['test_scores_std'])
+    crossval_acc_data = [all_results_by_feats['train_scores_mean'], all_results_by_feats['train_scores_std'], all_results_by_feats['test_scores_mean'], all_results_by_feats['test_scores_std'], all_results_by_feats['roc_auc_micro_mean'], all_results_by_feats['roc_auc_micro_std']]
+
     unique_labels = get_unique_labels(label_list)
     scheme_name = generate_scheme_name(unique_labels, subclass_labels)
     crossval_file = save_crossval_score(crossval_acc_data, scheme_name, outputdir)
@@ -477,7 +478,11 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
     # plot_crossval_auc(all_results_by_feats['roc_auc_micro_mean'], all_results_by_feats['roc_auc_micro_std'], scheme_name, params_obj, outputdir)
 
     # determine best features list from crossval scores
-    best_num_feats, best_score = peak_crossval_score_detect(all_results_by_feats['test_scores_mean'], params_obj.classif_2_score_dif_tol)
+    if params_obj.classif_3_score_mode == 'auc':
+        score_list = all_results_by_feats['roc_auc_micro_mean']
+    else:
+        score_list = all_results_by_feats['test_scores_mean']
+    best_num_feats, best_score = peak_crossval_score_detect(score_list, params_obj.classif_2_score_dif_tol)
     output_features = features_list[0: best_num_feats]
     plot_roc_cuve(all_results_by_feats, scheme_name, outputdir, params_obj, selected_features=output_features)
     logger.info('Cross validation complete!')
@@ -673,10 +678,10 @@ def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_overrid
     """
     classif_data = None
 
-    if params_obj.classif_3_unk_mode == 'All_Data':
+    if params_obj.classif_1_unk_mode == 'All_Data':
         classif_data = analysis_obj.ciu_data
 
-    elif params_obj.classif_3_unk_mode == 'Gaussian':
+    elif params_obj.classif_1_unk_mode == 'Gaussian':
         classif_data = []
 
         # for unknown data, num gaussians is provided (use it); for building scheme, num gaussians comes from params object (as a convenient save location)
@@ -728,7 +733,7 @@ def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_overrid
                 classif_data.append(cent_list)
             classif_data = np.asarray(classif_data).T
     else:
-        logger.error('WARNING: INVALID CLASSIFICATION MODE: {}'.format(params_obj.classif_3_unk_mode))
+        logger.error('WARNING: INVALID CLASSIFICATION MODE: {}'.format(params_obj.classif_1_unk_mode))
 
     return classif_data
 
@@ -1039,12 +1044,17 @@ def plot_crossval_scores(crossval_data, scheme_name, params_obj, outputdir):
     train_score_stds = crossval_data[1]
     test_score_means = crossval_data[2]
     test_score_stds = crossval_data[3]
+    auc_means = np.asarray(crossval_data[4])
+    auc_stds = np.asarray(crossval_data[5])
 
     xax = np.arange(1, len(train_score_means) + 1)
     plt.plot(xax, train_score_means, color='blue', marker='s', label='train_score', markersize=params_obj.plot_14_dot_size, markeredgecolor='black')
     plt.fill_between(xax, train_score_means-train_score_stds, train_score_means+train_score_stds, color='blue', alpha=0.2)
     plt.plot(xax, test_score_means, color='green', marker='o', label='test_score', markersize=params_obj.plot_14_dot_size, markeredgecolor='black')
     plt.fill_between(xax, test_score_means-test_score_stds, test_score_means+test_score_stds, color='green', alpha=0.2)
+    # add AUC
+    plt.plot(xax, auc_means, color='red', marker='o', label='AUC', markersize=params_obj.plot_14_dot_size, markeredgecolor='black')
+    plt.fill_between(xax, auc_means - auc_stds, auc_means + auc_stds, color='red', alpha=0.2)
 
     # plot titles, labels, and legends
     if params_obj.plot_12_custom_title is not None:
