@@ -1984,7 +1984,7 @@ class CrossValRun(object):
                 allclass_traintest_combos.append(data_combo)
 
             # take the product of the generated random data combinations and save scores
-            for class_combo_pair in itertools.combinations(allclass_traintest_combos, 2):
+            for class_combo_pair in itertools.combinations(allclass_traintest_combos, len(allclass_traintest_combos)):
                 final_train_data, final_train_labels = [], []
                 final_test_data, final_test_labels = [], []
 
