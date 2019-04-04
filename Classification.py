@@ -117,10 +117,9 @@ def multi_subclass_ufs(subclass_input_list, params_obj, output_path, subclass_la
     for subclass_input in subclass_input_list:
         # generate all combinations of replicate datasets within the labels
         shaped_label_list = subclass_input.shaped_label_list
-        products = generate_products_for_ufs(subclass_input.analysis_objs_by_label, shaped_label_list, params_obj)
+        scores = generate_products_for_ufs(subclass_input.analysis_objs_by_label, shaped_label_list, params_obj)
 
         # Create a CFeature object to hold the information for this CV (feature)
-        scores = [product.fit_sc for product in products]
         mean_score = np.mean(scores, axis=0)
         std_score = np.std(scores, axis=0)
 
@@ -157,7 +156,7 @@ def generate_products_for_ufs(analysis_obj_list_by_label, shaped_label_list, par
     :return: list of DataProduct objects for each combination
     :rtype: list[UFSResult]
     """
-    products = []
+    scores = []
     for object_tuple, label_tuple in zip(itertools.product(*analysis_obj_list_by_label), itertools.product(*shaped_label_list)):
         # create a UFSResult object for this combination
         # data_list = [x.ciu_data for x in object_tuple]
@@ -174,8 +173,8 @@ def generate_products_for_ufs(analysis_obj_list_by_label, shaped_label_list, par
         product.fit_scores = select.scores_
         product.fit_sc = -np.log10(select.pvalues_)
 
-        products.append(product)
-    return products
+        scores.append(product.fit_sc)   # don't save whole product to reduce memory load
+    return scores
 
 
 def roc_curve_area_multiclass(x_train, y_train, x_test, y_test, svc=None):

@@ -1616,9 +1616,9 @@ def load_classif_inputs_from_files(files, class_labels, subclass_labels):
                 cl_input = Classification.ClInput(class_label, subclass_dict)
                 all_replicates.append(cl_input)
             except IndexError:
-                # not an even number of replicates in all files - skip odd numbers
+                # not an even number of replicates in all files - stop once reached max number in smallest subclass
                 logger.info('Not all subclasses had {} replicates. Only {} replicates generated.'.format(rep_index + 1, rep_index))
-                continue
+                break
         cl_inputs_by_label.append(all_replicates)
     return cl_inputs_by_label
 
@@ -1767,9 +1767,12 @@ def parse_classification_template(template_file):
                 # special line for subclass labels - remember them too
                 splits = line.rstrip('\n').split(',')
                 subclass_labels = splits[1:]
+                remove_labels = []
                 for index, subclass_label in enumerate(subclass_labels):
                     if subclass_label is '':
-                        subclass_labels.remove(subclass_labels[index])
+                        remove_labels.append(subclass_label)
+                for junk_label in remove_labels:
+                    subclass_labels.remove(junk_label)
 
             elif line.lower().startswith('folder'):
                 splits = line.rstrip('\n').split(',')
