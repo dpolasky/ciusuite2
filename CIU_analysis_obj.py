@@ -71,6 +71,7 @@ class CIUAnalysisObj(object):
         self.classif_probs_avg = None
 
         self.classif_gaussfeats = None
+        self.ciu_data_renormed = None   # for classification
 
     def __str__(self):
         """

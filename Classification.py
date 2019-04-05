@@ -23,6 +23,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.colors import ListedColormap
 from mpl_toolkits.mplot3d import Axes3D
 from sklearn.preprocessing import LabelEncoder, label_binarize
+# from sklearn.preprocessing import PowerTransformer
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.metrics import precision_score, roc_curve, auc
 from sklearn.feature_selection import f_classif, GenericUnivariateSelect
@@ -173,6 +174,7 @@ def generate_products_for_ufs(analysis_obj_list_by_label, shaped_label_list, par
         product.fit_scores = select.scores_
         product.fit_sc = -np.log10(select.pvalues_)
 
+        # scores.append(product.fit_scores)
         scores.append(product.fit_sc)   # don't save whole product to reduce memory load
     return scores
 
@@ -292,11 +294,12 @@ def binarize_2class(unique_class_labels, label_data):
     return output_data
 
 
-def plot_roc_cuve(roc_data, schem_name, dirpath, params_obj, selected_features=None):
+def plot_roc_cuve(roc_data, class_labels, schem_name, dirpath, params_obj, selected_features=None):
     """
     Plot ROC curves for each number of features in a single PDF document. roc_data input is the
     saved results dictionary from a CrossValRun container.
     :param roc_data: saved results dictionary from a CrossValRun container.
+    :param class_labels: list of strings - labels for each class
     :param schem_name:
     :param dirpath:
     :param selected_features:
@@ -322,7 +325,7 @@ def plot_roc_cuve(roc_data, schem_name, dirpath, params_obj, selected_features=N
         with PdfPages(pdf_output) as pdf:
             for index in range(len(tpr_class_mean)):
                 for num, (tpr_class_mean_, tpr_class_std_, roc_auc_class_mean_, roc_auc_class_std_) in enumerate(zip(tpr_class_mean[index], tpr_class_std[index], roc_auc_class_mean[index], roc_auc_class_std[index])):
-                    plt.plot(tmp_fpr, tpr_class_mean_[0], linestyle=':', label='Class_{0} {1:0.2f} +/- {2:0.2f}'.format(num + 1, roc_auc_class_mean_, roc_auc_class_std_))
+                    plt.plot(tmp_fpr, tpr_class_mean_[0], linestyle=':', label='{0} {1:0.2f} +/- {2:0.2f}'.format(class_labels[num], roc_auc_class_mean_, roc_auc_class_std_))
                     plt.fill_between(tmp_fpr, tpr_class_mean_[0] + tpr_class_std_[0], tpr_class_mean_[0] - tpr_class_std_[0], alpha=0.2)
 
                 # plot macro/micro averages only if more than one classifier
@@ -348,7 +351,7 @@ def plot_roc_cuve(roc_data, schem_name, dirpath, params_obj, selected_features=N
                 plt.xticks(fontsize=params_obj.plot_13_font_size)
                 plt.yticks(fontsize=params_obj.plot_13_font_size)
                 if params_obj.plot_07_show_legend:
-                    plt.legend(loc='best', fontsize=params_obj.plot_13_font_size)
+                    plt.legend(loc='best', fontsize='small')
 
                 try:
                     pdf.savefig()
@@ -360,7 +363,7 @@ def plot_roc_cuve(roc_data, schem_name, dirpath, params_obj, selected_features=N
         # plot ROC curve for single number of selected features
         index = len(selected_features) - 1  # indexed from 0 in the lists, not 1
         for num, (tpr_class_mean_, tpr_class_std_, roc_auc_class_mean_, roc_auc_class_std_) in enumerate(zip(tpr_class_mean[index], tpr_class_std[index], roc_auc_class_mean[index], roc_auc_class_std[index])):
-            plt.plot(tmp_fpr, tpr_class_mean_[0], linestyle=':', label='Class_{0} {1:0.2f} +/- {2:0.2f}'.format(num + 1, roc_auc_class_mean_, roc_auc_class_std_))
+            plt.plot(tmp_fpr, tpr_class_mean_[0], linestyle=':', label='{0} {1:0.2f} +/- {2:0.2f}'.format(class_labels[num], roc_auc_class_mean_, roc_auc_class_std_))
             plt.fill_between(tmp_fpr, tpr_class_mean_[0] + tpr_class_std_[0], tpr_class_mean_[0] - tpr_class_std_[0], alpha=0.2)
 
         # plot macro/micro averages only if more than one classifier
@@ -473,7 +476,7 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
     crossval_file = save_crossval_score(crossval_acc_data, scheme_name, outputdir)
     save_roc_data(all_results_by_feats, crossval_file)
     plot_crossval_scores(crossval_acc_data, scheme_name, params_obj, outputdir)
-    plot_roc_cuve(all_results_by_feats, scheme_name, outputdir, params_obj)
+    plot_roc_cuve(all_results_by_feats, unique_labels, scheme_name, outputdir, params_obj)
     # plot_crossval_auc(all_results_by_feats['roc_auc_micro_mean'], all_results_by_feats['roc_auc_micro_std'], scheme_name, params_obj, outputdir)
 
     # determine best features list from crossval scores
@@ -483,7 +486,7 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
         score_list = all_results_by_feats['test_scores_mean']
     best_num_feats, best_score = peak_crossval_score_detect(score_list, params_obj.classif_2_score_dif_tol)
     output_features = features_list[0: best_num_feats]
-    plot_roc_cuve(all_results_by_feats, scheme_name, outputdir, params_obj, selected_features=output_features)
+    plot_roc_cuve(all_results_by_feats, unique_labels, scheme_name, outputdir, params_obj, selected_features=output_features)
     logger.info('Cross validation complete!')
     return output_features, best_score, crossval_acc_data
 
@@ -659,6 +662,35 @@ def run_lda_svc(x_data, label_data):
     return svm, lda
 
 
+def standardize_data(ciu_data):
+    """
+    Standardize the input CIU data using the common (xi - x_mean) / stdev approach. The UFS
+    is behaving strangely with negative values in the input so the output is 'floored' to
+    have no negative values.
+    :param ciu_data: 2D numpy array of CIU data
+    :return:
+    """
+    # powertransf = PowerTransformer(method='yeo-johnson')
+    # powertransf.fit(ciu_data)
+    # std_data = powertransf.transform(ciu_data)
+    # return std_data
+
+    cv_data = np.swapaxes(ciu_data, 0, 1)
+    output_data = np.ndarray(np.shape(cv_data))
+
+    # smooth each column and return the data (axes swapped back to normal)
+    index = 0
+    while index < len(cv_data):
+        current_col = cv_data[index]
+        normed_col = (current_col - np.mean(current_col)) / np.std(current_col)
+        # normed_col = abs((current_col - np.mean(current_col)) / np.std(current_col))
+        normed_col[normed_col < 0] = 0  # set all negative values to 0
+        output_data[index] = normed_col
+        index += 1
+    output_data = np.swapaxes(output_data, 0, 1)
+    return output_data
+
+
 def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_override=None, selected_cvs=None):
     """
     Initialize a classification data matrix in each analysis object in the lists according to the
@@ -678,7 +710,12 @@ def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_overrid
     classif_data = None
 
     if params_obj.classif_1_unk_mode == 'All_Data':
-        classif_data = analysis_obj.ciu_data
+        # classif_data = analysis_obj.ciu_data
+        if analysis_obj.ciu_data_renormed is None:
+            classif_data = standardize_data(analysis_obj.ciu_data)
+            analysis_obj.ciu_data_renormed = classif_data
+        else:
+            classif_data = analysis_obj.ciu_data_renormed
 
     elif params_obj.classif_1_unk_mode == 'Gaussian':
         classif_data = []
@@ -1398,13 +1435,19 @@ def save_feature_scores(features_by_subclass, scheme_name, output_path):
     outfilename = os.path.join(output_path, scheme_name + '_UFS.csv')
     output_string = 'UFS (Feature Selection) Results\n'
 
-    lineheader = 'Collision Voltage (V),Mean Score,StDev Score\n'
+    if features_by_subclass[0][0].subclass_label is not '0':
+        lineheader = 'SubClass,Collision Voltage (V),Mean Score,StDev Score\n'
+    else:
+        lineheader = 'Collision Voltage (V),Mean Score,StDev Score\n'
     output_string += lineheader
     for feature_list in features_by_subclass:
-        if feature_list[0].subclass_label is not '0':
-            output_string += 'Subclass: {}\n'.format(feature_list[0].subclass_label)
+        # if feature_list[0].subclass_label is not '0':
+        #     output_string += 'Subclass: {}\n'.format(feature_list[0].subclass_label)
         for feature in feature_list:
-            line = '{},{:.4f},{:.4f}\n'.format(feature.cv, feature.mean_score, feature.std_dev_score)
+            if feature_list[0].subclass_label is not '0':
+                line = '{},{},{:.4f},{:.4f},{:.4f}\n'.format(feature_list[0].subclass_label, feature.cv, feature.mean_score, feature.std_dev_score, feature.mean_score - feature.std_dev_score)
+            else:
+                line = '{},{:.4f},{:.4f},{:.4f}\n'.format(feature.cv, feature.mean_score, feature.std_dev_score, feature.mean_score - feature.std_dev_score)
             output_string += line
 
     try:
