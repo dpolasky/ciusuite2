@@ -162,12 +162,14 @@ class Parameters(object):
         self.class_t1_2_subclass_mode = None
         self.classif_6_ufs_use_error_mode = None
         self.classif_2_score_dif_tol = None
-        self.classif_3_score_mode = None
+        self.classif_4_score_mode = None
         self.classif_1_unk_mode = None
-        self.classif_5_auto_featselect = None
+        self.classif_3_auto_featselect = None
+        self.classif_5_show_auc_crossval = None
         self.classif_7_max_feats_for_crossval = None
         self.classif_8_max_crossval_iterations = None
-        self.classif_9_test_size = None
+        self.classif_91_test_size = None
+        self.classif_92_standardize = None
         self.silent_clf_4_num_gauss = None
 
         # Raw data import parameters

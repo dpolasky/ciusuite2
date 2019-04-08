@@ -1040,7 +1040,7 @@ class CIUSuite2(object):
 
                 # update output directory
                 current_dir_text = self.builder.get_object('Text_outputdir').get(1.0, tk.END).rstrip('\n')
-                if current_dir_text == '(No files loaded yet)':
+                if current_dir_text == '(No files loaded yet)' or len(current_dir_text) == 0:
                     self.output_dir = os.path.dirname(template_file)
 
             # Once data has been loaded, check it (appropriate number of classes, files, subclasses, etc)
@@ -1060,7 +1060,7 @@ class CIUSuite2(object):
                             self.progress_done()
 
                     # Run the classification
-                    if self.params_obj.classif_5_auto_featselect == 'automatic':
+                    if self.params_obj.classif_3_auto_featselect == 'automatic':
                         self.progress_print_text('Classification in progress (may take a few minutes - see console for progress)...', 50)
                         scheme = Classification.main_build_classification_new(cl_inputs_by_label, subclass_labels, self.params_obj, self.output_dir)
                         scheme.final_axis_cropvals = equalized_axes

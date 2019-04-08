@@ -415,9 +415,9 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
     """
     # determine training size as size of the smallest class - 1 (1 test file at a time)
     min_class_size = np.min([len(x) for x in cl_inputs_by_label])
-    training_size = min_class_size - params_obj.classif_9_test_size
+    training_size = min_class_size - params_obj.classif_91_test_size
     if training_size < 2:
-        logger.warning('WARNING! Testing size provided ({}) was too large: at least one class had less than 2 replicates of training data. Test size of 1 used instead.'.format(params_obj.classif_9_test_size))
+        logger.warning('WARNING! Testing size provided ({}) was too large: at least one class had less than 2 replicates of training data. Test size of 1 used instead.'.format(params_obj.classif_91_test_size))
         training_size = min_class_size - 1
     label_list = [class_list[0].class_label for class_list in cl_inputs_by_label]
 
@@ -480,7 +480,7 @@ def crossval_main_new(cl_inputs_by_label, outputdir, params_obj, features_list, 
     # plot_crossval_auc(all_results_by_feats['roc_auc_micro_mean'], all_results_by_feats['roc_auc_micro_std'], scheme_name, params_obj, outputdir)
 
     # determine best features list from crossval scores
-    if params_obj.classif_3_score_mode == 'auc':
+    if params_obj.classif_4_score_mode == 'auc':
         score_list = all_results_by_feats['roc_auc_micro_mean']
     else:
         score_list = all_results_by_feats['test_scores_mean']
@@ -710,12 +710,16 @@ def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_overrid
     classif_data = None
 
     if params_obj.classif_1_unk_mode == 'All_Data':
-        # classif_data = analysis_obj.ciu_data
-        if analysis_obj.ciu_data_renormed is None:
-            classif_data = standardize_data(analysis_obj.ciu_data)
-            analysis_obj.ciu_data_renormed = classif_data
+        if params_obj.classif_92_standardize:
+            # standardize data if requested
+            if analysis_obj.ciu_data_renormed is None:
+                classif_data = standardize_data(analysis_obj.ciu_data)
+                analysis_obj.ciu_data_renormed = classif_data
+            else:
+                classif_data = analysis_obj.ciu_data_renormed
         else:
-            classif_data = analysis_obj.ciu_data_renormed
+            # no standardization requested
+            classif_data = analysis_obj.ciu_data
 
     elif params_obj.classif_1_unk_mode == 'Gaussian':
         classif_data = []
@@ -1088,9 +1092,10 @@ def plot_crossval_scores(crossval_data, scheme_name, params_obj, outputdir):
     plt.fill_between(xax, train_score_means-train_score_stds, train_score_means+train_score_stds, color='blue', alpha=0.2)
     plt.plot(xax, test_score_means, color='green', marker='o', label='test_score', markersize=params_obj.plot_14_dot_size, markeredgecolor='black')
     plt.fill_between(xax, test_score_means-test_score_stds, test_score_means+test_score_stds, color='green', alpha=0.2)
-    # add AUC
-    plt.plot(xax, auc_means, color='red', marker='o', label='AUC', markersize=params_obj.plot_14_dot_size, markeredgecolor='black')
-    plt.fill_between(xax, auc_means - auc_stds, auc_means + auc_stds, color='red', alpha=0.2)
+    # add AUC if requested
+    if params_obj.classif_5_show_auc_crossval:
+        plt.plot(xax, auc_means, color='red', marker='o', label='AUC', markersize=params_obj.plot_14_dot_size, markeredgecolor='black')
+        plt.fill_between(xax, auc_means - auc_stds, auc_means + auc_stds, color='red', alpha=0.2)
 
     # plot titles, labels, and legends
     if params_obj.plot_12_custom_title is not None:
