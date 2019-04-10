@@ -1777,7 +1777,11 @@ def parse_classification_template(template_file):
             elif line.lower().startswith('folder'):
                 splits = line.rstrip('\n').split(',')
                 folder = splits[1]
-                files = [os.path.join(folder, x) for x in os.listdir(folder) if x.endswith('.ciu')]
+                try:
+                    files = [os.path.join(folder, x) for x in os.listdir(folder) if x.endswith('.ciu')]
+                except FileNotFoundError:
+                    logger.error('Could not find file path specified in classification template: {}'.format(folder))
+                    return [], []
                 if len(subclass_labels) == 0:
                     subclass_labels = ['0']
                 cl_inputs_by_label = load_classif_inputs_from_files(files, class_labels, subclass_labels)
