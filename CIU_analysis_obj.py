@@ -70,7 +70,7 @@ class CIUAnalysisObj(object):
         self.classif_probs_by_cv = None
         self.classif_probs_avg = None
 
-        self.classif_gaussfeats = None
+        self.classif_gaussians_by_cv = None   # type: List[List[Gaussian_Fitting.Gaussian]]  # list of Gaussian containers, prior to being prepared into the classif_input_raw matrix
         self.classif_input_raw = None   # for classification, to allow prepared Gaussians and raw data to be used from same field after prep
         self.classif_input_std = None   # for classification, data that has been standardized and ready to classify
 

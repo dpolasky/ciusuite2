@@ -1724,7 +1724,7 @@ def check_classif_data_gaussians(flat_clinput_list, max_gaussians_unk=None):
                                      'Error: No Gaussian Features in file: {} . Gaussian Feature classification selected, '
                                      'but Gaussian Feature Detection has not been performed yet. '
                                      'Please run Gaussian Feature Detection on all files being used'
-                                     'and try again.'.format(analysis_obj.short_filename))
+                                     ' and try again.'.format(analysis_obj.short_filename))
                 return False
 
             if max_gaussians_unk is not None:

@@ -60,15 +60,10 @@ def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_ob
     """
     start_time = time.time()
 
-    # todo: standardize data before starting analysis (Gaussian and regular modes)
-
-    # Assemble Gaussian feature information if using Gaussian mode
-    # if params_obj.classif_1_unk_mode == 'Gaussian':
+    # Data preparation for Gaussians (if applicable) and standardization
     max_num_gaussians = prep_data_2d(cl_inputs_by_label, params_obj)
-    # else:
-    #     max_num_gaussians = 0
+    cl_inputs_by_label, means, stdevs = standardize_all_2d(cl_inputs_by_label, params_obj)
 
-    cl_inputs_by_label = standardize_all_2d(cl_inputs_by_label, params_obj)
     logger.debug('standardization finished: {:.2f}s'.format(time.time() - start_time))
 
     if known_feats is None:
@@ -95,6 +90,8 @@ def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_ob
     constructed_scheme = lda_svc_best_feats(flat_subsets, best_features, all_features, output_dir, subclass_labels, max_num_gaussians)
     constructed_scheme.crossval_test_score = crossval_score
     constructed_scheme.all_crossval_data = all_crossval_data
+    constructed_scheme.standard_means = means
+    constructed_scheme.standard_stdevs = stdevs
 
     # plot output here for now, will probably move eventually
     plot_classification_decision_regions(constructed_scheme, params_obj, output_dir)
@@ -714,155 +711,116 @@ def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_overrid
     :param selected_cvs: for unknown analyses, only return the data in the specified CV columns
     :return: classification data matrix
     """
-    classif_data = None
-
     if params_obj.classif_1_unk_mode == 'All_Data':
-
         classif_data = analysis_obj.classif_input_std
 
-    # todo: fix this - just sort between unknown and regular data, and UFS/not modes for Gaussians
     elif params_obj.classif_1_unk_mode == 'Gaussian':
-        classif_data = []
-
-        # for unknown data, num gaussians is provided (use it); for building scheme, num gaussians comes from params object (as a convenient save location)
-        if num_gauss_override is not None:
-            max_num_gaussians = num_gauss_override
-        else:
-            max_num_gaussians = params_obj.silent_clf_4_num_gauss
-
-        # use Gaussian features if available, otherwise just all filtered Gaussians
-        if analysis_obj.features_gaussian is not None:
-            if analysis_obj.classif_gaussfeats is None:
-                gaussian_list_by_cv = prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
-            else:
-                gaussian_list_by_cv = analysis_obj.classif_gaussfeats
-        else:
-            gaussian_list_by_cv = analysis_obj.raw_protein_gaussians
-
         if not ufs_mode:
-            # assemble matrix of gaussian data
-            for gaussian_list in gaussian_list_by_cv:
-                # skip any non-selected CVs if requested (i.e. in unknown analysis mode)
-                if selected_cvs is not None:
-                    if not gaussian_list[0].cv in selected_cvs:
-                        continue
-                attributes = ['cent', 'width', 'amp']
-                num_attributes = len(attributes)
-                attribute_list = np.zeros(max_num_gaussians * num_attributes)
-
-                attribute_index = 0
-                if len(gaussian_list) == 0:
-                    continue
-                for gaussian in gaussian_list:
-                    attribute_list[attribute_index] = gaussian.centroid
-                    attribute_index += 1
-                    attribute_list[attribute_index] = gaussian.width
-                    attribute_index += 1
-                    attribute_list[attribute_index] = gaussian.amplitude
-                    attribute_index += 1
-
-                classif_data.append(attribute_list)
-            classif_data = np.asarray(classif_data).T
+            # for non-UFS, use full input (standardized) Gaussian dataset. Transpose to be by column
+            classif_data = analysis_obj.classif_input_std
         else:
-            # for UFS, only use centroids
-            for gaussian_list in gaussian_list_by_cv:
-                cent_list = np.zeros(max_num_gaussians)
-                for gauss_index, gaussian in enumerate(gaussian_list):
-                    cent_list[gauss_index] = gaussian.centroid
-
-                classif_data.append(cent_list)
-            classif_data = np.asarray(classif_data).T
+            # for UFS, only use centroids - remove
+            centroids_by_cv = []
+            for cv_index, gaussian_data_at_cv in enumerate(analysis_obj.classif_input_std.T):
+                current_centroids = []
+                for feat_index, gaussian_attribute in enumerate(gaussian_data_at_cv):
+                    if feat_index % 3 == 0:
+                        current_centroids.append(gaussian_attribute)
+                centroids_by_cv.append(current_centroids)
+            classif_data = np.asarray(centroids_by_cv).T    # transpose because we transposed at the start (in the loop) to access by CV
     else:
         logger.error('WARNING: INVALID CLASSIFICATION MODE: {}'.format(params_obj.classif_1_unk_mode))
+        classif_data = None
 
     return classif_data
 
 
-def get_classif_data_old(analysis_obj, params_obj, ufs_mode=False, num_gauss_override=None, selected_cvs=None):
-    """
-    Initialize a classification data matrix in each analysis object in the lists according to the
-    classification mode specified in the parameters object. In All_Data mode, this is simply the
-    ciu_data matrix. In Gaussian mode, it will be Gaussian information from the object's fitted Gaussian
-    lists.
-    :param analysis_obj: analysis objects
-    :type analysis_obj: CIUAnalysisObj
-    :param params_obj: Parameters object with classification parameter information
-    :type params_obj: Parameters
-    :param ufs_mode: boolean, True if using for UFS (feature selection), which requires only centroids from gaussian fitting
-    :param num_gauss_override: MUST be provided for Unknown data fitting (in Gaussian mode ONLY) - the number of gaussians in the scheme being used
-    Set up this way to simplify moving the number through all crossval code/etc
-    :param selected_cvs: for unknown analyses, only return the data in the specified CV columns
-    :return: classification data matrix
-    """
-    classif_data = None
-
-    if params_obj.classif_1_unk_mode == 'All_Data':
-        if params_obj.classif_92_standardize:
-            # standardize data if requested
-            if analysis_obj.ciu_data_renormed is None:
-                classif_data = standardize_data(analysis_obj.ciu_data)
-                analysis_obj.ciu_data_renormed = classif_data
-            else:
-                classif_data = analysis_obj.ciu_data_renormed
-        else:
-            # no standardization requested
-            classif_data = analysis_obj.ciu_data
-
-    elif params_obj.classif_1_unk_mode == 'Gaussian':
-        classif_data = []
-
-        # for unknown data, num gaussians is provided (use it); for building scheme, num gaussians comes from params object (as a convenient save location)
-        if num_gauss_override is not None:
-            max_num_gaussians = num_gauss_override
-        else:
-            max_num_gaussians = params_obj.silent_clf_4_num_gauss
-
-        # use Gaussian features if available, otherwise just all filtered Gaussians
-        if analysis_obj.features_gaussian is not None:
-            if analysis_obj.classif_gaussfeats is None:
-                gaussian_list_by_cv = prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
-            else:
-                gaussian_list_by_cv = analysis_obj.classif_gaussfeats
-        else:
-            gaussian_list_by_cv = analysis_obj.raw_protein_gaussians
-
-        if not ufs_mode:
-            # assemble matrix of gaussian data
-            for gaussian_list in gaussian_list_by_cv:
-                # skip any non-selected CVs if requested (i.e. in unknown analysis mode)
-                if selected_cvs is not None:
-                    if not gaussian_list[0].cv in selected_cvs:
-                        continue
-                attributes = ['cent', 'width', 'amp']
-                num_attributes = len(attributes)
-                attribute_list = np.zeros(max_num_gaussians * num_attributes)
-
-                attribute_index = 0
-                if len(gaussian_list) == 0:
-                    continue
-                for gaussian in gaussian_list:
-                    attribute_list[attribute_index] = gaussian.centroid
-                    attribute_index += 1
-                    attribute_list[attribute_index] = gaussian.width
-                    attribute_index += 1
-                    attribute_list[attribute_index] = gaussian.amplitude
-                    attribute_index += 1
-
-                classif_data.append(attribute_list)
-            classif_data = np.asarray(classif_data).T
-        else:
-            # for UFS, only use centroids
-            for gaussian_list in gaussian_list_by_cv:
-                cent_list = np.zeros(max_num_gaussians)
-                for gauss_index, gaussian in enumerate(gaussian_list):
-                    cent_list[gauss_index] = gaussian.centroid
-
-                classif_data.append(cent_list)
-            classif_data = np.asarray(classif_data).T
-    else:
-        logger.error('WARNING: INVALID CLASSIFICATION MODE: {}'.format(params_obj.classif_1_unk_mode))
-
-    return classif_data
+# todo: deprecate
+# def get_classif_data_old(analysis_obj, params_obj, ufs_mode=False, num_gauss_override=None, selected_cvs=None):
+#     """
+#     Initialize a classification data matrix in each analysis object in the lists according to the
+#     classification mode specified in the parameters object. In All_Data mode, this is simply the
+#     ciu_data matrix. In Gaussian mode, it will be Gaussian information from the object's fitted Gaussian
+#     lists.
+#     :param analysis_obj: analysis objects
+#     :type analysis_obj: CIUAnalysisObj
+#     :param params_obj: Parameters object with classification parameter information
+#     :type params_obj: Parameters
+#     :param ufs_mode: boolean, True if using for UFS (feature selection), which requires only centroids from gaussian fitting
+#     :param num_gauss_override: MUST be provided for Unknown data fitting (in Gaussian mode ONLY) - the number of gaussians in the scheme being used
+#     Set up this way to simplify moving the number through all crossval code/etc
+#     :param selected_cvs: for unknown analyses, only return the data in the specified CV columns
+#     :return: classification data matrix
+#     """
+#     classif_data = None
+#
+#     if params_obj.classif_1_unk_mode == 'All_Data':
+#         if params_obj.classif_92_standardize:
+#             # standardize data if requested
+#             if analysis_obj.ciu_data_renormed is None:
+#                 classif_data = standardize_data(analysis_obj.ciu_data)
+#                 analysis_obj.ciu_data_renormed = classif_data
+#             else:
+#                 classif_data = analysis_obj.ciu_data_renormed
+#         else:
+#             # no standardization requested
+#             classif_data = analysis_obj.ciu_data
+#
+#     elif params_obj.classif_1_unk_mode == 'Gaussian':
+#         classif_data = []
+#
+#         # for unknown data, num gaussians is provided (use it); for building scheme, num gaussians comes from params object (as a convenient save location)
+#         if num_gauss_override is not None:
+#             max_num_gaussians = num_gauss_override
+#         else:
+#             max_num_gaussians = params_obj.silent_clf_4_num_gauss
+#
+#         # use Gaussian features if available, otherwise just all filtered Gaussians
+#         if analysis_obj.features_gaussian is not None:
+#             if analysis_obj.classif_gaussfeats is None:
+#                 gaussian_list_by_cv = prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
+#             else:
+#                 gaussian_list_by_cv = analysis_obj.classif_gaussfeats
+#         else:
+#             gaussian_list_by_cv = analysis_obj.raw_protein_gaussians
+#
+#         if not ufs_mode:
+#             # assemble matrix of gaussian data
+#             for gaussian_list in gaussian_list_by_cv:
+#                 # skip any non-selected CVs if requested (i.e. in unknown analysis mode)
+#                 if selected_cvs is not None:
+#                     if not gaussian_list[0].cv in selected_cvs:
+#                         continue
+#                 attributes = ['cent', 'width', 'amp']
+#                 num_attributes = len(attributes)
+#                 attribute_list = np.zeros(max_num_gaussians * num_attributes)
+#
+#                 attribute_index = 0
+#                 if len(gaussian_list) == 0:
+#                     continue
+#                 for gaussian in gaussian_list:
+#                     attribute_list[attribute_index] = gaussian.centroid
+#                     attribute_index += 1
+#                     attribute_list[attribute_index] = gaussian.width
+#                     attribute_index += 1
+#                     attribute_list[attribute_index] = gaussian.amplitude
+#                     attribute_index += 1
+#
+#                 classif_data.append(attribute_list)
+#             classif_data = np.asarray(classif_data).T
+#         else:
+#             # for UFS, only use centroids
+#             for gaussian_list in gaussian_list_by_cv:
+#                 cent_list = np.zeros(max_num_gaussians)
+#                 for gauss_index, gaussian in enumerate(gaussian_list):
+#                     cent_list[gauss_index] = gaussian.centroid
+#
+#                 classif_data.append(cent_list)
+#             classif_data = np.asarray(classif_data).T
+#     else:
+#         logger.error('WARNING: INVALID CLASSIFICATION MODE: {}'.format(params_obj.classif_1_unk_mode))
+#
+#     return classif_data
 
 
 def prep_gaussfeats_for_classif(features_list, analysis_obj):
@@ -910,29 +868,29 @@ def prep_gaussfeats_for_classif(features_list, analysis_obj):
                 final_gaussian_lists[cv_index].append(new_gaussian)
 
     # Finally, check if all CVs have been covered by features. If not, add highest amplitude Gaussian from non-feature list
-    # todo: remove (?) or just add zeros (empty feature) in this case
-    for cv_index, cv in enumerate(analysis_obj.axes[1]):
-        if len(final_gaussian_lists[cv_index]) == 0:
-            # no Gaussians have been added here yet, so we need to add one. Get the raw set of Gaussians (before feature detection) fit at this CV
-            cv_gaussians_from_obj = analysis_obj.raw_protein_gaussians[cv_index]
+    # todo: remove (?) or just add zeros (empty feature) if removing causes a crash
+    # for cv_index, cv in enumerate(analysis_obj.axes[1]):
+    #     if len(final_gaussian_lists[cv_index]) == 0:
+    #         # no Gaussians have been added here yet, so we need to add one. Get the raw set of Gaussians (before feature detection) fit at this CV
+    #         cv_gaussians_from_obj = analysis_obj.raw_protein_gaussians[cv_index]
+    #
+    #         # Find the feature that extends closest to this CV, then find the raw Gaussian at this CV closest to that feature's median centroid
+    #         min_cv_dist = np.inf
+    #         nearest_feat = None
+    #         for feature in features_list:
+    #             for feat_cv in feature.cvs:
+    #                 if abs(feat_cv - cv) < min_cv_dist:
+    #                     nearest_feat = feature
+    #                     min_cv_dist = abs(feat_cv - cv)
+    #         nearest_centroid_index = np.argmin([abs(x.centroid - nearest_feat.gauss_median_centroid) for x in cv_gaussians_from_obj])
+    #         try:
+    #             # add the closest Gaussian to the list at this CV
+    #             final_gaussian_lists[cv_index].append(cv_gaussians_from_obj[nearest_centroid_index])
+    #         except IndexError:
+    #             # no Gaussians found at this CV in the original fitting - leave empty
+    #             continue
 
-            # Find the feature that extends closest to this CV, then find the raw Gaussian at this CV closest to that feature's median centroid
-            min_cv_dist = np.inf
-            nearest_feat = None
-            for feature in features_list:
-                for feat_cv in feature.cvs:
-                    if abs(feat_cv - cv) < min_cv_dist:
-                        nearest_feat = feature
-                        min_cv_dist = abs(feat_cv - cv)
-            nearest_centroid_index = np.argmin([abs(x.centroid - nearest_feat.gauss_median_centroid) for x in cv_gaussians_from_obj])
-            try:
-                # add the closest Gaussian to the list at this CV
-                final_gaussian_lists[cv_index].append(cv_gaussians_from_obj[nearest_centroid_index])
-            except IndexError:
-                # no Gaussians found at this CV in the original fitting - leave empty
-                continue
-
-    analysis_obj.classif_gaussfeats = final_gaussian_lists
+    analysis_obj.classif_gaussians_by_cv = final_gaussian_lists
     return final_gaussian_lists
 
 
@@ -1001,9 +959,9 @@ def prep_data_2d(cl_inputs_by_label, params_obj):
         for cl_input in input_list:
             for subclass_label, analysis_obj in cl_input.subclass_dict.items():
                 if params_obj.classif_1_unk_mode == 'Gaussian':
-                    # prepare gaussian features for classification
+                    # prepare gaussian features for classification (saves to container)
                     gaussians_by_cv = prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
-                    analysis_obj.classif_input_raw = gaussians_by_cv
+                    # analysis_obj.classif_input_raw = gaussians_by_cv
 
                     # update the max number of gaussians if necessary
                     for gaussian_list in gaussians_by_cv:
@@ -1014,7 +972,52 @@ def prep_data_2d(cl_inputs_by_label, params_obj):
                 else:
                     # all data mode - initialize raw data for classification
                     analysis_obj.classif_input_raw = analysis_obj.ciu_data
+
+    if params_obj.classif_1_unk_mode == 'Gaussian':
+        # second pass required for Gaussians to format the final input data matrix (now that we know that max num of Gaussians)
+        for input_list in cl_inputs_by_label:
+            for cl_input in input_list:
+                for subclass_label, analysis_obj in cl_input.subclass_dict.items():
+                    input_classif_raw = prep_gaussian_input_raw(analysis_obj.classif_gaussians_by_cv, max_num_gaussians)
+                    analysis_obj.classif_input_raw = input_classif_raw
     return max_num_gaussians
+
+
+def prep_gaussian_input_raw(gaussians_by_cv, max_num_gaussians, selected_cvs=None):
+    """
+    Assemble a 2D numpy array of correct final dimensions from a list of Gaussians at
+    each collision voltage. Selected CVs can be provided (e.g. for unknown data)
+    :param gaussians_by_cv:
+    :type gaussians_by_cv: list[list[Gaussian]
+    :param max_num_gaussians: maximum number of Gaussians in the classifying scheme
+    :param selected_cvs: list of CVs to consider for unknown data
+    :return: 2D numpy array of formatted Gaussian information for input to standardization/classification
+    """
+    classif_data = []
+    for gaussian_list in gaussians_by_cv:
+        # skip any non-selected CVs if requested (i.e. in unknown analysis mode)
+        if selected_cvs is not None:
+            if not gaussian_list[0].cv in selected_cvs:
+                continue
+        attributes = ['cent', 'width', 'amp']
+        attribute_list = np.zeros(max_num_gaussians * len(attributes))
+
+        attribute_index = 0
+        if len(gaussian_list) == 0:
+            continue
+        for gaussian in gaussian_list:
+            attribute_list[attribute_index] = gaussian.centroid
+            attribute_index += 1
+            attribute_list[attribute_index] = gaussian.width
+            attribute_index += 1
+            attribute_list[attribute_index] = gaussian.amplitude
+            attribute_index += 1
+
+        classif_data.append(attribute_list)
+    # classif_data = np.asarray(classif_data).T
+    classif_data = np.asarray(classif_data)
+
+    return classif_data
 
 
 def standardize_all_2d(cl_inputs_by_label, params_obj):
@@ -1023,16 +1026,16 @@ def standardize_all_2d(cl_inputs_by_label, params_obj):
     called prior to any UFS or crossval. Saves standardized data into a field in the CIUAnalysisObj
     contained within all classification inputs for later reference. Returns the standardization
     information (mean, stdev for each input feature) to be saved into the scheme to allow for
-    unknown standardization.
+    unknown standardization. Data is saved in array by feature, then CV.
     NOTE: assumes axis equalization has already been performed
     NOTE: assumes Gaussian feature prep has already been performed in using Gaussian mode
     :param cl_inputs_by_label: lists of ClInput containers sorted by class label
     :type cl_inputs_by_label: list[list[ClInput]]
     :param params_obj: Parameters object with classification parameter information
     :type params_obj: Parameters
-    :return: max number of Gaussians in the input data (also sets it to params_obj)
+    :return: input 2D cl_input list, mean/stdev matrices used for standardization
     """
-    # todo: catch incorrect dimensions
+    # todo: catch incorrect dimensions?
 
     # get a CIU container to read the input dimensions from. Doesn't matter which one, since all must be identical shape at this stage
     example_obj = list(cl_inputs_by_label[0][0].subclass_dict.values())[0]
@@ -1058,8 +1061,10 @@ def standardize_all_2d(cl_inputs_by_label, params_obj):
                     for subclass_label, analysis_obj in cl_input.subclass_dict.items():
                         if params_obj.classif_1_unk_mode == 'Gaussian':
                             # In Gaussian mode, append data as normal
-                            test = analysis_obj.classif_input_raw[feature_index][cv_index]
-                            all_data.append(analysis_obj.classif_input_raw[feature_index][cv_index])
+                            # test = analysis_obj.classif_input_raw[feature_index][cv_index]
+                            # all_data.append(analysis_obj.classif_input_raw[feature_index][cv_index])
+                            test = analysis_obj.classif_input_raw[cv_index][feature_index]
+                            all_data.append(analysis_obj.classif_input_raw[cv_index][feature_index])
                         else:
                             # In raw data mode, average across whole ATD rather than including each point
                             cv_col_matrix = np.swapaxes(analysis_obj.classif_input_raw, 0, 1)
@@ -1081,31 +1086,39 @@ def standardize_all_2d(cl_inputs_by_label, params_obj):
                         this_feat_mean = means[feature_index][cv_index]
                         this_feat_stdev = stdevs[feature_index][cv_index]
                         if params_obj.classif_1_unk_mode == 'Gaussian':
-                            raw_datapoint = analysis_obj.classif_input_raw[feature_index][cv_index]
-                            standardized_data[feature_index][cv_index] = standardize_data(raw_datapoint, this_feat_mean, this_feat_stdev)
+                            # raw_datapoint = analysis_obj.classif_input_raw[feature_index][cv_index]
+                            # standardized_data[feature_index][cv_index] = standardize_data(raw_datapoint, this_feat_mean, this_feat_stdev)
+                            raw_datapoint = analysis_obj.classif_input_raw[cv_index][feature_index]
+                            standardized_data[cv_index][feature_index] = standardize_data(raw_datapoint, this_feat_mean, this_feat_stdev, params_obj.classif_92_standardize)
                         else:
                             # raw data mode - need to average across whole CV column
                             raw_data_col = np.swapaxes(analysis_obj.classif_input_raw, 0, 1)[cv_index]
-                            std_data_col = standardize_data(raw_data_col, this_feat_mean, this_feat_stdev)
-                            # std_data_row = np.swapaxes([std_data_col], 0, 1)
-                            # standardized_data[cv_index] = std_data_row
+                            std_data_col = standardize_data(raw_data_col, this_feat_mean, this_feat_stdev, params_obj.classif_92_standardize)
                             raw_std_data.append(std_data_col)
                 if not params_obj.classif_1_unk_mode == 'Gaussian':
                     standardized_data = np.swapaxes(raw_std_data, 0, 1)
+                else:
+                    standardized_data = standardized_data.T
                 analysis_obj.classif_input_std = standardized_data
-    return cl_inputs_by_label
+    return cl_inputs_by_label, means, stdevs
 
 
-def standardize_data(datapoint, mean, stdev):
+def standardize_data(datapoint, mean, stdev, standardize_bool):
     """
-    Standardize the input CIU data using the common (xi - x_mean) / stdev approach.
-    :param datapoint: 2D numpy array of CIU data
-    :param mean:
-    :param stdev:
-    :return:
+    Standardize the input CIU data using the common (xi - x_mean) / stdev approach. Datapoint
+    can be an input value or array.
+    :param datapoint: 2D numpy array of CIU data OR single point (feature/CV combination for Gaussian data)
+    :param mean: feature mean for standardization
+    :param stdev: feature standard deviation
+    :param standardize_bool: whether to standardize (method does nothing if False)
+    :return: standardized data in same format as datapoint (input)
     """
+    # escape method for testing/comparison
+    if not standardize_bool:
+        return datapoint
+
     if stdev == 0:
-        print('stdev was 0!')
+        # should only occur in cases where data was empty (value of 0) to begin with, as otherwise all replicates would have to have same value to numerical precision
         std_data = 0
     else:
         std_data = (datapoint - mean) / stdev
@@ -1870,6 +1883,8 @@ class ClassificationScheme(object):
         self.all_crossval_data = None   # list of (train_score_means, train_score_stds, test_score_means, test_score_stds) for each feature combination
 
         self.num_gaussians = None       # stores the max number of Gaussian found in a voltage for assembling matrices for unknowns
+        self.standard_means = None      # store for unknown standardization
+        self.standard_stdevs = None     # store for unknown standardization
 
     def __str__(self):
         label_string = ','.join(self.unique_labels)
