@@ -8,7 +8,7 @@ Date: 1/11/2018
 """
 from Gaussian_Fitting import Gaussian
 import numpy as np
-import xarray
+import pandas
 import matplotlib.pyplot as plt
 import matplotlib.patches
 import pickle
@@ -1040,13 +1040,16 @@ def standardize_all_2d(cl_inputs_by_label, params_obj):
 
     example_input = cl_inputs_by_label[0][0]
     example_obj = list(example_input.subclass_dict.values())[0]
-    subclass_labels = example_input.subclass_dict.keys()
+    subclass_labels = list(example_input.subclass_dict.keys())
     cv_axis = example_obj.axes[1]
     feature_axis = get_feature_axis(example_obj, params_obj.classif_1_unk_mode)
 
-    data_sizes = (len(subclass_labels), len(feature_axis), len(cv_axis))
-    means = xarray.DataArray(np.zeros(data_sizes), coords=[subclass_labels, feature_axis, cv_axis], dims=['subcl', 'feature', 'cv'])
-    stdevs = xarray.DataArray(np.zeros(data_sizes), coords=[subclass_labels, feature_axis, cv_axis], dims=['subcl', 'feature', 'cv'])
+    means = {x: pandas.DataFrame(np.zeros((len(feature_axis), len(cv_axis))), index=feature_axis, columns=cv_axis) for x in subclass_labels}
+    stdevs = {x: pandas.DataFrame(np.zeros((len(feature_axis), len(cv_axis))), index=feature_axis, columns=cv_axis) for x in subclass_labels}
+
+    # data_sizes = (len(subclass_labels), len(feature_axis), len(cv_axis))
+    # means = xarray.DataArray(np.zeros(data_sizes), coords=[subclass_labels, feature_axis, cv_axis], dims=['subcl', 'feature', 'cv'])
+    # stdevs = xarray.DataArray(np.zeros(data_sizes), coords=[subclass_labels, feature_axis, cv_axis], dims=['subcl', 'feature', 'cv'])
 
     for cv_index, cv in enumerate(cv_axis):
         for feature_index, feature in enumerate(feature_axis):
@@ -1071,11 +1074,14 @@ def standardize_all_2d(cl_inputs_by_label, params_obj):
 
             # compute mean/std
             for subclass_label, data_array in output_data_by_subcl.items():
-                means.loc[dict(subcl=subclass_label, feature=feature, cv=cv)] = np.mean(data_array)
-                stdevs.loc[dict(subcl=subclass_label, feature=feature, cv=cv)] = np.std(data_array)
+                means[subclass_label].loc[feature, cv] = np.mean(data_array)
+                stdevs[subclass_label].loc[feature, cv] = np.std(data_array)
+                # means.loc[dict(subcl=subclass_label, feature=feature, cv=cv)] = np.mean(data_array)
+                # stdevs.loc[dict(subcl=subclass_label, feature=feature, cv=cv)] = np.std(data_array)
                 # means[feature_index][cv_index] = np.mean(data_array)
                 # stdevs[feature_index][cv_index] = np.std(data_array)
 
+    # todo: deprecate
     # get a CIU container to read the input dimensions from. Doesn't matter which one, since all must be identical shape at this stage
     # example_obj = list(cl_inputs_by_label[0][0].subclass_dict.values())[0]
     # cv_axis_len = len(example_obj.axes[1])
@@ -1170,17 +1176,17 @@ def get_feature_axis(ciu_obj, gaussian_mode):
     return feature_axis
 
 
-def standardize_ciu_obj(cl_input, mean_array, stdev_array, params_obj):
+def standardize_ciu_obj(cl_input, means_dict, stdevs_dict, params_obj):
     """
     Helper method for final standardization of a single ClInput replicate container. Uses
     provided means/stdevs to standardize the input data and saves it into the CIUAnalysisObj(s)
     in the classif_input_std field.
     :param cl_input:
     :type cl_input: ClInput
-    :param mean_array: 3D xarray of subclass, feature, CV organized means
-    :type mean_array: xarray.DataArray
-    :param stdev_array: 3D xarray of subclass, feature, CV organized standard deviations
-    :type stdev_array: xarray.DataArray
+    :param means_dict: 3D xarray of subclass, feature, CV organized means
+    :type means_dict: dict[str: pandas.DataFrame]
+    :param stdevs_dict: 3D xarray of subclass, feature, CV organized standard deviations
+    :type stdevs_dict: dict[str: pandas.DataFrame]
     :param params_obj: parameters container
     :type params_obj: Parameters
     :return: cl_input with updated information
@@ -1188,8 +1194,10 @@ def standardize_ciu_obj(cl_input, mean_array, stdev_array, params_obj):
     """
     for subclass_label, analysis_obj in cl_input.subclass_dict.items():
         # can return just the feat/CV 2D array from the input xarray and use the original method
-        means = mean_array.loc[dict(subcl=subclass_label)].values
-        stdevs = stdev_array.loc[dict(subcl=subclass_label)].values
+        means = means_dict[subclass_label].values
+        stdevs = stdevs_dict[subclass_label].values
+        # means = means_dict.loc[dict(subcl=subclass_label)].values
+        # stdevs = stdevs_dict.loc[dict(subcl=subclass_label)].values
 
         cv_axis_len = len(means[0])
         feature_axis_len = len(means)
@@ -1285,6 +1293,27 @@ def standardize_data(datapoint, mean, stdev, standardize_bool):
     else:
         std_data = (datapoint - mean) / stdev
     return std_data
+
+
+def reduce_means_for_unk_standardize(unk_cl_input, input_means, input_stds):
+    """
+    Cuts the mean/stdev DataArrays down to only the size provided in the unknown to allow for standardization
+    of reduced data using same methods as for training data.
+    :param unk_cl_input: ClInput with unknown data
+    :type unk_cl_input: ClInput
+    :param input_means: matrix of means from scheme
+    :type input_means: dict[str: pandas.DataFrame]
+    :param input_stds: matrix of stdevs from scheme
+    :type input_stds: dict[str: pandas.DataFrame]
+    :return: reduced size mean/stdev arrays
+    """
+    for subclass_label, analysis_obj in unk_cl_input.subclass_dict.items():
+        # include only CVs found in the unknown in case of reduced dataset
+        cvs = analysis_obj.axes[1]
+        input_means[subclass_label] = input_means[subclass_label].loc[:, cvs]
+        input_stds[subclass_label] = input_stds[subclass_label].loc[:, cvs]
+
+    return input_means, input_stds
 
 
 def subclass_inputs_from_class_inputs(cl_inputs_by_label, subclass_label_list, class_labels):
@@ -2083,14 +2112,26 @@ class ClassificationScheme(object):
         else:
             return False
 
-    def get_train_cv_indices(self, unk_cl_input):
+    def prep_unk_input(self, unk_cl_input, params_obj):
         """
-        Determine the indices of all CV data in the unknown ClInput container to use to match
-        means and standard deviations.
-        :param unk_cl_input:
-        :return:
+        Assemble/prepare input from the unknown data file for classification. Sets the 'classif_input_raw'
+        field in CIUAnalysisObj containers. In Gaussian mode, prepares Gaussian lists from features as required.
+        :param unk_cl_input: ClInput container with unknown data
+        :type unk_cl_input: ClInput
+        :param params_obj: parameters container
+        :type params_obj: Parameters
+        :return: updated ClInput container
+        :rtype: ClInput
         """
-
+        for subclass_label, analysis_obj in unk_cl_input.subclass_dict.items():
+            if params_obj.classif_1_unk_mode == 'Gaussian':
+                # prepare gaussian features for classification (saves to container)
+                input_classif_raw = prep_gaussian_input_raw(analysis_obj.classif_gaussians_by_cv, self.num_gaussians)
+                analysis_obj.classif_input_raw = input_classif_raw
+            else:
+                # all data mode - initialize raw data for classification
+                analysis_obj.classif_input_raw = analysis_obj.ciu_data
+        return unk_cl_input
 
     def standardize_unk_input(self, unk_cl_input, params_obj):
         """
@@ -2104,9 +2145,9 @@ class ClassificationScheme(object):
         :rtype: ClInput
         """
         # first, need to match unknown data's CV axis to training data indices in case of reduced CV sampling
+        reduced_means, reduced_stds = reduce_means_for_unk_standardize(unk_cl_input, self.standard_means, self.standard_stdevs)
 
-
-        unk_cl_input = standardize_ciu_obj(unk_cl_input, self.standard_means, self.standard_stdevs, params_obj)
+        unk_cl_input = standardize_ciu_obj(unk_cl_input, reduced_means, reduced_stds, params_obj)
         return unk_cl_input
 
     def classify_unknown_clinput(self, unk_cl_input, params_obj):
@@ -2120,7 +2161,8 @@ class ClassificationScheme(object):
         :return: updated analysis object with prediction data saved
         :rtype: ClInput
         """
-        # standardize input data using scheme's saved mean/standard deviation
+        # Prepare and standardize input data using scheme's saved mean/standard deviation
+        unk_cl_input = self.prep_unk_input(unk_cl_input, params_obj)
         unk_cl_input = self.standardize_unk_input(unk_cl_input, params_obj)
 
         # Assemble feature data for fitting
