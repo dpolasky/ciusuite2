@@ -8,6 +8,7 @@ Date: 1/11/2018
 """
 from Gaussian_Fitting import Gaussian
 import numpy as np
+import xarray
 import matplotlib.pyplot as plt
 import matplotlib.patches
 import pickle
@@ -716,7 +717,7 @@ def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_overrid
 
     elif params_obj.classif_1_unk_mode == 'Gaussian':
         if not ufs_mode:
-            # for non-UFS, use full input (standardized) Gaussian dataset. Transpose to be by column
+            # for non-UFS, use full input (standardized) Gaussian dataset.
             classif_data = analysis_obj.classif_input_std
         else:
             # for UFS, only use centroids - remove
@@ -1037,25 +1038,20 @@ def standardize_all_2d(cl_inputs_by_label, params_obj):
     """
     # todo: catch incorrect dimensions?
 
-    # get a CIU container to read the input dimensions from. Doesn't matter which one, since all must be identical shape at this stage
-    example_obj = list(cl_inputs_by_label[0][0].subclass_dict.values())[0]
-    cv_axis_len = len(example_obj.axes[1])
-    if params_obj.classif_1_unk_mode == 'Gaussian':
-        # Gaussian mode: num features per CV = 3 * max_num_gaussians (centroid, width, amplitude for each)
-        # Reading num features from the staged input data for Gaussians at the first CV in the example file
-        feature_axis_len = len(example_obj.classif_input_raw[0])
-    else:
-        # raw data mode: num features per CV = 1 (each input CV column is treated as a single feature. NOT treating each drift bin as a feature
-        feature_axis_len = 1
+    example_input = cl_inputs_by_label[0][0]
+    example_obj = list(example_input.subclass_dict.values())[0]
+    subclass_labels = example_input.subclass_dict.keys()
+    cv_axis = example_obj.axes[1]
+    feature_axis = get_feature_axis(example_obj, params_obj.classif_1_unk_mode)
 
-    means = np.zeros((feature_axis_len, cv_axis_len))
-    stdevs = np.zeros((feature_axis_len, cv_axis_len))
-    # stdevs = np.zeros(np.shape(example_obj.classif_input_raw))
+    data_sizes = (len(subclass_labels), len(feature_axis), len(cv_axis))
+    means = xarray.DataArray(np.zeros(data_sizes), coords=[subclass_labels, feature_axis, cv_axis], dims=['subcl', 'feature', 'cv'])
+    stdevs = xarray.DataArray(np.zeros(data_sizes), coords=[subclass_labels, feature_axis, cv_axis], dims=['subcl', 'feature', 'cv'])
 
-    # loop over each CV and feature to assemble the matrix of means/std devs for standardization
-    for cv_index in range(cv_axis_len):
-        for feature_index in range(feature_axis_len):
-            all_data = []
+    for cv_index, cv in enumerate(cv_axis):
+        for feature_index, feature in enumerate(feature_axis):
+            output_data_by_subcl = {x: [] for x in subclass_labels}
+
             for class_clinput_list in cl_inputs_by_label:
                 for cl_input in class_clinput_list:
                     for subclass_label, analysis_obj in cl_input.subclass_dict.items():
@@ -1064,43 +1060,209 @@ def standardize_all_2d(cl_inputs_by_label, params_obj):
                             # test = analysis_obj.classif_input_raw[feature_index][cv_index]
                             # all_data.append(analysis_obj.classif_input_raw[feature_index][cv_index])
                             test = analysis_obj.classif_input_raw[cv_index][feature_index]
-                            all_data.append(analysis_obj.classif_input_raw[cv_index][feature_index])
+                            output_data_by_subcl[subclass_label].append(analysis_obj.classif_input_raw[cv_index][feature_index])
+                            # all_data.append(analysis_obj.classif_input_raw[cv_index][feature_index])
                         else:
                             # In raw data mode, average across whole ATD rather than including each point
                             cv_col_matrix = np.swapaxes(analysis_obj.classif_input_raw, 0, 1)
                             cv_col_atd = cv_col_matrix[cv_index]
-                            all_data.extend(cv_col_atd)
+                            output_data_by_subcl[subclass_label].extend(cv_col_atd)
+                            # all_data.extend(cv_col_atd)
 
             # compute mean/std
-            means[feature_index][cv_index] = np.mean(all_data)
-            stdevs[feature_index][cv_index] = np.std(all_data)
+            for subclass_label, data_array in output_data_by_subcl.items():
+                means.loc[dict(subcl=subclass_label, feature=feature, cv=cv)] = np.mean(data_array)
+                stdevs.loc[dict(subcl=subclass_label, feature=feature, cv=cv)] = np.std(data_array)
+                # means[feature_index][cv_index] = np.mean(data_array)
+                # stdevs[feature_index][cv_index] = np.std(data_array)
+
+    # get a CIU container to read the input dimensions from. Doesn't matter which one, since all must be identical shape at this stage
+    # example_obj = list(cl_inputs_by_label[0][0].subclass_dict.values())[0]
+    # cv_axis_len = len(example_obj.axes[1])
+    # if params_obj.classif_1_unk_mode == 'Gaussian':
+    #     # Gaussian mode: num features per CV = 3 * max_num_gaussians (centroid, width, amplitude for each)
+    #     # Reading num features from the staged input data for Gaussians at the first CV in the example file
+    #     feature_axis_len = len(example_obj.classif_input_raw[0])
+    # else:
+    #     # raw data mode: num features per CV = 1 (each input CV column is treated as a single feature. NOT treating each drift bin as a feature
+    #     feature_axis_len = 1
+    #
+    # means = np.zeros((feature_axis_len, cv_axis_len))
+    # stdevs = np.zeros((feature_axis_len, cv_axis_len))
+    # # stdevs = np.zeros(np.shape(example_obj.classif_input_raw))
+    #
+    # # loop over each CV and feature to assemble the matrix of means/std devs for standardization
+    # for cv_index in range(cv_axis_len):
+    #     for feature_index in range(feature_axis_len):
+    #         all_data = []
+    #         for class_clinput_list in cl_inputs_by_label:
+    #             for cl_input in class_clinput_list:
+    #                 for subclass_label, analysis_obj in cl_input.subclass_dict.items():
+    #                     if params_obj.classif_1_unk_mode == 'Gaussian':
+    #                         # In Gaussian mode, append data as normal
+    #                         # test = analysis_obj.classif_input_raw[feature_index][cv_index]
+    #                         # all_data.append(analysis_obj.classif_input_raw[feature_index][cv_index])
+    #                         test = analysis_obj.classif_input_raw[cv_index][feature_index]
+    #                         all_data.append(analysis_obj.classif_input_raw[cv_index][feature_index])
+    #                     else:
+    #                         # In raw data mode, average across whole ATD rather than including each point
+    #                         cv_col_matrix = np.swapaxes(analysis_obj.classif_input_raw, 0, 1)
+    #                         cv_col_atd = cv_col_matrix[cv_index]
+    #                         all_data.extend(cv_col_atd)
+    #
+    #         # compute mean/std
+    #         means[feature_index][cv_index] = np.mean(all_data)
+    #         stdevs[feature_index][cv_index] = np.std(all_data)
 
     # now that means/stdevs are known, loop over the data again to standardize using that information
     for class_clinput_list in cl_inputs_by_label:
         for cl_input in class_clinput_list:
-            for subclass_label, analysis_obj in cl_input.subclass_dict.items():
-                standardized_data = np.zeros(np.shape(analysis_obj.classif_input_raw))
-                raw_std_data = []
-                for cv_index in range(cv_axis_len):
-                    for feature_index in range(feature_axis_len):
-                        this_feat_mean = means[feature_index][cv_index]
-                        this_feat_stdev = stdevs[feature_index][cv_index]
-                        if params_obj.classif_1_unk_mode == 'Gaussian':
-                            # raw_datapoint = analysis_obj.classif_input_raw[feature_index][cv_index]
-                            # standardized_data[feature_index][cv_index] = standardize_data(raw_datapoint, this_feat_mean, this_feat_stdev)
-                            raw_datapoint = analysis_obj.classif_input_raw[cv_index][feature_index]
-                            standardized_data[cv_index][feature_index] = standardize_data(raw_datapoint, this_feat_mean, this_feat_stdev, params_obj.classif_92_standardize)
-                        else:
-                            # raw data mode - need to average across whole CV column
-                            raw_data_col = np.swapaxes(analysis_obj.classif_input_raw, 0, 1)[cv_index]
-                            std_data_col = standardize_data(raw_data_col, this_feat_mean, this_feat_stdev, params_obj.classif_92_standardize)
-                            raw_std_data.append(std_data_col)
-                if not params_obj.classif_1_unk_mode == 'Gaussian':
-                    standardized_data = np.swapaxes(raw_std_data, 0, 1)
-                else:
-                    standardized_data = standardized_data.T
-                analysis_obj.classif_input_std = standardized_data
+            cl_input = standardize_ciu_obj(cl_input, means, stdevs, params_obj)
+
+            # for subclass_label, analysis_obj in cl_input.subclass_dict.items():
+            #     standardized_data = np.zeros(np.shape(analysis_obj.classif_input_raw))
+            #     raw_std_data = []
+            #     for cv_index in range(cv_axis_len):
+            #         for feature_index in range(feature_axis_len):
+            #             this_feat_mean = means[feature_index][cv_index]
+            #             this_feat_stdev = stdevs[feature_index][cv_index]
+            #             if params_obj.classif_1_unk_mode == 'Gaussian':
+            #                 # raw_datapoint = analysis_obj.classif_input_raw[feature_index][cv_index]
+            #                 # standardized_data[feature_index][cv_index] = standardize_data(raw_datapoint, this_feat_mean, this_feat_stdev)
+            #                 raw_datapoint = analysis_obj.classif_input_raw[cv_index][feature_index]
+            #                 standardized_data[cv_index][feature_index] = standardize_data(raw_datapoint, this_feat_mean, this_feat_stdev, params_obj.classif_92_standardize)
+            #             else:
+            #                 # raw data mode - need to average across whole CV column
+            #                 raw_data_col = np.swapaxes(analysis_obj.classif_input_raw, 0, 1)[cv_index]
+            #                 std_data_col = standardize_data(raw_data_col, this_feat_mean, this_feat_stdev, params_obj.classif_92_standardize)
+            #                 raw_std_data.append(std_data_col)
+            #     if not params_obj.classif_1_unk_mode == 'Gaussian':
+            #         standardized_data = np.swapaxes(raw_std_data, 0, 1)
+            #     else:
+            #         standardized_data = standardized_data.T
+            #     analysis_obj.classif_input_std = standardized_data
     return cl_inputs_by_label, means, stdevs
+
+
+def get_feature_axis(ciu_obj, gaussian_mode):
+    """
+    Helper method to return a "feature" axis for standardization. In raw data mode, simply returns a
+    list of 1 entry, as each raw DT profile gets standardized as a single feature. In Gaussian mode,
+    generates a list of attributes (c=centroid, a=amplitude, w=width) for each Gaussian up to the max
+    number as the feature axis
+    :param ciu_obj: CIUAnalysisObj with classif_input_raw initialized
+    :type ciu_obj: CIUAnalysisObj
+    :param gaussian_mode: 'Gaussian' or 'All_Data'
+    :return: list of feature axis values (strings)
+    """
+    if gaussian_mode == 'Gaussian':
+        # Gaussian mode: num features per CV = 3 * max_num_gaussians (centroid, width, amplitude for each)
+        feature_axis_len = len(ciu_obj.classif_input_raw[0])
+        attributes = ['c', 'w', 'a']
+        feature_axis = []
+        for feat_index in range(feature_axis_len):
+            att_type = feat_index % 3
+            gaussian_index = feat_index // 3 + 1
+            feat_string = '{}{}'.format(attributes[att_type], gaussian_index)
+            feature_axis.append(feat_string)
+    else:
+        feature_axis = ['raw']
+    return feature_axis
+
+
+def standardize_ciu_obj(cl_input, mean_array, stdev_array, params_obj):
+    """
+    Helper method for final standardization of a single ClInput replicate container. Uses
+    provided means/stdevs to standardize the input data and saves it into the CIUAnalysisObj(s)
+    in the classif_input_std field.
+    :param cl_input:
+    :type cl_input: ClInput
+    :param mean_array: 3D xarray of subclass, feature, CV organized means
+    :type mean_array: xarray.DataArray
+    :param stdev_array: 3D xarray of subclass, feature, CV organized standard deviations
+    :type stdev_array: xarray.DataArray
+    :param params_obj: parameters container
+    :type params_obj: Parameters
+    :return: cl_input with updated information
+    :rtype: ClInput
+    """
+    for subclass_label, analysis_obj in cl_input.subclass_dict.items():
+        # can return just the feat/CV 2D array from the input xarray and use the original method
+        means = mean_array.loc[dict(subcl=subclass_label)].values
+        stdevs = stdev_array.loc[dict(subcl=subclass_label)].values
+
+        cv_axis_len = len(means[0])
+        feature_axis_len = len(means)
+
+        standardized_data = np.zeros(np.shape(analysis_obj.classif_input_raw))
+        raw_std_data = []
+        for cv_index in range(cv_axis_len):
+            for feature_index in range(feature_axis_len):
+                this_feat_mean = means[feature_index][cv_index]
+                this_feat_stdev = stdevs[feature_index][cv_index]
+                if params_obj.classif_1_unk_mode == 'Gaussian':
+                    # raw_datapoint = analysis_obj.classif_input_raw[feature_index][cv_index]
+                    # standardized_data[feature_index][cv_index] = standardize_data(raw_datapoint, this_feat_mean, this_feat_stdev)
+                    raw_datapoint = analysis_obj.classif_input_raw[cv_index][feature_index]
+                    standardized_data[cv_index][feature_index] = standardize_data(raw_datapoint, this_feat_mean,
+                                                                                  this_feat_stdev,
+                                                                                  params_obj.classif_92_standardize)
+                else:
+                    # raw data mode - need to average across whole CV column
+                    raw_data_col = np.swapaxes(analysis_obj.classif_input_raw, 0, 1)[cv_index]
+                    std_data_col = standardize_data(raw_data_col, this_feat_mean, this_feat_stdev,
+                                                    params_obj.classif_92_standardize)
+                    raw_std_data.append(std_data_col)
+        if not params_obj.classif_1_unk_mode == 'Gaussian':
+            standardized_data = np.swapaxes(raw_std_data, 0, 1)
+        else:
+            standardized_data = standardized_data.T
+        analysis_obj.classif_input_std = standardized_data
+    return cl_input
+
+
+def standardize_ciu_obj_old(cl_input, means, stdevs, params_obj):
+    """
+    Helper method for final standardization of a single ClInput replicate container. Uses
+    provided means/stdevs to standardize the input data and saves it into the CIUAnalysisObj(s)
+    in the classif_input_std field.
+    :param cl_input:
+    :type cl_input: ClInput
+    :param means: 2D array of feature means
+    :param stdevs: 2D array of feature standard deviations
+    :param params_obj: parameters container
+    :type params_obj: Parameters
+    :return: cl_input with updated information
+    :rtype: ClInput
+    """
+    cv_axis_len = len(means[0])
+    feature_axis_len = len(means)
+    for subclass_label, analysis_obj in cl_input.subclass_dict.items():
+        standardized_data = np.zeros(np.shape(analysis_obj.classif_input_raw))
+        raw_std_data = []
+        for cv_index in range(cv_axis_len):
+            for feature_index in range(feature_axis_len):
+                this_feat_mean = means[feature_index][cv_index]
+                this_feat_stdev = stdevs[feature_index][cv_index]
+                if params_obj.classif_1_unk_mode == 'Gaussian':
+                    # raw_datapoint = analysis_obj.classif_input_raw[feature_index][cv_index]
+                    # standardized_data[feature_index][cv_index] = standardize_data(raw_datapoint, this_feat_mean, this_feat_stdev)
+                    raw_datapoint = analysis_obj.classif_input_raw[cv_index][feature_index]
+                    standardized_data[cv_index][feature_index] = standardize_data(raw_datapoint, this_feat_mean,
+                                                                                  this_feat_stdev,
+                                                                                  params_obj.classif_92_standardize)
+                else:
+                    # raw data mode - need to average across whole CV column
+                    raw_data_col = np.swapaxes(analysis_obj.classif_input_raw, 0, 1)[cv_index]
+                    std_data_col = standardize_data(raw_data_col, this_feat_mean, this_feat_stdev,
+                                                    params_obj.classif_92_standardize)
+                    raw_std_data.append(std_data_col)
+        if not params_obj.classif_1_unk_mode == 'Gaussian':
+            standardized_data = np.swapaxes(raw_std_data, 0, 1)
+        else:
+            standardized_data = standardized_data.T
+        analysis_obj.classif_input_std = standardized_data
+    return cl_input
 
 
 def standardize_data(datapoint, mean, stdev, standardize_bool):
@@ -1921,10 +2083,31 @@ class ClassificationScheme(object):
         else:
             return False
 
-        # for feature in self.selected_features:
-        #     if feature.subclass_label is not ['0']:
-        #         subclass_mode = True
-        # return subclass_mode
+    def get_train_cv_indices(self, unk_cl_input):
+        """
+        Determine the indices of all CV data in the unknown ClInput container to use to match
+        means and standard deviations.
+        :param unk_cl_input:
+        :return:
+        """
+
+
+    def standardize_unk_input(self, unk_cl_input, params_obj):
+        """
+        Use the scheme's saved mean/stdev to standardize the unknown input the same way as
+        the training data.
+        :param unk_cl_input: ClInput containing the ciu_data from unknown to be fitted
+        :type unk_cl_input: ClInput
+        :param params_obj: parameters information
+        :type params_obj: Parameters
+        :return: updated unk_cl_input with standardized data saved to CIUAnalysisObj
+        :rtype: ClInput
+        """
+        # first, need to match unknown data's CV axis to training data indices in case of reduced CV sampling
+
+
+        unk_cl_input = standardize_ciu_obj(unk_cl_input, self.standard_means, self.standard_stdevs, params_obj)
+        return unk_cl_input
 
     def classify_unknown_clinput(self, unk_cl_input, params_obj):
         """
@@ -1937,6 +2120,9 @@ class ClassificationScheme(object):
         :return: updated analysis object with prediction data saved
         :rtype: ClInput
         """
+        # standardize input data using scheme's saved mean/standard deviation
+        unk_cl_input = self.standardize_unk_input(unk_cl_input, params_obj)
+
         # Assemble feature data for fitting
         unk_subset = rearrange_ciu_by_feats_helper(unk_cl_input, params_obj, self.selected_features, class_numeric_label=0, num_gaussian_override=self.num_gaussians)
         unk_x_data, numeric_labels, string_labels = arrange_lda_new([unk_subset])
