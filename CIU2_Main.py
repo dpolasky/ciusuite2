@@ -1053,13 +1053,13 @@ class CIUSuite2(object):
                 param_keys = [x for x in self.params_obj.params_dict.keys() if 'classif' in x]
                 param_success, param_dict = self.run_param_ui('Classification Parameters', param_keys)
                 if param_success:
-                    if self.params_obj.classif_1_unk_mode == 'Gaussian':
+                    if not self.params_obj.classif_1_input_mode == 'All_Data':
                         # Ensure Gaussian features are present and prepare them for classification
                         flat_input_list = [x for input_list in cl_inputs_by_label for x in input_list]
-                        if not check_classif_data_gaussians(flat_input_list):
+                        if not check_classif_data_gaussians(flat_input_list, self.params_obj.classif_1_input_mode):
                             self.progress_done()
 
-                    # Run the classification
+                    # Run the classification for all input modes
                     if self.params_obj.classif_3_auto_featselect == 'automatic':
                         self.progress_print_text('Classification in progress (may take a few minutes - see console for progress)...', 50)
                         scheme = Classification.main_build_classification_new(cl_inputs_by_label, subclass_labels, self.params_obj, self.output_dir)
@@ -1094,7 +1094,7 @@ class CIUSuite2(object):
         :return: void
         """
         # check parameters
-        param_keys = [x for x in self.params_obj.params_dict.keys() if 'unk' in x]
+        param_keys = [x for x in self.params_obj.params_dict.keys() if 'classif_1' in x]
         param_success, param_dict = self.run_param_ui('Unknown Classification Parameters', param_keys)
         if param_success:
             # load classification scheme file
@@ -1108,13 +1108,13 @@ class CIUSuite2(object):
 
                 if len(replicate_inputs) > 0:
                     # ensure Gaussian features are present if requested
-                    if self.params_obj.classif_1_unk_mode == 'Gaussian':
+                    if not self.params_obj.classif_1_input_mode == 'All_Data':
                         # make sure the scheme is in Gaussian mode, cancel classification if not
                         if scheme.num_gaussians == 0:
                             messagebox.showerror('Non-Gaussian Scheme Selected', 'Gaussian mode specified, but the selected classification scheme (.clf file) is NOT a Gaussian classification scheme. No analysis will be performed.')
                             self.progress_done()
 
-                        if not check_classif_data_gaussians(replicate_inputs, max_gaussians_unk=scheme.num_gaussians):
+                        if not check_classif_data_gaussians(replicate_inputs, self.params_obj.classif_1_input_mode, max_gaussians_unk=scheme.num_gaussians):
                             self.progress_done()
 
                     # Check axes to confirm that input unknowns have all required data for classification
@@ -1708,33 +1708,49 @@ def check_classif_data(cl_inputs_by_label, subclass_labels):
         return False
 
 
-def check_classif_data_gaussians(flat_clinput_list, max_gaussians_unk=None):
+def check_classif_data_gaussians(flat_clinput_list, gaussian_mode, max_gaussians_unk=None):
     """
     Ensure that all provided CIU analyses have Gaussian features fitted prior to attempting to
     perform Gaussian based classification.
     :param flat_clinput_list: list of ClInputs
     :type flat_clinput_list: list[Classification.ClInput]
+    :param gaussian_mode: mode argument from Parameters for classification input
     :param max_gaussians_unk: For unknown mode, also check that all analyses have <= the max number of gaussians used in the classifying scheme
     :return: boolean: True if all data has Gaussian features fit, False if not
     """
     for cl_input in flat_clinput_list:
         for subclass, analysis_obj in cl_input.subclass_dict.items():
-            if analysis_obj.feat_protein_gaussians is None:
-                messagebox.showerror('No Gaussian Features Fitted',
-                                     'Error: No Gaussian Features in file: {} . Gaussian Feature classification selected, '
-                                     'but Gaussian Feature Detection has not been performed yet. '
-                                     'Please run Gaussian Feature Detection on all files being used'
-                                     ' and try again.'.format(analysis_obj.short_filename))
-                return False
+            if gaussian_mode == 'Gaussian_Feat':
+                if analysis_obj.feat_protein_gaussians is None:
+                    messagebox.showerror('No Gaussian Features Fitted',
+                                         'Error: No Gaussian Features in file: {} . Gaussian Feature classification selected, '
+                                         'but Gaussian Feature Detection has not been performed yet. '
+                                         'Please run Gaussian Feature Detection on all files being used'
+                                         ' and try again.'.format(analysis_obj.short_filename))
+                    return False
+            elif gaussian_mode == 'Gaussian_Raw':
+                if analysis_obj.raw_protein_gaussians is None:
+                    messagebox.showerror('No Gaussians Fitted',
+                                         'Error: No Gaussians in file: {} . Gaussian Raw classification selected, '
+                                         'but Gaussian Fitting has not been performed yet. '
+                                         'Please run Gaussian Fitting on all files being used'
+                                         ' and try again.'.format(analysis_obj.short_filename))
+                    return False
 
             if max_gaussians_unk is not None:
                 # If using unknown mode, check to make sure there are no extrapolations beyond the max number of Gaussians used in the scheme
-                final_gaussians = Classification.prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
+                if gaussian_mode == 'Gaussian_Feat':
+                    final_gaussians = Classification.prep_gaussfeats_for_classif(analysis_obj.features_gaussian, analysis_obj)
+                elif gaussian_mode == 'Gaussian_Raw':
+                    final_gaussians = analysis_obj.raw_protein_gaussians
+                else:
+                    final_gaussians = []
+
                 for gaussian_list in final_gaussians:
                     if len(gaussian_list) > max_gaussians_unk:
                         messagebox.showerror('Gaussian Extrapolation Error',
                                              'Warning: there are more overlapping features in file {} than in any of the training data used the classification scheme. '
-                                             'To fit, ensure that the Gaussian Feature Detection outputs for this file are similar to the data used to build the chosen '
+                                             'To fit, ensure that the Gaussian Fitting or Gaussian Feature Detection outputs for this file are similar to the data used to build the chosen '
                                              'classification scheme (especially in the maximum number of features that overlap at one CV)'.format(
                                                  analysis_obj.short_filename))
                         return False

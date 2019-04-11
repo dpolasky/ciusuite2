@@ -163,7 +163,7 @@ class Parameters(object):
         self.classif_6_ufs_use_error_mode = None
         self.classif_2_score_dif_tol = None
         self.classif_4_score_mode = None
-        self.classif_1_unk_mode = None
+        self.classif_1_input_mode = None
         self.classif_3_auto_featselect = None
         self.classif_5_show_auc_crossval = None
         self.classif_7_max_feats_for_crossval = None
