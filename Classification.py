@@ -24,7 +24,6 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.colors import ListedColormap
 from mpl_toolkits.mplot3d import Axes3D
 from sklearn.preprocessing import LabelEncoder, label_binarize
-# from sklearn.preprocessing import PowerTransformer
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.metrics import precision_score, roc_curve, auc
 from sklearn.feature_selection import f_classif, GenericUnivariateSelect
@@ -1083,6 +1082,7 @@ def standardize_data(datapoint, mean, stdev, standardize_bool):
     if stdev == 0:
         # should only occur in cases where data was empty (value of 0) to begin with, as otherwise all replicates would have to have same value to numerical precision
         std_data = 0
+        # std_data = mean
     else:
         std_data = (datapoint - mean) / stdev
     return std_data

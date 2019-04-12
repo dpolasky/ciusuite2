@@ -243,6 +243,89 @@ def main_gaussian_lmfit(analysis_obj, params_obj, outputpath):
     best_fits_by_cv = []
     scores_by_cv = []
 
+    # User specified one thread, so don't use multiprocessing at all
+    results = []
+    for cv_index, cv_col_intensities in enumerate(cv_col_data):
+        cv = analysis_obj.axes[1][cv_index]
+        if cv_index > 0:
+            best_prev_fit = max(results[cv_index - 1], key=lambda x: x.score)
+            gaussian_guess_list = best_prev_fit.gaussians
+            # update the provided Gaussian(s) to have the correct CV
+            for gaussian in gaussian_guess_list:
+                gaussian.cv = cv
+        else:
+            # old method todo: replace with new method
+            gaussian_guess_list = guess_gauss_init(cv_col_intensities, analysis_obj.axes[0], cv, rsq_cutoff=0.99,
+                                                   amp_cutoff=params_obj.gaussian_2_int_threshold)
+
+        all_fits = iterate_lmfitting(analysis_obj.axes[0], cv_col_intensities, gaussian_guess_list, params_obj,
+                                     outputfolder)
+        results.append(all_fits)
+
+    for cv_index, cv_results in enumerate(results):
+        all_fits = cv_results
+
+        # save the fit with the highest score out of all fits collected
+        best_fit = max(all_fits, key=lambda x: x.score)
+        best_fits_by_cv.append(best_fit)
+        scores_by_cv.append([fit.score for fit in all_fits])
+
+    # output final results
+    fit_time = time.time() - start_time
+    logger.info('fitting done in {:.2f} s'.format(fit_time))
+
+    prot_gaussians = [fit.gaussians_protein for fit in best_fits_by_cv]
+    nonprot_gaussians = [fit.gaussians_nonprotein for fit in best_fits_by_cv]
+
+    # Generate centroid plots
+    best_centroids = []
+    for gauss_list in prot_gaussians:
+        best_centroids.append([x.centroid for x in gauss_list])
+    nonprot_centroids = []
+    for gauss_list in nonprot_gaussians:
+        nonprot_centroids.append([x.centroid for x in gauss_list])
+    plot_centroids(best_centroids, analysis_obj, params_obj, outputpath, nonprotein_centroids=nonprot_centroids)
+
+    # save results to analysis obj
+    analysis_obj.raw_protein_gaussians = prot_gaussians
+    analysis_obj.raw_nonprotein_gaussians = nonprot_gaussians
+    analysis_obj.gauss_fits_by_cv = best_fits_by_cv
+
+    # save output
+    save_fits_pdf_new(analysis_obj, params_obj, best_fits_by_cv, outputpath)
+    combined_output, sorted_gauss_by_cv = save_gauss_params(analysis_obj, outputpath, params_obj.gaussian_51_sort_outputs_by, combine=params_obj.gaussian_5_combine_outputs, protein_only=params_obj.gauss_t1_1_protein_mode)
+    plot_time = time.time() - start_time - fit_time
+    logger.info('plotting/pdf output done in {:.2f} s'.format(plot_time))
+
+    return analysis_obj, combined_output, sorted_gauss_by_cv
+
+
+# todo: deprecate
+def main_gaussian_lmfit_old(analysis_obj, params_obj, outputpath):
+    """
+    Alternative Gaussian fitting method using LMFit for composite modeling of peaks. Estimates initial peak
+    parameters using helper methods, then fits optimized Gaussian distributions and saves results. Intended
+    for direct call from buttons in GUI.
+    :param analysis_obj: analysis container
+    :type analysis_obj: CIUAnalysisObj
+    :param params_obj: parameter information container
+    :type params_obj: Parameters
+    :param outputpath: directory in which to save output
+    :return: updated analysis object
+    :rtype: CIUAnalysisObj
+    """
+    logger.info('Fitting Gaussians for file {}...\n'.format(analysis_obj.short_filename))
+    start_time = time.time()
+
+    cv_col_data = np.swapaxes(analysis_obj.ciu_data, 0, 1)
+    outputfolder = os.path.join(outputpath, analysis_obj.short_filename)
+    if params_obj.gaussian_4_save_diagnostics:
+        if not os.path.isdir(outputfolder):
+            os.makedirs(outputfolder)
+
+    best_fits_by_cv = []
+    scores_by_cv = []
+
     # Separate multiprocessing behavior from standard, allowing both modes (since multiprocessing causes weird bugs sometimes)
     if params_obj.gaussian_61_num_cores > 1:
         pool = multiprocessing.Pool(processes=params_obj.gaussian_61_num_cores)
