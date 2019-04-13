@@ -269,7 +269,6 @@ def main_gaussian_lmfit_wrapper(analysis_obj_list, params_obj, outputpath):
             all_file_gaussians.append(cv_gaussians)
             output_objs.append(analysis_obj)
             logger.info('Fitting for file {} done in {:.2f} s'.format(analysis_obj.short_filename, fit_time))
-            # logger.info('Plotting/pdf output for file {} done in {:.2f} s'.format(analysis_obj.short_filename, plot_time))
 
         pool.join()     # terminate pool processes once finished
 
@@ -299,7 +298,6 @@ def main_gaussian_lmfit(analysis_obj, params_obj, outputpath):
     :return: updated analysis object
     :rtype: CIUAnalysisObj
     """
-    # logger.info('Started Gaussian fitting for file {}...'.format(analysis_obj.short_filename))
     start_time = time.time()
 
     cv_col_data = np.swapaxes(analysis_obj.ciu_data, 0, 1)
@@ -315,27 +313,17 @@ def main_gaussian_lmfit(analysis_obj, params_obj, outputpath):
     results = []
     for cv_index, cv_col_intensities in enumerate(cv_col_data):
         cv = analysis_obj.axes[1][cv_index]
-        r1_guesses = []
         if cv_index > 0:
             best_prev_fit = max(results[cv_index - 1], key=lambda x: x.score)
             gaussian_guess_list = best_prev_fit.gaussians
             # update the provided Gaussian(s) to have the correct CV
             for gaussian in gaussian_guess_list:
                 gaussian.cv = cv
-
-            # todo: use??
-            # r1_guesses = guess_gauss_init(cv_col_intensities, analysis_obj.axes[0], cv, rsq_cutoff=0.99,
-            #                               amp_cutoff=params_obj.gaussian_2_int_threshold)
         else:
-            # run the 'next guess' method for the very first peak
-            # first_guess = guess_next_gaussian(cv_col_intensities, analysis_obj.axes[0], params_obj.gaussian_72_prot_peak_width, cv, prev_gaussians=[])
-            # gaussian_guess_list = [first_guess]
-            # old method todo: replace with new method
+            # run initial guess method since we have no previous peaks to refer to
             gaussian_guess_list = guess_gauss_init(cv_col_intensities, analysis_obj.axes[0], cv, rsq_cutoff=0.99,
                                                    amp_cutoff=params_obj.gaussian_2_int_threshold)
-            r1_guesses = gaussian_guess_list
 
-        # all_fits = iterate_lmfitting(analysis_obj.axes[0], cv_col_intensities, gaussian_guess_list, r1_guesses, params_obj, outputfolder)
         all_fits = iterate_lmfitting(analysis_obj.axes[0], cv_col_intensities, gaussian_guess_list, cv, params_obj, outputfolder)
         results.append(all_fits)
 
@@ -370,113 +358,7 @@ def main_gaussian_lmfit(analysis_obj, params_obj, outputpath):
     # save output
     save_fits_pdf_new(analysis_obj, params_obj, best_fits_by_cv, outputpath)
     combined_output, sorted_gauss_by_cv = save_gauss_params(analysis_obj, outputpath, params_obj.gaussian_51_sort_outputs_by, combine=params_obj.gaussian_5_combine_outputs, protein_only=params_obj.gauss_t1_1_protein_mode)
-    plot_time = time.time() - start_time - fit_time
-
     return analysis_obj, combined_output, sorted_gauss_by_cv, fit_time
-
-
-# todo: deprecate
-# def main_gaussian_lmfit_old(analysis_obj, params_obj, outputpath):
-#     """
-#     Alternative Gaussian fitting method using LMFit for composite modeling of peaks. Estimates initial peak
-#     parameters using helper methods, then fits optimized Gaussian distributions and saves results. Intended
-#     for direct call from buttons in GUI.
-#     :param analysis_obj: analysis container
-#     :type analysis_obj: CIUAnalysisObj
-#     :param params_obj: parameter information container
-#     :type params_obj: Parameters
-#     :param outputpath: directory in which to save output
-#     :return: updated analysis object
-#     :rtype: CIUAnalysisObj
-#     """
-#     logger.info('Fitting Gaussians for file {}...\n'.format(analysis_obj.short_filename))
-#     start_time = time.time()
-#
-#     cv_col_data = np.swapaxes(analysis_obj.ciu_data, 0, 1)
-#     outputfolder = os.path.join(outputpath, analysis_obj.short_filename)
-#     if params_obj.gaussian_4_save_diagnostics:
-#         if not os.path.isdir(outputfolder):
-#             os.makedirs(outputfolder)
-#
-#     best_fits_by_cv = []
-#     scores_by_cv = []
-#
-#     # Separate multiprocessing behavior from standard, allowing both modes (since multiprocessing causes weird bugs sometimes)
-#     if params_obj.gaussian_61_num_cores > 1:
-#         pool = multiprocessing.Pool(processes=params_obj.gaussian_61_num_cores)
-#         results = []
-#
-#         for cv_index, cv_col_intensities in enumerate(cv_col_data):
-#             # prepare initial guesses in the form of a list of Gaussian objects, sorted by amplitude
-#             cv = analysis_obj.axes[1][cv_index]
-#             gaussian_guess_list = guess_gauss_init(cv_col_intensities, analysis_obj.axes[0], cv, rsq_cutoff=0.99, amp_cutoff=params_obj.gaussian_2_int_threshold)
-#
-#             logger.info('Starting fit at CV {} of {}'.format(cv_index + 1, len(cv_col_data)))
-#
-#             # Run fitting and scoring across the provided range of peak options with multiprocessing
-#             argslist = [analysis_obj.axes[0], cv_col_intensities, gaussian_guess_list, params_obj, outputfolder]
-#             pool_result = pool.apply_async(iterate_lmfitting, args=argslist)
-#             results.append(pool_result)
-#
-#         pool.close()    # tell the pool we don't need it to process any more data
-#
-#         for cv_index, cv_results in enumerate(results):
-#             all_fits = cv_results.get()
-#
-#             # save the fit with the highest score out of all fits collected
-#             best_fit = max(all_fits, key=lambda x: x.score)
-#             best_fits_by_cv.append(best_fit)
-#             scores_by_cv.append([fit.score for fit in all_fits])
-#
-#         pool.join()     # terminate pool processes once finished
-#
-#     else:
-#         # User specified one thread, so don't use multiprocessing at all
-#         results = []
-#         for cv_index, cv_col_intensities in enumerate(cv_col_data):
-#             cv = analysis_obj.axes[1][cv_index]
-#             gaussian_guess_list = guess_gauss_init(cv_col_intensities, analysis_obj.axes[0], cv, rsq_cutoff=0.99,
-#                                                    amp_cutoff=params_obj.gaussian_2_int_threshold)
-#             all_fits = iterate_lmfitting(analysis_obj.axes[0], cv_col_intensities, gaussian_guess_list, params_obj,
-#                                          outputfolder)
-#             results.append(all_fits)
-#
-#         for cv_index, cv_results in enumerate(results):
-#             all_fits = cv_results
-#
-#             # save the fit with the highest score out of all fits collected
-#             best_fit = max(all_fits, key=lambda x: x.score)
-#             best_fits_by_cv.append(best_fit)
-#             scores_by_cv.append([fit.score for fit in all_fits])
-#
-#     # output final results
-#     fit_time = time.time() - start_time
-#     logger.info('fitting done in {:.2f} s'.format(fit_time))
-#
-#     prot_gaussians = [fit.gaussians_protein for fit in best_fits_by_cv]
-#     nonprot_gaussians = [fit.gaussians_nonprotein for fit in best_fits_by_cv]
-#
-#     # Generate centroid plots
-#     best_centroids = []
-#     for gauss_list in prot_gaussians:
-#         best_centroids.append([x.centroid for x in gauss_list])
-#     nonprot_centroids = []
-#     for gauss_list in nonprot_gaussians:
-#         nonprot_centroids.append([x.centroid for x in gauss_list])
-#     plot_centroids(best_centroids, analysis_obj, params_obj, outputpath, nonprotein_centroids=nonprot_centroids)
-#
-#     # save results to analysis obj
-#     analysis_obj.raw_protein_gaussians = prot_gaussians
-#     analysis_obj.raw_nonprotein_gaussians = nonprot_gaussians
-#     analysis_obj.gauss_fits_by_cv = best_fits_by_cv
-#
-#     # save output
-#     save_fits_pdf_new(analysis_obj, params_obj, best_fits_by_cv, outputpath)
-#     combined_output, sorted_gauss_by_cv = save_gauss_params(analysis_obj, outputpath, params_obj.gaussian_51_sort_outputs_by, combine=params_obj.gaussian_5_combine_outputs, protein_only=params_obj.gauss_t1_1_protein_mode)
-#     plot_time = time.time() - start_time - fit_time
-#     logger.info('plotting/pdf output done in {:.2f} s'.format(plot_time))
-#
-#     return analysis_obj, combined_output, sorted_gauss_by_cv
 
 
 def guess_next_gaussian(ciu_data_col, dt_axis, width_guess, cv, prev_gaussians):
@@ -607,7 +489,6 @@ def sequential_fit_rsq(all_peak_guesses, dt_axis, cv_col_intensities, cv, conver
     return popt, pcov, all_fit_rounds
 
 
-# def iterate_lmfitting(x_data, y_data, guesses_list, extra_guesses, params_obj, outputpath):
 def iterate_lmfitting(x_data, y_data, guesses_list, cv, params_obj, outputpath):
     """
     Primary fitting method. Iterates over combinations of protein and non-protein peaks using
@@ -618,8 +499,6 @@ def iterate_lmfitting(x_data, y_data, guesses_list, cv, params_obj, outputpath):
     :param y_data: y data to fit (intensity values along the DT axis)
     :param guesses_list: list of Gaussian objects corresponding to guesses from the previous CV to use as starting conditions
     :type guesses_list: list[Gaussian]
-    # :param extra_guesses: list of Gaussian objects in decreasing amplitude order for adding new peaks after exceeding the number of peaks from the previous CV
-    # :type extra_guesses: list[Gaussian]
     :param cv: collision voltage for Gaussians
     :param params_obj: Parameters container with various parameter information
     :type params_obj: Parameters
@@ -640,7 +519,6 @@ def iterate_lmfitting(x_data, y_data, guesses_list, cv, params_obj, outputpath):
         # Mass selected mode (no nonprotein peaks)
         if max_num_nonprot_pks == 0:
             num_nonprot_pks = 0
-            # current_fit, lmfit_output = perform_fit(x_data, y_data, cv, num_prot_pks, num_nonprot_pks, guesses_list, extra_guesses, params_obj)
             current_fit, lmfit_output = perform_fit(x_data, y_data, cv, num_prot_pks, num_nonprot_pks, guesses_list, params_obj)
             output_fits.append(current_fit)
 
@@ -662,7 +540,6 @@ def iterate_lmfitting(x_data, y_data, guesses_list, cv, params_obj, outputpath):
     return output_fits
 
 
-# def perform_fit(x_data, y_data, cv, num_prot_pks, num_nonprot_pks, guesses_list, extra_guesses, params_obj):
 def perform_fit(x_data, y_data, cv, num_prot_pks, num_nonprot_pks, guesses_list, params_obj):
     """
     Helper method to improve code readability. Runs fitting for iterate_lmfit with provided data
@@ -674,14 +551,11 @@ def perform_fit(x_data, y_data, cv, num_prot_pks, num_nonprot_pks, guesses_list,
     :param num_nonprot_pks: (int) number of nonprotein components to fit in this iteration
     :param guesses_list: list of peak initial guesses (list of Gaussian objects)
     :type guesses_list: list[Gaussian]
-    # :param extra_guesses: list of Gaussian objects in decreasing amplitude order for adding new peaks after exceeding the number of peaks from the previous CV
-    # :type extra_guesses: list[Gaussian]
     :param params_obj: Parameters object
     :type params_obj: Parameters
     :return: SingleFitStats container with fit results and score, LMFit output (ModelResult) from fitting
     """
     # assemble the models and fit parameters for this number of protein/non-protein peaks
-    # models_list, fit_params = assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, extra_guesses, dt_axis=x_data, dt_profile=y_data)
     models_list, fit_params = assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, cv, dt_axis=x_data, dt_profile=y_data)
 
     # combine all model parameters and perform the actual fitting
@@ -722,9 +596,6 @@ def plot_fit_result(current_fit, output, x_data, outputname):
             y_data = [comp_value for _ in range(len(x_data))]
             plt.plot(x_data, y_data, '--', label=component_name)
     plt.legend(loc='best')
-    # if not output.success:
-    #     plt.title('{}V, fitting failed'.format(current_fit.cv))
-    # else:
     penalty_string = ['{:.2f}'.format(x) for x in current_fit.peak_penalties]
     plt.title('{}V, r2: {:.3f}, score: {:.4f}, peak pens: {}'.format(current_fit.cv, current_fit.adjrsq, current_fit.score,
                                                                      ','.join(penalty_string)))
@@ -759,7 +630,6 @@ def assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, cv,
 
     # assemble models for this number of peaks
     guess_index = 0
-    extra_guess_index = 0
     total_num_components = num_nonprot_pks + num_prot_pks
     models_list = []
 
@@ -785,22 +655,8 @@ def assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, cv,
                 next_guess = guesses_list[guess_index]
                 guess_index += 1
             except IndexError:
-                # try:
-                #     # out of high quality initial guesses from previous CV. Use the peaks from the round 1 fitting as the next guesses
-                #     next_guess = extra_guesses[extra_guess_index]
-                #     extra_guess_index += 1
-                #     guess_index += 1
-                #
-                # except IndexError:
-                # out of guesses - make a new non-protein guess by finding the max of the remaining DT profile after subtracting current peaks
-                # dt_middle = (dt_axis[-1] - dt_axis[0]) / 2.0
-                # next_guess = Gaussian(amplitude=0.5, centroid=dt_middle, width=min_nonprot_width,
-                #                       collision_voltage=None, pcov=None, protein_bool=False)
                 next_guess = guess_next_gaussian(dt_profile, dt_axis, min_nonprot_width, cv, guesses_list)
                 guess_index += 1
-
-                # next_guess = guess_next_gaussian(dt_profile, dt_axis, params_obj.gaussian_72_prot_peak_width, guesses_list[0].cv, guesses_list)
-                # guesses_list.append(next_guess)
 
             if next_guess.width > (prot_width_center + prot_width_tol):
                 # the width of this guess is wider than protein - try fitting a nonprotein peak here
@@ -854,22 +710,9 @@ def assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, cv,
                 next_guess = guesses_list[guess_index]
                 guess_index += 1
             except IndexError:
-                # try:
-                #     # out of high quality initial guesses from previous CV. Use the peaks from the round 1 fitting as the next guesses
-                #     next_guess = extra_guesses[extra_guess_index]
-                #     extra_guess_index += 1
-                #     guess_index += 1
-                #
-                # except IndexError:
                 # out of guesses - make a new protein guess by finding the max of the remaining DT profile after subtracting current peaks
                 next_guess = guess_next_gaussian(dt_profile, dt_axis, prot_width_center, cv, guesses_list)
                 guess_index += 1
-
-                    # guesses_list.append(next_guess)
-
-                    # dt_middle = (dt_axis[-1] - dt_axis[0]) / 2.0
-                    # next_guess = Gaussian(amplitude=0.5, centroid=dt_middle, width=prot_width_center,
-                    #                       collision_voltage=None, pcov=None, protein_bool=False)
 
             model, params = make_protein_model(prefix='{}{}'.format(protein_prefix, guess_index),
                                                guess_gaussian=next_guess,
@@ -881,29 +724,6 @@ def assemble_models(num_prot_pks, num_nonprot_pks, params_obj, guesses_list, cv,
             # guess_index += 1
 
     return models_list, fit_params
-
-
-# todo: deprecate
-# def get_next_extra_guess(extra_guess_index, extra_guess_list, prev_guesses, tolerance):
-#     """
-#
-#     :param extra_guess_index:
-#     :param extra_guess_list:
-#     :param prev_guesses:
-#     :return:
-#     """
-#     prev_centroids = [x.centroid for x in prev_guesses]
-#     finished = False
-#     while not finished:
-#         next_guess = extra_guess_list[extra_guess_index]
-#         test_centroids = [abs(next_guess.centroid - x) < tolerance for x in prev_centroids]
-#         if True in test_centroids:
-#             # this peak is too close to an existing guess. Skip it and continue
-#             extra_guess_index += 1
-#         else:
-#             # return this guess
-#             extra_guess_index += 1
-#             return next_guess, extra_guess_index
 
 
 def make_protein_model(prefix, guess_gaussian, width_center, width_tol, dt_axis):
@@ -951,13 +771,14 @@ def make_nonprotein_model(prefix, guess_gaussian, nonprot_width_min, dt_axis):
     """
     max_dt = dt_axis[-1]
     min_dt = dt_axis[0]
+    max_width = (max_dt - min_dt) / 2.0     # should not approach the width of the whole DT axis
 
     model = lmfit.Model(gaussfunc, prefix=prefix)
     model_params = model.make_params()
 
     # set initial guesses and boundaries
     model_params[prefix + 'centroid'].set(guess_gaussian.centroid, min=min_dt, max=max_dt)
-    model_params[prefix + 'sigma'].set(guess_gaussian.width, min=nonprot_width_min, max=max_dt)
+    model_params[prefix + 'sigma'].set(guess_gaussian.width, min=nonprot_width_min, max=max_width)
     model_params[prefix + 'amplitude'].set(guess_gaussian.amplitude, min=0, max=1.5)
 
     # return the model
