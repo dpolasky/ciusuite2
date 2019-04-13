@@ -754,17 +754,21 @@ class CIUSuite2(object):
                 all_output = ''
                 all_file_gaussians = []
                 gauss_filenames = []
+                ciu_objs = []
                 for file in files_to_read:
                     analysis_obj = load_analysis_obj(file)
-                    analysis_obj, csv_output, cv_gaussians = Gaussian_Fitting.main_gaussian_lmfit(analysis_obj, self.params_obj, self.output_dir)
-                    all_output += csv_output
-                    all_file_gaussians.append(cv_gaussians)
+                    ciu_objs.append(analysis_obj)
+                    # analysis_obj, csv_output, cv_gaussians = Gaussian_Fitting.main_gaussian_lmfit(analysis_obj, self.params_obj, self.output_dir)
+                    # all_output += csv_output
+                    # all_file_gaussians.append(cv_gaussians)
                     gauss_filenames.append(analysis_obj.short_filename)
 
+                ciu_objs, all_output, all_file_gaussians = Gaussian_Fitting.main_gaussian_lmfit_wrapper(ciu_objs, self.params_obj, self.output_dir)
+                for analysis_obj in ciu_objs:
                     t2_param_dict.update(t1_param_dict)
                     filename = save_analysis_obj(analysis_obj, t2_param_dict, outputdir=self.output_dir)
                     new_file_list.append(filename)
-                    self.update_progress(files_to_read.index(file), len(files_to_read))
+                    self.update_progress(ciu_objs.index(analysis_obj), len(ciu_objs))
 
                 if self.params_obj.gaussian_5_combine_outputs:
                     outputpath = os.path.join(self.output_dir, 'All_gaussians.csv')
