@@ -68,7 +68,7 @@ def ciu_plot(analysis_obj, params_obj, output_dir):
             plt.ylim((params_obj.plot_18_ylim_lower, params_obj.plot_19_ylim_upper))
         else:
             plt.ylim(ymin=params_obj.plot_18_ylim_lower)
-    elif params_obj.plot_17_xlim_upper is not None:
+    elif params_obj.plot_19_ylim_upper is not None:
         plt.ylim(ymax=params_obj.plot_19_ylim_upper)
 
     if params_obj.plot_06_show_colorbar:
@@ -210,7 +210,7 @@ def rmsd_plot(difference_matrix, axes, rtext, outputdir, params_obj,
             plt.ylim((params_obj.plot_18_ylim_lower, params_obj.plot_19_ylim_upper))
         else:
             plt.ylim(ymin=params_obj.plot_18_ylim_lower)
-    elif params_obj.plot_17_xlim_upper is not None:
+    elif params_obj.plot_19_ylim_upper is not None:
         plt.ylim(ymax=params_obj.plot_19_ylim_upper)
 
     # save and close
@@ -266,7 +266,7 @@ def std_dev_plot(analysis_obj, std_dev_matrix, pairwise_rmsds, params_obj, outpu
             plt.ylim((params_obj.plot_18_ylim_lower, params_obj.plot_19_ylim_upper))
         else:
             plt.ylim(ymin=params_obj.plot_18_ylim_lower)
-    elif params_obj.plot_17_xlim_upper is not None:
+    elif params_obj.plot_19_ylim_upper is not None:
         plt.ylim(ymax=params_obj.plot_19_ylim_upper)
 
     # plot desired labels and legends

@@ -527,7 +527,7 @@ def plot_features(feature_list, analysis_obj, params_obj, outputdir, filename_ap
             plt.ylim((params_obj.plot_18_ylim_lower, params_obj.plot_19_ylim_upper))
         else:
             plt.ylim(ymin=params_obj.plot_18_ylim_lower)
-    elif params_obj.plot_17_xlim_upper is not None:
+    elif params_obj.plot_19_ylim_upper is not None:
         plt.ylim(ymax=params_obj.plot_19_ylim_upper)
 
     # save plot
@@ -714,7 +714,7 @@ def plot_transitions(transition_list, analysis_obj, params_obj, outputdir):
             plt.ylim((params_obj.plot_18_ylim_lower, params_obj.plot_19_ylim_upper))
         else:
             plt.ylim(ymin=params_obj.plot_18_ylim_lower)
-    elif params_obj.plot_17_xlim_upper is not None:
+    elif params_obj.plot_19_ylim_upper is not None:
         plt.ylim(ymax=params_obj.plot_19_ylim_upper)
 
     # plot titles, labels, and legends

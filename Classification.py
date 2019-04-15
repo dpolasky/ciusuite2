@@ -559,7 +559,7 @@ def rearrange_ciu_by_feats_helper(rep_obj, params_obj, features_list, class_nume
         # Determine the correct CV column to append to the growing matrix and do so
         current_cv_axis = subclass_obj.axes[1]
         this_cv_index = (np.abs(np.asarray(current_cv_axis) - feature.cv)).argmin()
-        raw_data = get_classif_data(subclass_obj, params_obj, num_gauss_override=num_gaussian_override)
+        raw_data = get_classif_data(subclass_obj, params_obj)
         cv_col = raw_data.T[this_cv_index]
         data_output.append(cv_col)
 
@@ -695,7 +695,7 @@ def standardize_data_old(ciu_data):
     return output_data
 
 
-def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_override=None, selected_cvs=None):
+def get_classif_data(analysis_obj, params_obj, ufs_mode=False):
     """
     Initialize a classification data matrix in each analysis object in the lists according to the
     classification mode specified in the parameters object. In All_Data mode, this is simply the
@@ -706,9 +706,6 @@ def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_overrid
     :param params_obj: Parameters object with classification parameter information
     :type params_obj: Parameters
     :param ufs_mode: boolean, True if using for UFS (feature selection), which requires only centroids from gaussian fitting
-    :param num_gauss_override: MUST be provided for Unknown data fitting (in Gaussian mode ONLY) - the number of gaussians in the scheme being used
-    Set up this way to simplify moving the number through all crossval code/etc
-    :param selected_cvs: for unknown analyses, only return the data in the specified CV columns
     :return: classification data matrix
     """
     if params_obj.classif_1_input_mode == 'All_Data':
@@ -728,9 +725,6 @@ def get_classif_data(analysis_obj, params_obj, ufs_mode=False, num_gauss_overrid
                         current_centroids.append(gaussian_attribute)
                 centroids_by_cv.append(current_centroids)
             classif_data = np.asarray(centroids_by_cv).T    # transpose because we transposed at the start (in the loop) to access by CV
-    # else:
-    #     logger.error('WARNING: INVALID CLASSIFICATION MODE: {}'.format(params_obj.classif_1_input_mode))
-    #     classif_data = None
 
     return classif_data
 
@@ -778,29 +772,6 @@ def prep_gaussfeats_for_classif(features_list, analysis_obj):
                                         pcov=None,
                                         protein_bool=True)
                 final_gaussian_lists[cv_index].append(new_gaussian)
-
-    # Finally, check if all CVs have been covered by features. If not, add highest amplitude Gaussian from non-feature list
-    # todo: remove (?) or just add zeros (empty feature) if removing causes a crash
-    # for cv_index, cv in enumerate(analysis_obj.axes[1]):
-    #     if len(final_gaussian_lists[cv_index]) == 0:
-    #         # no Gaussians have been added here yet, so we need to add one. Get the raw set of Gaussians (before feature detection) fit at this CV
-    #         cv_gaussians_from_obj = analysis_obj.raw_protein_gaussians[cv_index]
-    #
-    #         # Find the feature that extends closest to this CV, then find the raw Gaussian at this CV closest to that feature's median centroid
-    #         min_cv_dist = np.inf
-    #         nearest_feat = None
-    #         for feature in features_list:
-    #             for feat_cv in feature.cvs:
-    #                 if abs(feat_cv - cv) < min_cv_dist:
-    #                     nearest_feat = feature
-    #                     min_cv_dist = abs(feat_cv - cv)
-    #         nearest_centroid_index = np.argmin([abs(x.centroid - nearest_feat.gauss_median_centroid) for x in cv_gaussians_from_obj])
-    #         try:
-    #             # add the closest Gaussian to the list at this CV
-    #             final_gaussian_lists[cv_index].append(cv_gaussians_from_obj[nearest_centroid_index])
-    #         except IndexError:
-    #             # no Gaussians found at this CV in the original fitting - leave empty
-    #             continue
 
     analysis_obj.classif_gaussians_by_cv = final_gaussian_lists
     return final_gaussian_lists
@@ -1228,6 +1199,22 @@ def plot_feature_scores_subclass(features_by_subclass, params_obj, scheme_name, 
         plt.errorbar(x=cv_axis, y=mean_scores, yerr=std_scores, ls='none', marker='o', color=color, markersize=params_obj.plot_14_dot_size, markeredgecolor='black', alpha=0.8, label=feature_list[0].subclass_label)
         plt.axhline(y=0.0, color='black', ls='--')
 
+    # set x/y limits if applicable, allowing for partial limits
+    if params_obj.plot_16_xlim_lower is not None:
+        if params_obj.plot_17_xlim_upper is not None:
+            plt.xlim((params_obj.plot_16_xlim_lower, params_obj.plot_17_xlim_upper))
+        else:
+            plt.xlim(xmin=params_obj.plot_16_xlim_lower)
+    elif params_obj.plot_17_xlim_upper is not None:
+        plt.xlim(xmax=params_obj.plot_17_xlim_upper)
+    if params_obj.plot_18_ylim_lower is not None:
+        if params_obj.plot_19_ylim_upper is not None:
+            plt.ylim((params_obj.plot_18_ylim_lower, params_obj.plot_19_ylim_upper))
+        else:
+            plt.ylim(ymin=params_obj.plot_18_ylim_lower)
+    elif params_obj.plot_19_ylim_upper is not None:
+        plt.ylim(ymax=params_obj.plot_19_ylim_upper)
+
     # plot titles, labels, and legends
     if params_obj.plot_07_show_legend:
         plt.legend(loc='best', fontsize=params_obj.plot_13_font_size)
@@ -1281,6 +1268,22 @@ def plot_crossval_scores(crossval_data, scheme_name, params_obj, outputdir):
     if params_obj.classif_5_show_auc_crossval:
         plt.plot(xax, auc_means, color='red', marker='o', label='AUC', markersize=params_obj.plot_14_dot_size, markeredgecolor='black')
         plt.fill_between(xax, auc_means - auc_stds, auc_means + auc_stds, color='red', alpha=0.2)
+
+    # set x/y limits if applicable, allowing for partial limits
+    if params_obj.plot_16_xlim_lower is not None:
+        if params_obj.plot_17_xlim_upper is not None:
+            plt.xlim((params_obj.plot_16_xlim_lower, params_obj.plot_17_xlim_upper))
+        else:
+            plt.xlim(xmin=params_obj.plot_16_xlim_lower)
+    elif params_obj.plot_17_xlim_upper is not None:
+        plt.xlim(xmax=params_obj.plot_17_xlim_upper)
+    if params_obj.plot_18_ylim_lower is not None:
+        if params_obj.plot_19_ylim_upper is not None:
+            plt.ylim((params_obj.plot_18_ylim_lower, params_obj.plot_19_ylim_upper))
+        else:
+            plt.ylim(ymin=params_obj.plot_18_ylim_lower)
+    elif params_obj.plot_19_ylim_upper is not None:
+        plt.ylim(ymax=params_obj.plot_19_ylim_upper)
 
     # plot titles, labels, and legends
     if params_obj.plot_12_custom_title is not None:

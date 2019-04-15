@@ -1236,7 +1236,7 @@ def plot_centroids(centroid_lists_by_cv, analysis_obj, params_obj, outputpath, n
             plt.ylim((params_obj.plot_18_ylim_lower, params_obj.plot_19_ylim_upper))
         else:
             plt.ylim(ymin=params_obj.plot_18_ylim_lower)
-    elif params_obj.plot_17_xlim_upper is not None:
+    elif params_obj.plot_19_ylim_upper is not None:
         plt.ylim(ymax=params_obj.plot_19_ylim_upper)
 
     output_name = analysis_obj.short_filename + '_centroids' + params_obj.plot_02_extension
