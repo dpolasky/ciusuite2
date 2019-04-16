@@ -170,6 +170,7 @@ class Parameters(object):
         self.classif_8_max_crossval_iterations = None
         self.classif_91_test_size = None
         self.classif_92_standardize = None
+        self.classif_93_std_all_gaussians_bool = None
         self.silent_clf_4_num_gauss = None
 
         # Raw data import parameters

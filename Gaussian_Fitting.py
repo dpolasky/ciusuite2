@@ -512,7 +512,7 @@ def iterate_lmfitting(x_data, y_data, guesses_list, cv, params_obj, outputpath):
     else:
         max_num_nonprot_pks = 0
 
-    cv = guesses_list[0].cv
+    # cv = guesses_list[0].cv
     output_fits = []
     # iterate over all peak combinations
     for num_prot_pks in range(1, max_num_prot_pks + 1):
