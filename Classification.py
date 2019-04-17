@@ -775,6 +775,12 @@ def prep_gaussfeats_for_classif(features_list, analysis_obj):
                                         protein_bool=True)
                 final_gaussian_lists[cv_index].append(new_gaussian)
 
+    for cv_index, cv in enumerate(analysis_obj.axes[1]):
+        if len(final_gaussian_lists[cv_index]) == 0:
+            # no Gaussians have been added here yet, so we need to add one. Add an empty Gaussian at mean DT (not completely empty so as to avoid LAPACK crashes)
+            mean_dt = np.mean(analysis_obj.axes[0])
+            final_gaussian_lists[cv_index].append(Gaussian(centroid=mean_dt, amplitude=0, width=0, collision_voltage=cv, pcov=None, protein_bool=False))
+
     analysis_obj.classif_gaussians_by_cv = final_gaussian_lists
     return final_gaussian_lists
 
