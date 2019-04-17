@@ -1023,7 +1023,7 @@ def get_feature_axis(ciu_obj, gaussian_mode, gaussian_combine_mode):
     """
     if not gaussian_mode == 'All_Data':
         # Gaussian mode: 3 features (centroids, widths, and amplitudes for all Gaussians at a given CV)
-        if not gaussian_combine_mode:
+        if gaussian_combine_mode:
             feature_axis = ['c', 'w', 'a']
         else:
             # Individual Gaussians mode: num features per CV = 3 * max_num_gaussians (centroid, width, amplitude for each)
