@@ -751,16 +751,11 @@ class CIUSuite2(object):
                 logger.info('\n**** Starting Gaussian Fitting - THIS MAY TAKE SOME TIME - CIUSuite 2 will not respond until fitting is completed ****')
 
                 new_file_list = []
-                all_output = ''
-                all_file_gaussians = []
                 gauss_filenames = []
                 ciu_objs = []
                 for file in files_to_read:
                     analysis_obj = load_analysis_obj(file)
                     ciu_objs.append(analysis_obj)
-                    # analysis_obj, csv_output, cv_gaussians = Gaussian_Fitting.main_gaussian_lmfit(analysis_obj, self.params_obj, self.output_dir)
-                    # all_output += csv_output
-                    # all_file_gaussians.append(cv_gaussians)
                     gauss_filenames.append(analysis_obj.short_filename)
 
                 ciu_objs, all_output, all_file_gaussians = Gaussian_Fitting.main_gaussian_lmfit_wrapper(ciu_objs, self.params_obj, self.output_dir)

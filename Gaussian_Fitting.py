@@ -134,8 +134,6 @@ class SingleFitStats(object):
         self.y_fit = multi_gauss_func(x_data, *popt) + self.baseline_val
         self.slope, self.intercept, self.rvalue, self.pvalue, self.stderr = linregress(self.y_data, self.y_fit)
         self.adjrsq = adjrsquared(self.rvalue ** 2, len(y_data))
-        # can't save LMFit output because it contains temp classes that are not pickle-able
-        # self.lmfit_output = lmfit_output
 
         # Gaussian lists specific to protein and non-protein components fitted by LMFit
         self.gaussians_protein = generate_gaussians_from_popt(protein_popt, protein_bool=True, cv=cv, pcov=None)
@@ -252,7 +250,7 @@ def main_gaussian_lmfit_wrapper(analysis_obj_list, params_obj, outputpath):
         results = []
         for analysis_obj in analysis_obj_list:
             # Run fitting and scoring across the provided range of peak options with multiprocessing
-            logger.info('Started Gaussian fitting for file {}...'.format(analysis_obj.short_filename))
+            logger.info('Gaussian fitting process for file {} added to queue'.format(analysis_obj.short_filename))
             new_params_obj = CIU_Params.Parameters()
             new_params_obj.set_params(params_obj.params_dict)    # copy the params object to prevent simultaneous access
             argslist = [analysis_obj, new_params_obj, outputpath]
@@ -315,11 +313,7 @@ def main_gaussian_lmfit(analysis_obj, params_obj, outputpath):
         cv = analysis_obj.axes[1][cv_index]
         if cv_index > 0:
             best_prev_fit = max(results[cv_index - 1], key=lambda x: x.score)
-            # gaussian_guess_list = best_prev_fit.gaussians
             gaussian_guess_list = copy_gaussians_from_prevfit(best_prev_fit, cv)
-            # update the provided Gaussian(s) to have the correct CV
-            # for gaussian in gaussian_guess_list:
-            #     gaussian.cv = cv
         else:
             # run initial guess method since we have no previous peaks to refer to
             gaussian_guess_list = guess_gauss_init(cv_col_intensities, analysis_obj.axes[0], cv, rsq_cutoff=0.99,

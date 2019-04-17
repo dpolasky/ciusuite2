@@ -667,36 +667,6 @@ def run_lda_svc(x_data, label_data):
     return svm, lda
 
 
-# todo: deprecate
-# def standardize_data_old(ciu_data):
-#     """
-#     Standardize the input CIU data using the common (xi - x_mean) / stdev approach. The UFS
-#     is behaving strangely with negative values in the input so the output is 'floored' to
-#     have no negative values.
-#     :param ciu_data: 2D numpy array of CIU data
-#     :return:
-#     """
-#     # powertransf = PowerTransformer(method='yeo-johnson')
-#     # powertransf.fit(ciu_data)
-#     # std_data = powertransf.transform(ciu_data)
-#     # return std_data
-#
-#     cv_data = np.swapaxes(ciu_data, 0, 1)
-#     output_data = np.ndarray(np.shape(cv_data))
-#
-#     # smooth each column and return the data (axes swapped back to normal)
-#     index = 0
-#     while index < len(cv_data):
-#         current_col = cv_data[index]
-#         normed_col = (current_col - np.mean(current_col)) / np.std(current_col)
-#         # normed_col = abs((current_col - np.mean(current_col)) / np.std(current_col))
-#         normed_col[normed_col < 0] = 0  # set all negative values to 0
-#         output_data[index] = normed_col
-#         index += 1
-#     output_data = np.swapaxes(output_data, 0, 1)
-#     return output_data
-
-
 def get_classif_data(analysis_obj, params_obj, ufs_mode=False):
     """
     Initialize a classification data matrix in each analysis object in the lists according to the
