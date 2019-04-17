@@ -763,9 +763,11 @@ class CIUSuite2(object):
                     t2_param_dict.update(t1_param_dict)
                     filename = save_analysis_obj(analysis_obj, t2_param_dict, outputdir=self.output_dir)
                     new_file_list.append(filename)
+                    logger.debug('done saving file {}'.format(filename))
                     self.update_progress(ciu_objs.index(analysis_obj), len(ciu_objs))
 
                 if self.params_obj.gaussian_5_combine_outputs:
+                    logger.debug('saving combined gaussian info')
                     outputpath = os.path.join(self.output_dir, 'All_gaussians.csv')
                     all_output_append = Gaussian_Fitting.print_combined_params(all_file_gaussians, gauss_filenames)
                     all_output += all_output_append
@@ -784,6 +786,7 @@ class CIUSuite2(object):
                 # prompt the user to run feature detection in Gaussian mode
                 # if len(files_to_read) > 0:
                 #     messagebox.showinfo('Success!', 'Gaussing fitting finished successfully. Please run Feature Detection in "gaussian" mode to finalize Gaussian assignments to features (this is required for CIU50 analysis, classification, and reconstruction).')
+        logger.debug('reached Gaussian progress_done')
         self.progress_done()
 
     def on_button_gaussian_reconstruct_clicked(self):
