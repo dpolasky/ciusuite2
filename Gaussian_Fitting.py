@@ -315,10 +315,11 @@ def main_gaussian_lmfit(analysis_obj, params_obj, outputpath):
         cv = analysis_obj.axes[1][cv_index]
         if cv_index > 0:
             best_prev_fit = max(results[cv_index - 1], key=lambda x: x.score)
-            gaussian_guess_list = best_prev_fit.gaussians
+            # gaussian_guess_list = best_prev_fit.gaussians
+            gaussian_guess_list = copy_gaussians_from_prevfit(best_prev_fit, cv)
             # update the provided Gaussian(s) to have the correct CV
-            for gaussian in gaussian_guess_list:
-                gaussian.cv = cv
+            # for gaussian in gaussian_guess_list:
+            #     gaussian.cv = cv
         else:
             # run initial guess method since we have no previous peaks to refer to
             gaussian_guess_list = guess_gauss_init(cv_col_intensities, analysis_obj.axes[0], cv, rsq_cutoff=0.99,
@@ -359,6 +360,24 @@ def main_gaussian_lmfit(analysis_obj, params_obj, outputpath):
     save_fits_pdf_new(analysis_obj, params_obj, best_fits_by_cv, outputpath)
     combined_output, sorted_gauss_by_cv = save_gauss_params(analysis_obj, outputpath, params_obj.gaussian_51_sort_outputs_by, combine=params_obj.gaussian_5_combine_outputs, protein_only=params_obj.gauss_t1_1_protein_mode)
     return analysis_obj, combined_output, sorted_gauss_by_cv, fit_time
+
+
+def copy_gaussians_from_prevfit(prev_fit, new_cv):
+    """
+    Generate new 'guess' Gaussians from a previous fitting result without linking directly to the
+    previous objects (so they don't get overwritten). Returns a list of new Gaussian objects with
+    the same parameters as before except updated CV
+    :param prev_fit: SingleFitStats container
+    :type prev_fit: SingleFitStats
+    :param new_cv: updated CV
+    :return: list of Gaussians
+    :rtype: list[Gaussian]
+    """
+    gaussian_guess_list = []
+    for gaussian in prev_fit.gaussians:
+        new_gaussian = Gaussian(gaussian.amplitude, gaussian.centroid, gaussian.width, new_cv, pcov=None, protein_bool=gaussian.is_protein)
+        gaussian_guess_list.append(new_gaussian)
+    return gaussian_guess_list
 
 
 def guess_next_gaussian(ciu_data_col, dt_axis, width_guess, cv, prev_gaussians):
