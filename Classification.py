@@ -995,15 +995,18 @@ def standardize_ciu_obj(cl_input, means_dict, stdevs_dict, params_obj):
         # can return just the feat/CV 2D array from the input dataframes and use the original method
         means = means_dict[subclass_label].values
         stdevs = stdevs_dict[subclass_label].values
-
         cv_axis_len = len(means[0])
-        # feature_axis_len = len(means)
 
         standardized_data = np.zeros(np.shape(analysis_obj.classif_input_raw))
         raw_std_data = []
         for cv_index in range(cv_axis_len):
-            # for feature_index in range(feature_axis_len):
-            for feature_index in range(len(analysis_obj.classif_input_raw[cv_index])):
+            # get correct feature axis shape
+            if params_obj.classif_1_input_mode == 'All_Data':
+                feature_axis_len = len(means)
+            else:
+                feature_axis_len = len(analysis_obj.classif_input_raw[cv_index])
+
+            for feature_index in range(feature_axis_len):
                 if not params_obj.classif_1_input_mode == 'All_Data':
                     if params_obj.classif_93_std_all_gsns_bool:
                         # combined Gaussians mode - use single mean/standard for all Gaussians
