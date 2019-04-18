@@ -1060,32 +1060,16 @@ class CIUSuite2(object):
                         flat_input_list = [x for input_list in cl_inputs_by_label for x in input_list]
                         if not check_classif_data_gaussians(flat_input_list, self.params_obj.classif_1_input_mode):
                             self.progress_done()
+                    if self.params_obj.classif_3_auto_featselect == 'automatic':
+                        manual_select = False
+                    else:
+                        manual_select = True
 
                     # Run the classification for all input modes
-                    if self.params_obj.classif_3_auto_featselect == 'automatic':
-                        self.progress_print_text('Classification in progress (may take a few minutes - see console for progress)...', 50)
-                        scheme = Classification.main_build_classification_new(cl_inputs_by_label, subclass_labels, self.params_obj, self.output_dir)
-                        scheme.final_axis_cropvals = equalized_axes
-                        Classification.save_scheme(scheme, self.output_dir, subclass_labels)
-                    else:
-                        # manual feature selection mode: run feature selection, pause, and THEN run LDA with user input
-                        self.progress_print_text('Feature Evaluation in progress...', 50)
-
-                        # run feature selection
-                        class_labels = [class_list[0].class_label for class_list in cl_inputs_by_label]
-                        list_classif_inputs = Classification.subclass_inputs_from_class_inputs(cl_inputs_by_label, subclass_labels, class_labels)
-
-                        sorted_features = Classification.multi_subclass_ufs(list_classif_inputs, self.params_obj, self.output_dir, subclass_labels)
-                        sorted_features = sorted_features[:self.params_obj.classif_7_max_feats_for_crossval]    # only display set number of features for selection
-                        selected_features = Classification.get_manual_classif_feats(sorted_features)
-                        if len(selected_features) > 0:
-                            # Run LDA using selected features
-                            self.progress_print_text('Classification in progress (may take a few minutes - see console for progress)...', 50)
-                            scheme = Classification.main_build_classification_new(cl_inputs_by_label, subclass_labels, self.params_obj, self.output_dir, known_feats=selected_features)
-                            scheme.final_axis_cropvals = equalized_axes
-                            Classification.save_scheme(scheme, self.output_dir, subclass_labels)
-                        else:
-                            logger.warning('Classification canceled: no features selected')
+                    self.progress_print_text('Classification in progress (may take a few minutes - see console for progress)...', 50)
+                    scheme = Classification.main_build_classification_new(cl_inputs_by_label, subclass_labels, self.params_obj, self.output_dir, manual_select)
+                    scheme.final_axis_cropvals = equalized_axes
+                    Classification.save_scheme(scheme, self.output_dir, subclass_labels)
 
         self.progress_done()
 

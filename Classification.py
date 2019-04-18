@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger('main')
 
 
-def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_obj, output_dir, known_feats=None):
+def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_obj, output_dir, manual_feat_select):
     """
     Main method for classification. Performs feature selection followed by LDA and classification
     and generates output and plots. Returns a ClassificationScheme object to be saved for future
@@ -54,7 +54,7 @@ def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_ob
     :param output_dir: directory in which to save plots/output
     :param params_obj: Parameters object with classification parameter information
     :type params_obj: Parameters
-    :param known_feats: list of features (optional, allows manual mode)
+    :param manual_feat_select: boolean - whether to allow the user to manually choose features
     :return: ClassificationScheme object with the generated scheme
     :rtype: ClassificationScheme
     """
@@ -64,13 +64,13 @@ def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_ob
     max_num_gaussians = prep_data_2d(cl_inputs_by_label, params_obj)
     cl_inputs_by_label, means, stdevs = standardize_all_2d(cl_inputs_by_label, params_obj)
 
+    # convert to subclass oriented data (if no subclasses, will be a single entry in a list)
+    class_labels = [class_list[0].class_label for class_list in cl_inputs_by_label]
+    list_classif_inputs = subclass_inputs_from_class_inputs(cl_inputs_by_label, subclass_labels, class_labels)
+
     logger.debug('standardization finished: {:.2f}s'.format(time.time() - start_time))
 
-    if known_feats is None:
-        # convert to subclass oriented data (if no subclasses, will be a single entry in a list)
-        class_labels = [class_list[0].class_label for class_list in cl_inputs_by_label]
-        list_classif_inputs = subclass_inputs_from_class_inputs(cl_inputs_by_label, subclass_labels, class_labels)
-
+    if not manual_feat_select:
         # run feature selection and crossvalidation to select best features automatically
         all_features = multi_subclass_ufs(list_classif_inputs, params_obj, output_dir, subclass_labels)
         logger.debug('UFS finished: {:.2f}s'.format(time.time() - start_time))
@@ -78,10 +78,14 @@ def main_build_classification_new(cl_inputs_by_label, subclass_labels, params_ob
         # assess all features to determine which to use in the final scheme
         best_features, crossval_score, all_crossval_data = crossval_main_new(cl_inputs_by_label, output_dir, params_obj, all_features, subclass_labels)
     else:
+        sorted_features = multi_subclass_ufs(list_classif_inputs, params_obj, output_dir, subclass_labels)
+        sorted_features = sorted_features[:params_obj.classif_7_max_feats_for_crossval]  # only display set number of features for selection
+        selected_features = get_manual_classif_feats(sorted_features)
+
         # Manual mode: use the provided features and run limited crossvalidation
-        best_features, crossval_score, all_crossval_data = crossval_main_new(cl_inputs_by_label, output_dir, params_obj, known_feats, subclass_labels)
-        best_features = known_feats
-        all_features = known_feats
+        best_features, crossval_score, all_crossval_data = crossval_main_new(cl_inputs_by_label, output_dir, params_obj, selected_features, subclass_labels)
+        best_features = selected_features
+        all_features = selected_features
     logger.debug('crossval finished: {:.2f}s'.format(time.time() - start_time))
 
     # perform LDA and classification on the selected/best features
