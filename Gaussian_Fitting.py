@@ -83,6 +83,22 @@ class Gaussian(object):
         """
         return '{},{:.2f},{:.2f},{:.2f}'.format(self.cv, self.amplitude, self.centroid, self.fwhm)
 
+    def print_single_param(self, param):
+        """
+        Format a single Gaussian parameter for printing
+        :param param: 'amplitude', 'centroid', or 'width'
+        :return: formatted string
+        """
+        try:
+            value = self.__getattribute__(param)
+        except AttributeError:
+            logger.error('No Gaussian attribute {}'.format(param))
+            value = 0
+
+        if param == 'width':
+            value = sigma_to_fwhm(value)
+        return '{:.2f}'.format(value)
+
     def return_popt(self):
         """
         Re-generate Gaussian function parameter list (e.g. popt style from curve_fit) from
@@ -924,6 +940,15 @@ def fwhm_to_sigma(fwhm):
     return fwhm / (2.0 * (math.sqrt(2 * math.log(2))))
 
 
+def sigma_to_fwhm(sigma):
+    """ Convert sigma to FWHM (full-width at half max) for Gaussian function
+    :param sigma: float
+    :return: float
+    """
+    return sigma * 2.0 * math.sqrt(2 * math.log(2))
+
+
+
 def filter_fits(params_list, peak_width_cutoff, intensity_cutoff, centroid_bounds=None):
     """
     Simple filter to remove any peaks with a width above a specified cutoff. Intended to separate
@@ -1339,7 +1364,8 @@ def print_combined_params(all_files_gaussians_by_cv, filenames):
         for index, file_lists in enumerate(all_files_gaussians_by_cv):
             for cv_list in file_lists:
                 cv_line = '{},{},'.format(filenames[index], cv_list[0].cv)
-                cv_line += ','.join(['{:.2f}'.format(gaussian.__getattribute__(param)) for gaussian in cv_list])
+                cv_line += ','.join([gaussian.print_single_param(param) for gaussian in cv_list])
+                # cv_line += ','.join(['{:.2f}'.format(gaussian.__getattribute__(param)) for gaussian in cv_list])
                 param_string += cv_line + '\n'
         output_string += param_string
     return output_string
