@@ -1,5 +1,0 @@
-Raw_Directory,T:\Dan\Data\2019_02 Feb
-Range_Directory,C:\Users\dpolasky\Desktop\Ranges\SERF CCS calibrants
-Output_Directory,C:\Users\dpolasky\Desktop\Extracted_Data
-Batch_Directory,C:\Users\dpolasky
-Rule_Directory,C:\Users\dpolasky
