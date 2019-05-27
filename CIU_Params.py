@@ -9,6 +9,9 @@ import tkinter
 import numpy as np
 from tkinter import messagebox
 from tkinter import ttk
+import logging
+
+logger = logging.getLogger('main')
 
 
 def parse_param_descriptions(param_file):
@@ -70,7 +73,7 @@ def parse_param_descriptions(param_file):
             elif param_type == 'anystring':
                 reqs[key] = (param_type, [])
             else:
-                print('invalid type, parsing failed for line: {}'.format(line))
+                logger.error('invalid type, parsing failed for line: {}'.format(line))
 
     return names, descriptions, reqs
 
@@ -129,6 +132,7 @@ class Parameters(object):
         self.gaussian_2_int_threshold = None
         self.gaussian_4_save_diagnostics = None
         self.gaussian_5_combine_outputs = None
+        self.gaussian_51_sort_outputs_by = None
         self.gaussian_61_num_cores = None
         self.gaussian_71_max_prot_components = None
         self.gaussian_72_prot_peak_width = None
@@ -149,16 +153,25 @@ class Parameters(object):
         self.feature_t2_4_gauss_fill_gaps = None
         self.feature_t2_5_gauss_allow_nongauss = None
         self.feature_t2_6_ciu50_combine_outputs = None
+        self.feature_t2_7_ciu50_concise_outputs = None
 
         self.ciu50_t2_1_centroiding_mode = None
         self.ciu50_t2_2_pad_transitions_cv = None
         self.ciu50_t2_3_gauss_width_adj_tol = None
 
+        self.class_t1_1_load_method = None
+        self.class_t1_2_subclass_mode = None
         self.classif_6_ufs_use_error_mode = None
         self.classif_2_score_dif_tol = None
-        self.classif_3_unk_mode = None
-        self.classif_5_auto_featselect = None
+        self.classif_4_score_mode = None
+        self.classif_1_input_mode = None
+        self.classif_3_auto_featselect = None
+        self.classif_5_show_auc_crossval = None
         self.classif_7_max_feats_for_crossval = None
+        self.classif_8_max_crossval_iterations = None
+        self.classif_91_test_size = None
+        self.classif_92_standardize = None
+        self.classif_93_std_all_gsns_bool = None
         self.silent_clf_4_num_gauss = None
 
         # Raw data import parameters
@@ -178,7 +191,7 @@ class Parameters(object):
                 self.__setattr__(name, value)
             except AttributeError:
                 # no such parameter
-                print('No parameter name for param: ' + name)
+                logger.warning('No parameter name for param: ' + name)
                 continue
         self.update_dict()
 
@@ -252,7 +265,7 @@ def parse_params_file_newcsv(params_file):
                             param_dict[splits[0].strip()] = splits[1].strip()
         return param_dict
     except FileNotFoundError:
-        print('params file not found!')
+        logger.error('params file not found!')
 
 
 def update_param_csv(params_obj, params_filepath):
@@ -281,7 +294,7 @@ def update_param_csv(params_obj, params_filepath):
                     new_value = str(params_obj.params_dict[current_key])
                 except KeyError:
                     new_value = splits[1].strip()
-                    print('Error: parameter {} not found, default unchanged').format(current_key)
+                    logger.error('Parameter {} not found, default unchanged').format(current_key)
                 splits[1] = new_value
                 new_line = ','.join(splits) + '\n'
                 edited_lines.append(new_line)
@@ -292,7 +305,7 @@ def update_param_csv(params_obj, params_filepath):
                 pfile.write(line)
 
     except FileNotFoundError:
-        print('Error: parameters file {} not found! Default values not changed'.format(params_filepath))
+        logger.error('Parameters file {} not found! Default values not changed'.format(params_filepath))
 
 
 def update_specific_param_vals(dict_of_updates, params_filepath):
@@ -324,7 +337,7 @@ def update_specific_param_vals(dict_of_updates, params_filepath):
                         new_value = splits[1].strip()
                 except KeyError:
                     new_value = splits[1].strip()
-                    print('Error: parameter {} not found, default unchanged').format(current_key)
+                    logger.error('Parameter {} not found, default unchanged').format(current_key)
                 splits[1] = new_value
                 new_line = ','.join(splits) + '\n'
                 edited_lines.append(new_line)
@@ -335,7 +348,7 @@ def update_specific_param_vals(dict_of_updates, params_filepath):
                 pfile.write(line)
 
     except FileNotFoundError:
-        print('Error: parameters file {} not found! Values not updated'.format(params_filepath))
+        logger.error('Parameters file {} not found! Values not updated'.format(params_filepath))
 
 
 def parse_params_file(params_file):
@@ -379,7 +392,7 @@ def parse_params_file(params_file):
 
         return param_dict
     except FileNotFoundError:
-        print('params file not found!')
+        logger.error('params file not found!')
 
 
 def parse_param_value(param_string):

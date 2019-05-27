@@ -13,11 +13,14 @@ import scipy.signal
 import scipy.interpolate
 import scipy.stats
 import pygubu
+import logging
 from tkinter import messagebox
 import tkinter as tk
 
 import CIU_analysis_obj
 import CIU_raw
+
+logger = logging.getLogger('main')
 
 
 def process_raw_obj(raw_obj, params_obj, short_filename=None):
@@ -36,6 +39,7 @@ def process_raw_obj(raw_obj, params_obj, short_filename=None):
     """
     # check for empty raw data and don't initialize object if empty
     if np.max(raw_obj.rawdata) == 0:
+        logger.warning('Empty raw data in file {}'.format(raw_obj.filepath))
         raise ValueError
 
     # normalize data and save axes information
@@ -49,30 +53,45 @@ def process_raw_obj(raw_obj, params_obj, short_filename=None):
     return analysis_obj
 
 
-def get_data(fname):
+def get_data(filename):
     """
     Read _raw.csv file and generate a CIURaw object containing its raw data and filename
-    :param fname: string - path to _raw.csv file to read
+    :param filename: string - path to _raw.csv file to read
     :rtype: CIURaw
     :return: CIURaw object with rawdata, axes, and filename initialized
     """
     try:
-        rawdata = np.genfromtxt(fname, missing_values=[""], filling_values=[0], delimiter=",")
+        rawdata = np.genfromtxt(filename, missing_values=[""], filling_values=[0], delimiter=",")
     except ValueError:
         # bad characters in file, or other numpy import errors
-        raise ValueError('Data import error in File: ', os.path.basename(fname), 'Illegal characters or other error in importing data. This file will NOT be processed')
+        logger.error('Data import error in File: {}. Illegal characters or other error in importing data. This file will NOT be processed'.format(os.path.basename(filename)))
+        raise ValueError('Data import error in File: ', os.path.basename(filename), 'Illegal characters or other error in importing data. This file will NOT be processed')
     row_axis = rawdata[1:, 0]
     col_axis = rawdata[0, 1:]
+
+    # check for decreasing values in either axis
+    prev_val = 0
+    for value in row_axis:
+        if value < prev_val:
+            logger.error('Data import error in File: {}. Mobility axis has decreasing or negative values. All axis values must be positive and increasing. This file will NOT be processed'.format(os.path.basename(filename)))
+            raise ValueError('Data import error in File: ', os.path.basename(filename), 'Mobility axis has decreasing or negative values. All axis values must be positive and increasing. This file will NOT be processed')
+    prev_val = 0
+    for value in col_axis:
+        if value < prev_val:
+            logger.error('Data import error in File: {}. Activation axis has decreasing or negative values. All axis values must be positive and increasing. This file will NOT be processed'.format(os.path.basename(filename)))
+            raise ValueError('Data import error in File: ', os.path.basename(filename), 'Activation axis has decreasing or negative values. All axis values must be positive and increasing. This file will NOT be processed')
 
     # check for duplicate values in axes
     unique_row, row_counts = np.unique(row_axis, return_counts=True)
     if np.max(row_counts) > 1:
-        raise ValueError('Data import error in File: ', os.path.basename(fname), 'Duplicate row (DT) values. This file will NOT be processed')
+        logger.error('Data import error in File: {}. Duplicate row (DT) values. This file will NOT be processed'.format(os.path.basename(filename)))
+        raise ValueError('Data import error in File: ', os.path.basename(filename), 'Duplicate row (DT) values. This file will NOT be processed')
     unique_col, col_counts = np.unique(col_axis, return_counts=True)
     if np.max(col_counts) > 1:
-        raise ValueError('Data import error in File: ', os.path.basename(fname), 'Duplicate column (CV) values. This file will NOT be processed.')
+        logger.error('Data import error in File: {}. Duplicate column (CV) values. This file will NOT be processed.'.format(os.path.basename(filename)))
+        raise ValueError('Data import error in File: ', os.path.basename(filename), 'Duplicate column (CV) values. This file will NOT be processed.')
 
-    raw_obj = CIU_raw.CIURaw(rawdata[1:, 1:], row_axis, col_axis, fname)
+    raw_obj = CIU_raw.CIURaw(rawdata[1:, 1:], row_axis, col_axis, filename)
 
     return raw_obj
 
@@ -148,20 +167,20 @@ def smooth_main(analysis_obj, params_obj):
             if params_obj.smoothing_1_method.lower() == '2d savitzky-golay':
                 # catch data with only 1 row or column
                 if len(analysis_obj.axes[0]) < params_obj.smoothing_2_window or len(analysis_obj.axes[1]) < 2:
-                    print('File {} has at least one axis too small for 2D smoothing. 2D smoothing requires at least 2 activation axis bins and at least the smoothing window size mobility bins. The file was NOT smoothed'.format(analysis_obj.short_filename))
+                    logger.error('File {} has at least one axis too small for 2D smoothing. 2D smoothing requires at least 2 activation axis bins and at least the smoothing window size mobility bins. The file was NOT smoothed'.format(analysis_obj.short_filename))
                     break
                 norm_data = sgolay2d(norm_data, params_obj.smoothing_2_window, order=2)
 
             elif params_obj.smoothing_1_method.lower() == '1d savitzky-golay':
                 # catch data with only 1 row
                 if len(analysis_obj.axes[0]) < params_obj.smoothing_2_window:
-                    print('The mobility axis in file {} has fewer bins than the smoothing window and cannot be smoothed. The file was NOT smoothed'.format(
+                    logger.error('The mobility axis in file {} has fewer bins than the smoothing window and cannot be smoothed. The file was NOT smoothed'.format(
                             analysis_obj.short_filename))
                     break
                 norm_data = sav_gol_smooth(norm_data, params_obj.smoothing_2_window, smooth_order=2)
 
             else:
-                print('Invalid smoothing method, no smoothing applied')
+                logger.error('Invalid smoothing method, no smoothing applied')
                 break
             i += 1
 
@@ -188,9 +207,11 @@ def sgolay2d(z, window_size, order, derivative=None):
     n_terms = (order + 1) * (order + 2) / 2.0
 
     if window_size % 2 == 0:
+        logger.error('2D SG smooth window_size ({}) must be odd'.format(window_size))
         raise ValueError('window_size must be odd')
 
     if window_size**2 < n_terms:
+        logger.error('2D SG smooth order is too high for the window size of {}'.format(window_size))
         raise ValueError('order is too high for the window size')
 
     half_size = window_size // 2
@@ -317,6 +338,7 @@ def crop(analysis_obj, crop_vals):
 
     # save output to a new analysis object (clears fitting results/etc that can fail if axes are different)
     new_obj = CIU_analysis_obj.CIUAnalysisObj(analysis_obj.raw_obj, ciu_data_matrix, new_axes, analysis_obj.params)
+    new_obj.filename = analysis_obj.filename
     return new_obj
 
 
@@ -455,6 +477,10 @@ def check_axes_crop(analysis_obj_list):
         if np.median(bin_spacings_cv) < min_cv_spacing:
             min_cv_spacing = scipy.stats.mode(bin_spacings_cv)[0][0]
 
+    crop_vals_all = [dt_start_max, dt_end_min, cv_start_max, cv_end_min, min_dt_spacing, min_cv_spacing]
+    for val in crop_vals_all:
+        if val < 0:
+            logger.error('Negative value found in axes checking. Errors possible. Please check the raw data')
     return [dt_start_max, dt_end_min, cv_start_max, cv_end_min], [min_dt_spacing, min_cv_spacing]
 
 
@@ -492,6 +518,7 @@ def equalize_obj(analysis_obj, final_axes):
     :param final_axes: [dt_axis, cv_axis] final axes to adjust to.
     :return: updated analysis_obj, boolean (True if adjustments were made)
     :rtype: CIUAnalysisObj, bool
+    :raises: ValueError
     """
     # compute bin spacing on DT axis to determine relative difference acceptable tolerance (set to 1/10 of a bin)
     # dt_spacing = scipy.stats.mode([final_axes[0][x + 1] - final_axes[0][x] for x in range(len(final_axes[0]) - 1)])[0][0]
@@ -505,16 +532,18 @@ def equalize_obj(analysis_obj, final_axes):
         else:
             # precise adjustment - use exact final axes provided rather than nearest approx (typical) cropping method
             analysis_obj = interpolate_axes(analysis_obj, final_axes)
-            print('equalized axes to match in file {}'.format(analysis_obj.short_filename))
+            logger.info('equalized axes to match in file {}'.format(analysis_obj.short_filename))
             return analysis_obj, True
     except ValueError:
         # if axes are different shapes, allclose raises a ValueError. Adjust axes.
         try:
             analysis_obj = interpolate_axes(analysis_obj, final_axes)
         except ValueError:
-            print('Axis equalization failed in file {}. New axes must overlap at least partially with original axes.'.format(analysis_obj.short_filename))
-            return analysis_obj, False
-        print('equalized axes to match in file {}'.format(analysis_obj.short_filename))
+            logger.error('Axis equalization failed in file {}. Axes to be equalized must overlap at least partially.'.format(analysis_obj.short_filename))
+            raise ValueError('Axis equalization failed in file: {} '.format(analysis_obj.short_filename), 'Axes to be equalized must overlap at least partially')
+            # return analysis_obj, False
+
+        logger.info('equalized axes to match in file {}'.format(analysis_obj.short_filename))
         return analysis_obj, True
 
 
@@ -537,8 +566,13 @@ def equalize_axes_main(list_of_analysis_objs):
     # perform any adjustments required
     adjust_flags = []
     for analysis_obj in list_of_analysis_objs:
-        analysis_obj, current_flag = equalize_obj(analysis_obj, final_axes)
-        adjust_flags.append(current_flag)
+        try:
+            analysis_obj, current_flag = equalize_obj(analysis_obj, final_axes)
+            adjust_flags.append(current_flag)
+        except ValueError as err:
+            list_of_analysis_objs.remove(analysis_obj)
+            messagebox.showerror('Axes Could Not Be Equalized',
+                                 message='{}. \nProblem: {}. This file will NOT be included in comparison. Please make sure axes overlap at least partially. Press OK to continue'.format(*err.args))
 
     # check if any adjustments were made to flag for methods that want it
     if True in adjust_flags:
@@ -549,152 +583,97 @@ def equalize_axes_main(list_of_analysis_objs):
     return list_of_analysis_objs, final_axes, any_adjust_flag
 
 
-def equalize_axes_2d_list(analysis_obj_list_by_label):
+def equalize_axes_2d_list_subclass(cl_input_list_by_label):
     """
     Axis checking method for 2D lists (e.g. in classification) where list order/shape must be
     preserved. Axes are equalized across ALL sublists (every object anywhere in the 2D list)
-    :param analysis_obj_list_by_label: list of lists of CIUAnalysisObjs
-    :type analysis_obj_list_by_label: list[list[CIUAnalysisObj]]
+    :param cl_input_list_by_label: list of lists of Classification.ClInput
+    :type cl_input_list_by_label: list[list[Classification.ClInput]]
     :return: updated list of lists with axes equalized, final axes list
     :rtype: list[list[CIUAnalysisObj]], output_axes_list
     """
-    flat_obj_list = [x for analysis_obj_list in analysis_obj_list_by_label for x in analysis_obj_list]
-
-    # check axes for cropping (ensure that region of interest is equal)
-    crop_vals, axes_spacings = check_axes_crop(flat_obj_list)
-    final_axes = check_axes_interp(crop_vals, axes_spacings)
-
-    for obj_list in analysis_obj_list_by_label:
-        for analysis_obj in obj_list:
-            analysis_obj, adj_flag = equalize_obj(analysis_obj, final_axes)
-
-    return analysis_obj_list_by_label, final_axes
-
-
-def equalize_axes_classifinputs(list_classif_inputs):
-    """
-    Axis checking for list of classification input lists - handle checking complex lists in place
-    (as in equalize axes 2d inputs)
-    :param list_classif_inputs: list of ClassifInput objects
-    :type list_classif_inputs: list[ClassifInput]
-    :return: list of classification inputs with any objects cropped/edited that needed to be, equalized axes
-    """
+    flat_cl_input_list = [x for cl_input_list in cl_input_list_by_label for x in cl_input_list]
     flat_obj_list = []
-    for subclass_input in list_classif_inputs:
-        flat_obj_list.extend(subclass_input.get_flat_list(get_type='obj'))
+    for cl_input in flat_cl_input_list:
+        for subclass_label, subclass_obj in cl_input.subclass_dict.items():
+            flat_obj_list.append(subclass_obj)
 
     # check axes for cropping (ensure that region of interest is equal)
     crop_vals, axes_spacings = check_axes_crop(flat_obj_list)
     final_axes = check_axes_interp(crop_vals, axes_spacings)
 
-    # Check all objects in original data structure and make adjustments in place as needed
-    for subclass_input in list_classif_inputs:
-        for analysis_obj_list in subclass_input.analysis_objs_by_label:
-            for analysis_obj in analysis_obj_list:
-                analysis_obj, adj_flag = equalize_obj(analysis_obj, final_axes)
+    for cl_input_list in cl_input_list_by_label:
+        for cl_input in cl_input_list:
+            for subclass_label, subclass_obj in cl_input.subclass_dict.items():
+                try:
+                    subclass_obj, adj_flag = equalize_obj(subclass_obj, final_axes)
+                except ValueError as err:
+                    # Raise error and cancel classification. Don't want to try to guarantee that data will still match, and user shouldn't be fitting things that don't overlap anyway.
+                    raise ValueError(*err.args)
 
-    return list_classif_inputs, final_axes
+    return cl_input_list_by_label, final_axes
 
 
-def equalize_unk_axes_classif(flat_unknown_list, final_axes, scheme_cvs_list, gaussian_mode=False):
+def equalize_unk_axes_clinput(flat_unknown_list, final_axes, scheme_feats_list, gaussian_mode=False):
     """
     Specialized equalization method for unknown classification data. Equalizes DT axis by cropping,
-    and reduces CV axis to only the selected voltages in the scheme.
+    and CHECKS cv axis (does NOT equalize/reduce) to ensure all required feature inputs are present.
     :param flat_unknown_list: list of CIUAnalysis objects to be equalized
-    :type flat_unknown_list: list[CIUAnalysisObj]
+    :type flat_unknown_list: list[Classification.ClInput]
     :param final_axes: crop values from the Scheme to equalize to
-    :param scheme_cvs_list: List of collision voltage values (floats) from the classification scheme being used
+    :param scheme_feats_list: List of CFeature containers from the classification scheme being used
+    :type scheme_feats_list: list[Classification.CFeature]
     :param gaussian_mode: (optional) if True, does NOT adjust DT axis (only CV), as Gaussian fitted data doesn't need DT adjustment
     :return: updated object list with axes cropped (if needed)
     :rtype: list[CIUAnalysisObj]
     """
-    output_obj_list = []
-
+    valid_inputs = []
     # adjust ALL files to the same final axes
-    for analysis_obj in flat_unknown_list:
-        # interpolate DT axis ONLY - leave CV axis alone by passing the existing CV axis as the "new" axis
-        # if not gaussian_mode:
-        adjusted_axes = [final_axes[0], analysis_obj.axes[1]]
-        analysis_obj, adj_flag = equalize_obj(analysis_obj, adjusted_axes)
-
-        # Remove all CVs except those required by the scheme (raises errors if those are not found)
-        final_ciu_matrix = []
-        ciu_data_matrix = analysis_obj.ciu_data.T     # transpose to access CV columns
-        cv_axis = []
-        for cv in scheme_cvs_list:
-            # Get the index of this collision voltage in the object and add that column of the ciu_data to the output
-            cv_index = find_nearest(analysis_obj.axes[1], cv)
-
-            # make sure this is an exact match
-            if not analysis_obj.axes[1][cv_index] == cv:
-                raise ValueError('Unknown CV axis does not have a value required for this classification scheme. Classification cannot be performed', analysis_obj.short_filename, cv)
-
-            final_ciu_matrix.append(ciu_data_matrix[cv_index])
-            cv_axis.append(cv)
-
-        new_axes = [adjusted_axes[0], cv_axis]  # preserve the adjusted DT axis as well as the new CV axis
-        final_ciu_matrix = np.asarray(final_ciu_matrix).T   # tranpose back to original dimensions
-
-        # save final data into existing object
-        analysis_obj.axes = new_axes
-        analysis_obj.ciu_data = final_ciu_matrix
-        output_obj_list.append(analysis_obj)
-
-    return output_obj_list
-
-
-def equalize_unk_axes_subclass(subclass_obj_list, final_axes, scheme_feats_list):
-    """
-    Specialized equalization method for unknown classification data. Equalizes DT axis by cropping,
-    and reduces CV axis to only the selected voltages in the scheme.
-    :param subclass_obj_list: list of SubclassUnknown objects containing CIUAnalysisObjs to equalize
-    :type subclass_obj_list: list[Classification.SubclassUnknown]
-    :param final_axes: crop values from the Scheme to equalize to
-    :param scheme_feats_list: List of CFeatures from the classification scheme being used
-    :type scheme_feats_list: list[Classification.CFeature]
-    :return: updated object list with axes cropped (if needed)
-    :rtype: list[Classification.SubclassUnknown]
-    """
-    output_obj_list = []
-
-    # adjust ALL files to the same final axes
-    for subclass_obj in subclass_obj_list:
-        for subclass_label, analysis_obj_list in subclass_obj.subclass_dict.items():
-            # Get CVs for this subclass label only
-            subclass_cvs = []
-            for feature in scheme_feats_list:
-                if feature.subclass_label == subclass_label:
-                    subclass_cvs.append(feature.cv)
-
-            for analysis_obj in analysis_obj_list:
+    for cl_input in flat_unknown_list:
+        for subclass_label, analysis_obj in cl_input.subclass_dict.items():
+            # no alterations to "DT" data if using Gaussian mode, as the raw Gaussian data will be gathered elsewhere
+            if not gaussian_mode:
                 # interpolate DT axis ONLY - leave CV axis alone by passing the existing CV axis as the "new" axis
                 adjusted_axes = [final_axes[0], analysis_obj.axes[1]]
-                analysis_obj, adj_flag = equalize_obj(analysis_obj, adjusted_axes)
+                try:
+                    analysis_obj, adj_flag = equalize_obj(analysis_obj, adjusted_axes)
+                except ValueError as err:
+                    flat_unknown_list.remove(cl_input)
+                    messagebox.showerror('Axes Could Not Be Equalized',
+                                         message='{}. \nProblem: {}. This file will be skipped Press OK to continue'.format(*err.args))
 
-                # Remove all CVs except those required by the scheme (raises errors if those are not found)
-                final_ciu_matrix = []
-                ciu_data_matrix = analysis_obj.ciu_data.T     # transpose to access CV columns
-                cv_axis = []
-                for cv in subclass_cvs:
-                    # Get the index of this collision voltage in the object and add that column of the ciu_data to the output
-                    cv_index = find_nearest(analysis_obj.axes[1], cv)
+        # Check that all required feature CVs (including subclass if required) are present
+        valid_input = True
+        for feature in scheme_feats_list:
+            # Get CIU container for the feature's subclass label
+            if feature.subclass_label is not None:
+                try:
+                    subclass_obj = cl_input.subclass_dict[feature.subclass_label]
+                    filename = subclass_obj.short_filename
+                    cv_axis = subclass_obj.axes[1]
+                except KeyError:
+                    valid_input = False
+                    cv_axis = []
+                    filename = '<No Subclass File!>'
+                    logger.error(
+                        'Unknown replicate {} does not have the required subclass label {} from this classification scheme. Classification cannot be performed'.format(cl_input.name, feature.subclass_label))
+                    # raise ValueError(
+                    #     'Unknown replicate {} does not have the required subclass label {} from this classification scheme. Classification cannot be performed'.format(cl_input.name, feature.subclass_label))
+            else:
+                subclass_obj = cl_input.subclass_dict['0']
+                filename = subclass_obj.short_filename
+                cv_axis = subclass_obj.axes[1]
 
-                    # make sure this is an exact match
-                    if not analysis_obj.axes[1][cv_index] == cv:
-                        raise ValueError('Unknown CV axis does not have a value required for this classification scheme. Classification cannot be performed', analysis_obj.short_filename, cv)
-
-                    final_ciu_matrix.append(ciu_data_matrix[cv_index])
-                    cv_axis.append(cv)
-
-                new_axes = [adjusted_axes[0], cv_axis]  # preserve the adjusted DT axis as well as the new CV axis
-                final_ciu_matrix = np.asarray(final_ciu_matrix).T   # tranpose back to original dimensions
-
-                # save final data into existing object
-                analysis_obj.axes = new_axes
-                analysis_obj.ciu_data = final_ciu_matrix
-                # output_obj_list.append(analysis_obj)
-        output_obj_list.append(subclass_obj)
-    return output_obj_list
+            # Confirm that the Feature CV is in the subclass container's CV axis
+            if feature.cv not in cv_axis:
+                valid_input = False
+                logger.error(
+                    'CIU dataset {} does not have CV value {} required for this classification scheme. Classification cannot be performed'.format(filename, feature.cv))
+                # raise ValueError(
+                #     'CIU dataset {} does not have CV value {} required for this classification scheme. Classification cannot be performed'.format(subclass_obj.short_filename, feature.cv))
+        if valid_input:
+            valid_inputs.append(cl_input)
+    return valid_inputs
 
 
 class CropUI(object):

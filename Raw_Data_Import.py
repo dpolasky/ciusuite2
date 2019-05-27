@@ -17,6 +17,9 @@ import numpy as np
 import tkinter
 from tkinter import messagebox
 from tkinter import ttk
+import logging
+
+logger = logging.getLogger('main')
 
 
 # File chooser for raw data, created after extensive searching on stack overflow
@@ -91,7 +94,7 @@ def twimex_single_range(range_info, raw_files, save_dir, extractor_path):
     range_path = write_rangefile(range_info, temp_dir)
     dt_mode = 1
 
-    print('Starting TWIMExtract. NOTE: Extraction may take some time! CIUSuite 2 will not respond until TWIMExtract is done!')
+    logger.info('Starting TWIMExtract. NOTE: Extraction may take some time! CIUSuite 2 will not respond until TWIMExtract is done!')
     raw_files_combined = ','.join(raw_files)
     run_extractor(extractor_path, raw_files_combined, temp_dir, mode_int=dt_mode, range_path=range_path, combine_bool=True)
 
@@ -185,7 +188,7 @@ def run_extractor(ext_path, input_path, output_path, mode_int, func_num=None, ra
     completed_proc = subprocess.run(args)
     if not completed_proc.returncode == 0:
         # process finished successfully
-        print('Error in extraction for file {} with range file {}. Data NOT extracted. Check that this is a Waters raw data file and that appropriate range values were provided.'.format(input_path, range_path))
+        logger.error('Error in extraction for file {} with range file {}. Data NOT extracted. Check that this is a Waters raw data file and that appropriate range values were provided.'.format(input_path, range_path))
 
 
 def read_agilent_and_correct(filename, cv_axis_to_use, overwrite=True):
@@ -213,7 +216,7 @@ def read_agilent_and_correct(filename, cv_axis_to_use, overwrite=True):
             if index == 0:
                 # save header information
                 if not len(splits) - 1 == len(cv_axis_to_use):
-                    print('CV axis provided is NOT the same length as the CV axis in file {}, skipping file'.format(os.path.basename(filename)))
+                    logger.error('CV axis provided is NOT the same length as the CV axis in file {}, skipping file'.format(os.path.basename(filename)))
                     return
                 new_header_info = ','.join([str(x) for x in cv_axis_to_use])
                 new_header = splits[0] + ',' + new_header_info + '\n'

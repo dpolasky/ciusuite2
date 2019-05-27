@@ -14,6 +14,7 @@ import scipy.optimize
 import scipy.interpolate
 import os
 import math
+import logging
 import Raw_Processing
 import Gaussian_Fitting
 import Original_CIU
@@ -26,7 +27,7 @@ if TYPE_CHECKING:
     from CIU_Params import Parameters
 
 np.warnings.filterwarnings('ignore')
-
+logger = logging.getLogger('main')
 TRANS_COLOR_DICT = {6: 'white',
                     0: 'red',
                     5: 'blue',
@@ -59,7 +60,7 @@ def feature_detect_col_max(analysis_obj, params_obj):
         new_num_bins = len(np.arange(cv_axis[0], cv_axis[-1], min(unique_spacings))) + 1
         cv_axis = np.linspace(cv_axis[0], cv_axis[-1], new_num_bins)
         analysis_obj = Raw_Processing.interpolate_axes(analysis_obj, [analysis_obj.axes[0], cv_axis])
-        print('NOTE: CV axis in file {} was not evenly spaced; Feature Detection requires even spacing. Axis has been interpolated to fit. Use "Restore Original Data" button to undo interpolation'.format(analysis_obj.short_filename))
+        logger.warning('NOTE: CV axis in file {} was not evenly spaced; Feature Detection requires even spacing. Axis has been interpolated to fit. Use "Restore Original Data" button to undo interpolation'.format(analysis_obj.short_filename))
 
     # compute width tolerance in DT units, CV gap in bins (NOT cv axis units)
     width_tol_dt = params_obj.feature_t2_2_width_tol  # * analysis_obj.bin_spacing
@@ -235,7 +236,7 @@ def ciu50_main(features_list, analysis_obj, params_obj, outputdir, gaussian_bool
     :return: updated analysis object with feature detect information saved
     """
     if len(features_list) <= 1:
-        print('Not enough features (<=1) in file {}. No transition analysis performed'.format(
+        logger.warning('Not enough features (<=1) in file {}. No transition analysis performed'.format(
             analysis_obj.short_filename))
         return analysis_obj
 
@@ -250,7 +251,7 @@ def ciu50_main(features_list, analysis_obj, params_obj, outputdir, gaussian_bool
     # compute transitions
     transitions_list = compute_transitions(analysis_obj, params_obj, adjusted_features, gaussian_bool)
     if len(transitions_list) == 0:
-        print('No transitions found for file {}'.format(os.path.basename(analysis_obj.filename).rstrip('.ciu')))
+        logger.info('No transitions found for file {}'.format(os.path.basename(analysis_obj.filename).rstrip('.ciu')))
 
     # generate output plot
     plot_transitions(transitions_list, analysis_obj, params_obj, outputdir)
@@ -323,7 +324,7 @@ def filter_features(features, min_feature_length, mode):
             if len(feature.cvs) >= min_feature_length:
                 filtered_list.append(feature)
         else:
-            print('invalid mode')
+            logger.error('invalid mode')
     return filtered_list
 
 
@@ -411,7 +412,7 @@ def adjust_gauss_features(features_list, analysis_obj, params_obj):
             adjusted_features.append(adj_feature)
             adj_feature.gaussians = feature.gaussians
         else:
-            print('Feature {} (range {}-{}) never reaches max relative intensity, no transition will be fit'.format(index + 1, feature.cvs[0], feature.cvs[-1]))
+            logger.info('Feature {} (range {}-{}) never reaches max relative intensity, no transition will be fit'.format(index + 1, feature.cvs[0], feature.cvs[-1]))
     return adjusted_features
 
 
@@ -493,7 +494,7 @@ def plot_features(feature_list, analysis_obj, params_obj, outputdir, filename_ap
             feature_index += 1
             plt.setp(lines, linewidth=3)
     else:
-        print('invalid mode')
+        logger.error('invalid mode')
 
     # plot titles, labels, and legends
     if params_obj.plot_12_custom_title is not None:
@@ -526,7 +527,7 @@ def plot_features(feature_list, analysis_obj, params_obj, outputdir, filename_ap
             plt.ylim((params_obj.plot_18_ylim_lower, params_obj.plot_19_ylim_upper))
         else:
             plt.ylim(ymin=params_obj.plot_18_ylim_lower)
-    elif params_obj.plot_17_xlim_upper is not None:
+    elif params_obj.plot_19_ylim_upper is not None:
         plt.ylim(ymax=params_obj.plot_19_ylim_upper)
 
     # save plot
@@ -543,18 +544,39 @@ def plot_features(feature_list, analysis_obj, params_obj, outputdir, filename_ap
     plt.close()
 
 
-def print_features_list(feature_list, outputpath, mode, combine):
+def save_features_main(feature_list, outputpath, filename, mode, concise_mode, combine):
+    """
+    Method to direct output feature saving to detailed or concise mode
+    :param feature_list: list of Feature objects
+    :type feature_list: list[Feature]
+    :param outputpath: directory in which to save output
+    :param filename: short filename to save
+    :param mode: gaussian or changepoint
+    :param concise_mode: whether to save detailed or concise output (string: 'concise' or 'detailed')
+    :param combine: whether to save an output file immediately or return the information as a string
+    :return: void or string if using 'combine=True'
+    """
+    if concise_mode == 'concise':
+        output_med, output_cv = print_features_concise(feature_list, outputpath, filename, combine)
+    else:
+        output_med = print_features_list(feature_list, outputpath, filename, mode, combine)
+        output_cv = ''
+    return output_med, output_cv
+
+
+def print_features_list(feature_list, outputpath, filename, mode, combine):
     """
     Write feature information to file, OR return it as a string to be saved into a final file if combining
     :param feature_list: list of Feature objects
     :type feature_list: list[Feature]
+    :param filename: short filename to save
     :param outputpath: directory in which to save output
     :param mode: gaussian or changepoint
     :param combine: whether to save an output file immediately or return the information as a string
     :return: void or string if using 'combine=True'
     """
     index = 1
-    outputstring = ''
+    outputstring = '{}'.format(filename)
     for feature in feature_list:
         if mode == 'gaussian':
             outputstring += ',Feature {},Median centroid:,{:.2f},CV range:,{} - {}\n'.format(index,
@@ -587,8 +609,70 @@ def print_features_list(feature_list, outputpath, mode, combine):
                                      outputpath))
             with open(outputpath, 'w') as outfile:
                 outfile.write(outputstring)
+        return ''
     else:
         return outputstring
+
+
+def print_features_concise(feature_list, outputpath, filename, combine):
+    """
+    Concise version. Write feature information to file, OR return it as a string to be saved into a final file if combining
+    :param feature_list: list of Feature objects
+    :type feature_list: list[Feature]
+    :param outputpath: directory in which to save output
+    :param filename: output filename to save
+    :param combine: whether to save an output file immediately or return the information as a string
+    :return: void or string if using 'combine=True'
+    """
+    # assemble concise output info
+    median_outputs = '{}'.format(filename)
+    cv_range_outputs = '{}'.format(filename)
+    for feature in feature_list:
+        median_outputs += ',{:.2f}'.format(feature.get_median())
+        cv_range_outputs += ',{}-{}'.format(feature.cvs[0], feature.cvs[len(feature.cvs) - 1])
+    median_outputs += '\n'
+    cv_range_outputs += '\n'
+
+    # save to file immediately if not combining
+    if not combine:
+        try:
+            with open(outputpath, 'w') as outfile:
+                outfile.write('Feature Median Centroids\nFilename,Feature 1,Feature 2,Feature 3,(etc)\n')
+                outfile.write(median_outputs)
+                outfile.write('Feature CV ranges\nFilename,Feature 1,Feature 2,Feature 3,(etc)\n')
+                outfile.write(cv_range_outputs)
+        except PermissionError:
+            messagebox.showerror('Please Close the File Before Saving',
+                                 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(
+                                     outputpath))
+            with open(outputpath, 'w') as outfile:
+                outfile.write('Feature Median Centroids\nFilename,Feature 1,Feature 2,Feature 3,(etc)\n')
+                outfile.write(median_outputs)
+                outfile.write('Feature CV ranges\nFilename,Feature 1,Feature 2,Feature 3,(etc)\n')
+                outfile.write(cv_range_outputs)
+        return '', ''
+    else:
+        # combining - return both outputs to be combined later
+        return median_outputs, cv_range_outputs
+
+
+def save_ciu50_outputs_main(analysis_obj, outputpath, concise_mode, combine=False):
+    """
+    Method to direct output saving to concise or detailed output handlers for CIU50
+    output CSVs
+    :param analysis_obj: CIU container with transition information to save
+    :type analysis_obj: CIUAnalysisObj
+    :param outputpath: directory in which to save output
+    :param concise_mode: whether to save concise or detailed file (string: 'concise' or 'detailed')
+    :param combine: whether to output directly for this file or return a string for combining
+    :return: output string if combining or void if not
+    :return: string if combine True, void if combine False
+    """
+    if concise_mode == 'concise':
+        output = save_ciu50_short(analysis_obj, outputpath, combine)
+    else:
+        output = save_ciu50_outputs(analysis_obj, outputpath, combine)
+    return output
 
 
 def save_ciu50_outputs(analysis_obj, outputpath, combine=False):
@@ -602,8 +686,8 @@ def save_ciu50_outputs(analysis_obj, outputpath, combine=False):
     :param combine: whether to output directly for this file or return a string for combining
     :return: output string if combining or void if not
     """
-    output_name = os.path.join(outputpath, analysis_obj.filename + '_features.csv')
-    output_string = 'Transitions:,max DT (ms),min DT (ms),CIU-50 (V),k (steepness),r_squared\n'
+    output_name = os.path.join(outputpath, analysis_obj.short_filename + '_CIU50.csv')
+    output_string = '{},max DT (ms),min DT (ms),CIU-50 (V),k (steepness),r_squared\n'.format(analysis_obj.short_filename)
     trans_index = 1
     for transition in analysis_obj.transitions:
         output_string += 'transition {} -> {},'.format(trans_index, trans_index + 1)
@@ -622,6 +706,7 @@ def save_ciu50_outputs(analysis_obj, outputpath, combine=False):
             messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_name))
             with open(output_name, 'w') as outfile:
                 outfile.write(output_string)
+        return ''
 
 
 def save_ciu50_short(analysis_obj, outputpath, combine=False):
@@ -633,10 +718,11 @@ def save_ciu50_short(analysis_obj, outputpath, combine=False):
     :param combine: If True, return a string to be combined with other files instead of saving to file
     :return: output string if combining or void if not
     """
-    output_name = os.path.join(outputpath, analysis_obj.filename + '_CIU50-short.csv')
+    output_name = os.path.join(outputpath, analysis_obj.short_filename + '_CIU50.csv')
     output_string = ''
 
     # assemble the output
+    output_string += analysis_obj.short_filename
     for transition in analysis_obj.transitions:
         output_string += ',{:.2f}'.format(transition.fit_params[2])
     output_string += '\n'
@@ -647,6 +733,7 @@ def save_ciu50_short(analysis_obj, outputpath, combine=False):
     else:
         try:
             with open(output_name, 'w') as outfile:
+                outfile.write('Filename,CIU50 1,CIU50 2,(etc)\n')
                 outfile.write(output_string)
         except PermissionError:
             messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_name))
@@ -713,7 +800,7 @@ def plot_transitions(transition_list, analysis_obj, params_obj, outputdir):
             plt.ylim((params_obj.plot_18_ylim_lower, params_obj.plot_19_ylim_upper))
         else:
             plt.ylim(ymin=params_obj.plot_18_ylim_lower)
-    elif params_obj.plot_17_xlim_upper is not None:
+    elif params_obj.plot_19_ylim_upper is not None:
         plt.ylim(ymax=params_obj.plot_19_ylim_upper)
 
     # plot titles, labels, and legends
@@ -808,7 +895,7 @@ def fit_logistic(x_axis, y_data, guess_center, guess_min, guess_max, steepness_g
         popt, pcov = scipy.optimize.curve_fit(logistic_func, x_axis, y_data, p0=p0,
                                               bounds=(fit_bounds_lower, fit_bounds_upper))
     except ValueError:
-        print('Error: fitting failed due to bad input values. Please try additional smoothing and/or interpolating data')
+        logger.warning('Error: fitting failed due to bad input values. Please try additional smoothing and/or interpolating data')
         popt, pcov = [0, 0, 0, 0], []
     # popt, pcov = scipy.optimize.curve_fit(logistic_func, x_axis, y_data, p0=p0, maxfev=5000)
     return popt, pcov
@@ -1151,7 +1238,7 @@ class Transition(object):
             perr = np.sqrt(np.diag(pcov))
             self.fit_param_errors = perr
         except RuntimeError:
-            print('fitting failed for {} in file {}'.format(self, self.filename))
+            logger.error('fitting failed for {} in file {}'.format(self, self.filename))
             popt = [0, 0, 0, 0]
             pcov = []
 
@@ -1161,7 +1248,7 @@ class Transition(object):
         rsq = rvalue ** 2
 
         if popt[2] < 0:
-            print('WARNING: poor performance from logistic fitting for {} in file {}'.format(self.__str__(), self.filename))
+            logger.warning('WARNING: poor performance from logistic fitting for {} in file {}'.format(self.__str__(), self.filename))
         self.ciu50 = popt[2]
         self.fit_params = popt
         self.fit_covariances = pcov

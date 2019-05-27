@@ -10,6 +10,7 @@ import numpy as np
 import os
 import scipy.interpolate
 from tkinter import messagebox
+import logging
 
 from CIU_analysis_obj import CIUAnalysisObj
 from CIU_Params import Parameters
@@ -19,6 +20,7 @@ from CIU_raw import CIURaw
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
+logger = logging.getLogger('main')
 
 
 def ciu_plot(analysis_obj, params_obj, output_dir):
@@ -66,7 +68,7 @@ def ciu_plot(analysis_obj, params_obj, output_dir):
             plt.ylim((params_obj.plot_18_ylim_lower, params_obj.plot_19_ylim_upper))
         else:
             plt.ylim(ymin=params_obj.plot_18_ylim_lower)
-    elif params_obj.plot_17_xlim_upper is not None:
+    elif params_obj.plot_19_ylim_upper is not None:
         plt.ylim(ymax=params_obj.plot_19_ylim_upper)
 
     if params_obj.plot_06_show_colorbar:
@@ -208,7 +210,7 @@ def rmsd_plot(difference_matrix, axes, rtext, outputdir, params_obj,
             plt.ylim((params_obj.plot_18_ylim_lower, params_obj.plot_19_ylim_upper))
         else:
             plt.ylim(ymin=params_obj.plot_18_ylim_lower)
-    elif params_obj.plot_17_xlim_upper is not None:
+    elif params_obj.plot_19_ylim_upper is not None:
         plt.ylim(ymax=params_obj.plot_19_ylim_upper)
 
     # save and close
@@ -264,7 +266,7 @@ def std_dev_plot(analysis_obj, std_dev_matrix, pairwise_rmsds, params_obj, outpu
             plt.ylim((params_obj.plot_18_ylim_lower, params_obj.plot_19_ylim_upper))
         else:
             plt.ylim(ymin=params_obj.plot_18_ylim_lower)
-    elif params_obj.plot_17_xlim_upper is not None:
+    elif params_obj.plot_19_ylim_upper is not None:
         plt.ylim(ymax=params_obj.plot_19_ylim_upper)
 
     # plot desired labels and legends
@@ -425,7 +427,7 @@ def compare_basic_raw(analysis_obj1, analysis_obj2, params_obj, outputdir, no_pl
     # ensure that the data are the same in both dimensions, and interpolate if not matched in either
     if not len(analysis_obj1.axes[0]) == len(analysis_obj2.axes[0]) or not len(analysis_obj1.axes[1]) == len(analysis_obj2.axes[1]):
         interp_flag = True
-        print('axes in files {}, {} did not match; interpolating to compare'.format(
+        logger.warning('axes in files {}, {} did not match; interpolating to compare'.format(
             os.path.basename(analysis_obj1.filename),
             os.path.basename(analysis_obj2.filename)))
         num_bins_dt = np.max([len(analysis_obj1.axes[0]), len(analysis_obj2.axes[0])])  # length of the DT axis
