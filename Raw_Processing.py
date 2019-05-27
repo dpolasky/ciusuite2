@@ -338,6 +338,7 @@ def crop(analysis_obj, crop_vals):
 
     # save output to a new analysis object (clears fitting results/etc that can fail if axes are different)
     new_obj = CIU_analysis_obj.CIUAnalysisObj(analysis_obj.raw_obj, ciu_data_matrix, new_axes, analysis_obj.params)
+    new_obj.filename = analysis_obj.filename
     return new_obj
 
 

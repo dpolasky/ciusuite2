@@ -153,6 +153,7 @@ class Parameters(object):
         self.feature_t2_4_gauss_fill_gaps = None
         self.feature_t2_5_gauss_allow_nongauss = None
         self.feature_t2_6_ciu50_combine_outputs = None
+        self.feature_t2_7_ciu50_concise_outputs = None
 
         self.ciu50_t2_1_centroiding_mode = None
         self.ciu50_t2_2_pad_transitions_cv = None

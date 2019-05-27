@@ -285,6 +285,7 @@ class CIUSuite2(object):
                 # update parameters and re-process raw data
                 try:
                     new_obj = Raw_Processing.process_raw_obj(analysis_obj.raw_obj, self.params_obj, short_filename=analysis_obj.short_filename)
+                    new_obj.filename = analysis_obj.filename
                 except ValueError:
                     # all 0's in raw data - skip this file an notify the user
                     messagebox.showerror('Empty raw data file!', 'The raw data in file {} is empty (no intensity values > 0) and will NOT be loaded. Press OK to continue.'.format(analysis_obj.short_filename))
@@ -692,6 +693,7 @@ class CIUSuite2(object):
                     try:
                         new_obj = Raw_Processing.process_raw_obj(analysis_obj.raw_obj, self.params_obj,
                                                                  short_filename=analysis_obj.short_filename)
+                        new_obj.filename = analysis_obj.filename
                     except ValueError:
                         # all 0's in raw data - skip this file an notify the user
                         messagebox.showerror('Empty raw data file!',
@@ -702,7 +704,11 @@ class CIUSuite2(object):
                     # compute new axes
                     new_axes = Raw_Processing.compute_new_axes(old_axes=new_obj.axes, interpolation_scaling=int(self.params_obj.interpolate_2_scaling), interp_cv=interp_cv, interp_dt=interp_dt)
                     if not self.params_obj.interpolate_3_onedim:
-                        new_obj = Raw_Processing.interpolate_axes(new_obj, new_axes)
+                        # make sure the CIU data is 2D before attempting 2D interpolation
+                        if len(analysis_obj.axes[0]) < 2 or len(analysis_obj.axes[1]) < 2:
+                            messagebox.showerror('Incompatible Dimensions', 'File {} has at least one axis too small for 2D interpolation. 2D interpolation requires at least 2 bins in both activation and mobility axes. The file was NOT interpolated'.format(analysis_obj.short_filename))
+                        else:
+                            new_obj = Raw_Processing.interpolate_axes(new_obj, new_axes)
                     else:
                         # 1D interpolation mode, pass the correct axis to 1D interp method
                         if interp_dt:
@@ -876,7 +882,13 @@ class CIUSuite2(object):
                 self.progress_started()
                 new_file_list = []
 
-                all_outputs = 'Filename,Features Detected\n'
+                if self.params_obj.feature_t2_7_ciu50_concise_outputs == 'concise':
+                    output_meds = 'Feature Median Centroids\nFilename,Feature 1,Feature 2,Feature 3,(etc)\n'
+                    output_cvs = 'Feature CV ranges\nFilename,Feature 1,Feature 2,Feature 3,(etc)\n'
+                else:
+                    output_meds = 'Filename,Features Detected\n'
+                    output_cvs = ''
+
                 for file in files_to_read:
                     # load file
                     analysis_obj = load_analysis_obj(file)
@@ -909,16 +921,16 @@ class CIUSuite2(object):
                     # save output
                     Feature_Detection.plot_features(features_list, analysis_obj, self.params_obj, self.output_dir)
                     outputpath = os.path.join(self.output_dir, analysis_obj.short_filename + '_features.csv')
+                    medians, cvs = Feature_Detection.save_features_main(features_list, outputpath, analysis_obj.short_filename, mode=self.params_obj.feature_t1_1_ciu50_mode, concise_mode=self.params_obj.feature_t2_7_ciu50_concise_outputs, combine=self.params_obj.feature_t2_6_ciu50_combine_outputs)
+
                     if self.params_obj.feature_t2_6_ciu50_combine_outputs:
-                        all_outputs += analysis_obj.short_filename
-                        all_outputs += Feature_Detection.print_features_list(features_list, outputpath, mode=self.params_obj.feature_t1_1_ciu50_mode, combine=True)
-                    else:
-                        Feature_Detection.print_features_list(features_list, outputpath,
-                                                              mode=self.params_obj.feature_t1_1_ciu50_mode, combine=False)
+                        output_meds += medians
+                        output_cvs += cvs
                     self.update_progress(files_to_read.index(file), len(files_to_read))
 
                 if self.params_obj.feature_t2_6_ciu50_combine_outputs:
-                    outputpath = os.path.join(self.output_dir, '_all-features.csv')
+                    outputpath = os.path.join(self.output_dir, 'All-features.csv')
+                    all_outputs = output_meds + output_cvs
                     save_existing_output_string(outputpath, all_outputs)
 
                 self.display_analysis_files(new_file_list)
@@ -950,8 +962,10 @@ class CIUSuite2(object):
                 self.progress_started()
 
                 new_file_list = []
-                all_outputs = ''
-                short_outputs = 'Filename,CIU50 1,CIU50 2,(etc)\n'
+                if self.params_obj.feature_t2_7_ciu50_concise_outputs == 'concise':
+                    all_outputs = 'Filename,CIU50 1,CIU50 2,(etc)\n'
+                else:
+                    all_outputs = ''
                 filename = ''
                 combine_flag = False
                 gaussian_bool = False
@@ -978,24 +992,20 @@ class CIUSuite2(object):
 
                     # save outputs to file in combined or stand-alone modes
                     if not self.params_obj.feature_t2_6_ciu50_combine_outputs:
-                        Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir)
-                        Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir)
+                        Feature_Detection.save_ciu50_outputs_main(analysis_obj, self.output_dir, self.params_obj.feature_t2_7_ciu50_concise_outputs, combine=False)
                         combine_flag = False
                     else:
-                        file_string = os.path.basename(filename).rstrip('.ciu') + '\n'
-                        all_outputs += file_string
-                        all_outputs += Feature_Detection.save_ciu50_outputs(analysis_obj, self.output_dir, combine=True)
-                        short_outputs += os.path.basename(filename).rstrip('.ciu')
-                        short_outputs += Feature_Detection.save_ciu50_short(analysis_obj, self.output_dir, combine=True)
+                        # file_string = os.path.basename(filename).rstrip('.ciu')
+                        # all_outputs += file_string
+                        all_outputs += Feature_Detection.save_ciu50_outputs_main(analysis_obj, self.output_dir, self.params_obj.feature_t2_7_ciu50_concise_outputs, combine=True)
                         combine_flag = True
                     self.update_progress(files_to_read.index(file), len(files_to_read))
 
                 if combine_flag:
                     # save final combined output
-                    outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_ciu50s.csv')
-                    outputpath_short = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_ciu50-short.csv')
+                    # outputpath = os.path.join(self.output_dir, os.path.basename(filename.rstrip('.ciu')) + '_ciu50s.csv')
+                    outputpath = os.path.join(self.output_dir, 'All_ciu50s.csv')
                     save_existing_output_string(outputpath, all_outputs)
-                    save_existing_output_string(outputpath_short, short_outputs)
 
                 self.display_analysis_files(new_file_list)
         self.progress_done()
@@ -1824,22 +1834,23 @@ def save_analysis_obj(analysis_obj, params_dict, outputdir, filename_append=''):
     len_flag = False
     if len(picklefile) > 260:
         len_flag = True
-        messagebox.showerror('File path too long!', 'The requested save path (filename + folder) is longer than the maximum length allowed by Windows and cannot be saved! Please shorten the name of the raw file or save directory so Windows can save your file.')
-
-    analysis_obj.filename = picklefile
-    analysis_obj.short_filename = os.path.basename(picklefile.rstrip('.ciu'))
+        messagebox.showerror('File path too long!', 'The requested save path (filename + folder) is longer than the maximum length allowed by Windows and cannot be saved! Please shorten the name of the file or save directory so Windows can save your file.')
 
     # Save the .ciu file and return the final filename
     try:
         with open(picklefile, 'wb') as pkfile:
+            # wait to set final filename to here to avoid setting it if the save operation fails
+            analysis_obj.filename = picklefile
+            analysis_obj.short_filename = os.path.basename(picklefile.rstrip('.ciu'))
             pickle.dump(analysis_obj, pkfile)
+        return picklefile
     except IOError:
         if len_flag:
-            messagebox.showerror('File path too long!', 'The requested save path (filename + folder) is longer than the maximum length allowed by Windows and cannot be saved! Please shorten the name of the raw file or save directory so Windows can save your file.')
+            messagebox.showerror('File path too long!', 'The requested save path (filename + folder) is longer than the maximum length allowed by Windows and cannot be saved! Please shorten the name of the file or save directory so Windows can save your file.')
         else:
-            messagebox.showerror('File Save Error', 'Error: file {} could not be saved!'.format(picklefile))
-
-    return picklefile
+            messagebox.showerror('File Save Error', 'Error: file {} could not be saved! Make sure the chosen directory exists and does not require elevated permissions.'.format(picklefile))
+        # The new filepath failed, so return the previous filepath so the user can try again/etc
+        return analysis_obj.filename
 
 
 def load_analysis_obj(analysis_filename):

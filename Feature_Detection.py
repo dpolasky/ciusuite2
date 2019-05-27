@@ -544,18 +544,39 @@ def plot_features(feature_list, analysis_obj, params_obj, outputdir, filename_ap
     plt.close()
 
 
-def print_features_list(feature_list, outputpath, mode, combine):
+def save_features_main(feature_list, outputpath, filename, mode, concise_mode, combine):
+    """
+    Method to direct output feature saving to detailed or concise mode
+    :param feature_list: list of Feature objects
+    :type feature_list: list[Feature]
+    :param outputpath: directory in which to save output
+    :param filename: short filename to save
+    :param mode: gaussian or changepoint
+    :param concise_mode: whether to save detailed or concise output (string: 'concise' or 'detailed')
+    :param combine: whether to save an output file immediately or return the information as a string
+    :return: void or string if using 'combine=True'
+    """
+    if concise_mode == 'concise':
+        output_med, output_cv = print_features_concise(feature_list, outputpath, filename, combine)
+    else:
+        output_med = print_features_list(feature_list, outputpath, filename, mode, combine)
+        output_cv = ''
+    return output_med, output_cv
+
+
+def print_features_list(feature_list, outputpath, filename, mode, combine):
     """
     Write feature information to file, OR return it as a string to be saved into a final file if combining
     :param feature_list: list of Feature objects
     :type feature_list: list[Feature]
+    :param filename: short filename to save
     :param outputpath: directory in which to save output
     :param mode: gaussian or changepoint
     :param combine: whether to save an output file immediately or return the information as a string
     :return: void or string if using 'combine=True'
     """
     index = 1
-    outputstring = ''
+    outputstring = '{}'.format(filename)
     for feature in feature_list:
         if mode == 'gaussian':
             outputstring += ',Feature {},Median centroid:,{:.2f},CV range:,{} - {}\n'.format(index,
@@ -588,8 +609,70 @@ def print_features_list(feature_list, outputpath, mode, combine):
                                      outputpath))
             with open(outputpath, 'w') as outfile:
                 outfile.write(outputstring)
+        return ''
     else:
         return outputstring
+
+
+def print_features_concise(feature_list, outputpath, filename, combine):
+    """
+    Concise version. Write feature information to file, OR return it as a string to be saved into a final file if combining
+    :param feature_list: list of Feature objects
+    :type feature_list: list[Feature]
+    :param outputpath: directory in which to save output
+    :param filename: output filename to save
+    :param combine: whether to save an output file immediately or return the information as a string
+    :return: void or string if using 'combine=True'
+    """
+    # assemble concise output info
+    median_outputs = '{}'.format(filename)
+    cv_range_outputs = '{}'.format(filename)
+    for feature in feature_list:
+        median_outputs += ',{:.2f}'.format(feature.get_median())
+        cv_range_outputs += ',{}-{}'.format(feature.cvs[0], feature.cvs[len(feature.cvs) - 1])
+    median_outputs += '\n'
+    cv_range_outputs += '\n'
+
+    # save to file immediately if not combining
+    if not combine:
+        try:
+            with open(outputpath, 'w') as outfile:
+                outfile.write('Feature Median Centroids\nFilename,Feature 1,Feature 2,Feature 3,(etc)\n')
+                outfile.write(median_outputs)
+                outfile.write('Feature CV ranges\nFilename,Feature 1,Feature 2,Feature 3,(etc)\n')
+                outfile.write(cv_range_outputs)
+        except PermissionError:
+            messagebox.showerror('Please Close the File Before Saving',
+                                 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(
+                                     outputpath))
+            with open(outputpath, 'w') as outfile:
+                outfile.write('Feature Median Centroids\nFilename,Feature 1,Feature 2,Feature 3,(etc)\n')
+                outfile.write(median_outputs)
+                outfile.write('Feature CV ranges\nFilename,Feature 1,Feature 2,Feature 3,(etc)\n')
+                outfile.write(cv_range_outputs)
+        return '', ''
+    else:
+        # combining - return both outputs to be combined later
+        return median_outputs, cv_range_outputs
+
+
+def save_ciu50_outputs_main(analysis_obj, outputpath, concise_mode, combine=False):
+    """
+    Method to direct output saving to concise or detailed output handlers for CIU50
+    output CSVs
+    :param analysis_obj: CIU container with transition information to save
+    :type analysis_obj: CIUAnalysisObj
+    :param outputpath: directory in which to save output
+    :param concise_mode: whether to save concise or detailed file (string: 'concise' or 'detailed')
+    :param combine: whether to output directly for this file or return a string for combining
+    :return: output string if combining or void if not
+    :return: string if combine True, void if combine False
+    """
+    if concise_mode == 'concise':
+        output = save_ciu50_short(analysis_obj, outputpath, combine)
+    else:
+        output = save_ciu50_outputs(analysis_obj, outputpath, combine)
+    return output
 
 
 def save_ciu50_outputs(analysis_obj, outputpath, combine=False):
@@ -603,8 +686,8 @@ def save_ciu50_outputs(analysis_obj, outputpath, combine=False):
     :param combine: whether to output directly for this file or return a string for combining
     :return: output string if combining or void if not
     """
-    output_name = os.path.join(outputpath, analysis_obj.filename + '_features.csv')
-    output_string = 'Transitions:,max DT (ms),min DT (ms),CIU-50 (V),k (steepness),r_squared\n'
+    output_name = os.path.join(outputpath, analysis_obj.short_filename + '_CIU50.csv')
+    output_string = '{},max DT (ms),min DT (ms),CIU-50 (V),k (steepness),r_squared\n'.format(analysis_obj.short_filename)
     trans_index = 1
     for transition in analysis_obj.transitions:
         output_string += 'transition {} -> {},'.format(trans_index, trans_index + 1)
@@ -623,6 +706,7 @@ def save_ciu50_outputs(analysis_obj, outputpath, combine=False):
             messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_name))
             with open(output_name, 'w') as outfile:
                 outfile.write(output_string)
+        return ''
 
 
 def save_ciu50_short(analysis_obj, outputpath, combine=False):
@@ -634,10 +718,11 @@ def save_ciu50_short(analysis_obj, outputpath, combine=False):
     :param combine: If True, return a string to be combined with other files instead of saving to file
     :return: output string if combining or void if not
     """
-    output_name = os.path.join(outputpath, analysis_obj.filename + '_CIU50-short.csv')
+    output_name = os.path.join(outputpath, analysis_obj.short_filename + '_CIU50.csv')
     output_string = ''
 
     # assemble the output
+    output_string += analysis_obj.short_filename
     for transition in analysis_obj.transitions:
         output_string += ',{:.2f}'.format(transition.fit_params[2])
     output_string += '\n'
@@ -648,6 +733,7 @@ def save_ciu50_short(analysis_obj, outputpath, combine=False):
     else:
         try:
             with open(output_name, 'w') as outfile:
+                outfile.write('Filename,CIU50 1,CIU50 2,(etc)\n')
                 outfile.write(output_string)
         except PermissionError:
             messagebox.showerror('Please Close the File Before Saving', 'The file {} is being used by another process! Please close it, THEN press the OK button to retry saving'.format(output_name))
