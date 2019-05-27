@@ -518,6 +518,7 @@ def equalize_obj(analysis_obj, final_axes):
     :param final_axes: [dt_axis, cv_axis] final axes to adjust to.
     :return: updated analysis_obj, boolean (True if adjustments were made)
     :rtype: CIUAnalysisObj, bool
+    :raises: ValueError
     """
     # compute bin spacing on DT axis to determine relative difference acceptable tolerance (set to 1/10 of a bin)
     # dt_spacing = scipy.stats.mode([final_axes[0][x + 1] - final_axes[0][x] for x in range(len(final_axes[0]) - 1)])[0][0]
@@ -538,8 +539,10 @@ def equalize_obj(analysis_obj, final_axes):
         try:
             analysis_obj = interpolate_axes(analysis_obj, final_axes)
         except ValueError:
-            logger.error('Axis equalization failed in file {}. New axes must overlap at least partially with original axes.'.format(analysis_obj.short_filename))
-            return analysis_obj, False
+            logger.error('Axis equalization failed in file {}. Axes to be equalized must overlap at least partially.'.format(analysis_obj.short_filename))
+            raise ValueError('Axis equalization failed in file: {} '.format(analysis_obj.short_filename), 'Axes to be equalized must overlap at least partially')
+            # return analysis_obj, False
+
         logger.info('equalized axes to match in file {}'.format(analysis_obj.short_filename))
         return analysis_obj, True
 
@@ -563,8 +566,13 @@ def equalize_axes_main(list_of_analysis_objs):
     # perform any adjustments required
     adjust_flags = []
     for analysis_obj in list_of_analysis_objs:
-        analysis_obj, current_flag = equalize_obj(analysis_obj, final_axes)
-        adjust_flags.append(current_flag)
+        try:
+            analysis_obj, current_flag = equalize_obj(analysis_obj, final_axes)
+            adjust_flags.append(current_flag)
+        except ValueError as err:
+            list_of_analysis_objs.remove(analysis_obj)
+            messagebox.showerror('Axes Could Not Be Equalized',
+                                 message='{}. \nProblem: {}. This file will NOT be included in comparison. Please make sure axes overlap at least partially. Press OK to continue'.format(*err.args))
 
     # check if any adjustments were made to flag for methods that want it
     if True in adjust_flags:
@@ -573,29 +581,6 @@ def equalize_axes_main(list_of_analysis_objs):
         any_adjust_flag = False
 
     return list_of_analysis_objs, final_axes, any_adjust_flag
-
-
-# todo: deprecate
-# def equalize_axes_2d_list(analysis_obj_list_by_label):
-#     """
-#     Axis checking method for 2D lists (e.g. in classification) where list order/shape must be
-#     preserved. Axes are equalized across ALL sublists (every object anywhere in the 2D list)
-#     :param analysis_obj_list_by_label: list of lists of CIUAnalysisObjs
-#     :type analysis_obj_list_by_label: list[list[CIUAnalysisObj]]
-#     :return: updated list of lists with axes equalized, final axes list
-#     :rtype: list[list[CIUAnalysisObj]], output_axes_list
-#     """
-#     flat_obj_list = [x for analysis_obj_list in analysis_obj_list_by_label for x in analysis_obj_list]
-#
-#     # check axes for cropping (ensure that region of interest is equal)
-#     crop_vals, axes_spacings = check_axes_crop(flat_obj_list)
-#     final_axes = check_axes_interp(crop_vals, axes_spacings)
-#
-#     for obj_list in analysis_obj_list_by_label:
-#         for analysis_obj in obj_list:
-#             analysis_obj, adj_flag = equalize_obj(analysis_obj, final_axes)
-#
-#     return analysis_obj_list_by_label, final_axes
 
 
 def equalize_axes_2d_list_subclass(cl_input_list_by_label):
@@ -620,7 +605,11 @@ def equalize_axes_2d_list_subclass(cl_input_list_by_label):
     for cl_input_list in cl_input_list_by_label:
         for cl_input in cl_input_list:
             for subclass_label, subclass_obj in cl_input.subclass_dict.items():
-                subclass_obj, adj_flag = equalize_obj(subclass_obj, final_axes)
+                try:
+                    subclass_obj, adj_flag = equalize_obj(subclass_obj, final_axes)
+                except ValueError as err:
+                    # Raise error and cancel classification. Don't want to try to guarantee that data will still match, and user shouldn't be fitting things that don't overlap anyway.
+                    raise ValueError(*err.args)
 
     return cl_input_list_by_label, final_axes
 
@@ -646,7 +635,12 @@ def equalize_unk_axes_clinput(flat_unknown_list, final_axes, scheme_feats_list, 
             if not gaussian_mode:
                 # interpolate DT axis ONLY - leave CV axis alone by passing the existing CV axis as the "new" axis
                 adjusted_axes = [final_axes[0], analysis_obj.axes[1]]
-                analysis_obj, adj_flag = equalize_obj(analysis_obj, adjusted_axes)
+                try:
+                    analysis_obj, adj_flag = equalize_obj(analysis_obj, adjusted_axes)
+                except ValueError as err:
+                    flat_unknown_list.remove(cl_input)
+                    messagebox.showerror('Axes Could Not Be Equalized',
+                                         message='{}. \nProblem: {}. This file will be skipped Press OK to continue'.format(*err.args))
 
         # Check that all required feature CVs (including subclass if required) are present
         valid_input = True

@@ -450,48 +450,52 @@ class CIUSuite2(object):
                 compare_objs = [load_analysis_obj(file) for file in newfiles]
                 all_objs = [std_obj]
                 all_objs.extend(compare_objs)
-                check_axes_and_warn(all_objs)
+                all_objs = check_axes_and_warn(all_objs)
+                if len(all_objs) < 2:
+                    logger.warning('Not enough files for comparison. Make sure axes overlap at least partially.')
+                else:
+                    # compare each CIU analysis object against the standard
+                    index = 0
+                    updated_filelist = []
+                    for compare_obj in compare_objs:
+                        rmsd = Original_CIU.compare_basic_raw(std_obj, compare_obj, self.params_obj, self.output_dir)
+                        printstring = '{},{},{:.2f}'.format(std_obj.short_filename,
+                                                            compare_obj.short_filename,
+                                                            rmsd)
+                        rmsd_print_list.append(printstring)
+                        index += 1
+                        self.update_progress(compare_objs.index(compare_obj), len(compare_objs))
 
-                # compare each CIU analysis object against the standard
-                index = 0
-                updated_filelist = []
-                for compare_obj in compare_objs:
-                    rmsd = Original_CIU.compare_basic_raw(std_obj, compare_obj, self.params_obj, self.output_dir)
-                    printstring = '{},{},{:.2f}'.format(std_obj.short_filename,
-                                                        compare_obj.short_filename,
-                                                        rmsd)
-                    rmsd_print_list.append(printstring)
-                    index += 1
-                    self.update_progress(compare_objs.index(compare_obj), len(compare_objs))
+                    # save analysis objs to ensure that parameter changes are noted correctly
+                    for analysis_obj in all_objs:
+                        filename = save_analysis_obj(analysis_obj, param_dict, outputdir=self.output_dir)
+                        updated_filelist.append(filename)
 
-                # save analysis objs to ensure that parameter changes are noted correctly
-                for analysis_obj in all_objs:
-                    filename = save_analysis_obj(analysis_obj, param_dict, outputdir=self.output_dir)
-                    updated_filelist.append(filename)
+                    with open(os.path.join(self.output_dir, 'batch_RMSDs.csv'), 'w') as rmsd_file:
+                        for rmsd_string in rmsd_print_list:
+                            rmsd_file.write(rmsd_string + '\n')
 
-                with open(os.path.join(self.output_dir, 'batch_RMSDs.csv'), 'w') as rmsd_file:
-                    for rmsd_string in rmsd_print_list:
-                        rmsd_file.write(rmsd_string + '\n')
-
-                self.display_analysis_files(updated_filelist)
+                    self.display_analysis_files(updated_filelist)
 
         if len(files_to_read) == 2:
             # Direct compare between two files
             param_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x and 'batch' not in x]
             param_success, param_dict = self.run_param_ui('Plot parameters', param_keys)
             if param_success:
-
                 ciu1 = load_analysis_obj(files_to_read[0])
                 ciu2 = load_analysis_obj(files_to_read[1])
                 updated_obj_list = check_axes_and_warn([ciu1, ciu2])
-                Original_CIU.compare_basic_raw(updated_obj_list[0], updated_obj_list[1], self.params_obj, self.output_dir)
+                if len(updated_obj_list) < 2:
+                    logger.warning('Not enough files for comparison. Make sure axes overlap at least partially.')
+                else:
+                    Original_CIU.compare_basic_raw(updated_obj_list[0], updated_obj_list[1], self.params_obj, self.output_dir)
 
-                # save analysis objs to ensure that parameter changes are noted correctly
-                updated_filelist = []
-                for analysis_obj in updated_obj_list:
-                    filename = save_analysis_obj(analysis_obj, param_dict, outputdir=self.output_dir)
-                    updated_filelist.append(filename)
-                self.display_analysis_files(updated_filelist)
+                    # save analysis objs to ensure that parameter changes are noted correctly
+                    updated_filelist = []
+                    for analysis_obj in updated_obj_list:
+                        filename = save_analysis_obj(analysis_obj, param_dict, outputdir=self.output_dir)
+                        updated_filelist.append(filename)
+                    self.display_analysis_files(updated_filelist)
 
         elif len(files_to_read) > 2:
             param_keys = [x for x in self.params_obj.params_dict.keys() if 'compare_' in x]
@@ -502,43 +506,45 @@ class CIUSuite2(object):
                 f1_index = 0
                 loaded_files = [load_analysis_obj(x) for x in files_to_read]
                 loaded_files = check_axes_and_warn(loaded_files)
+                if len(loaded_files) < 2:
+                    logger.warning('Not enough files for comparison. Make sure axes overlap at least partially.')
+                else:
+                    updated_filelist = []
+                    for analysis_obj in loaded_files:
+                        # don't compare the file against itself
+                        skip_index = loaded_files.index(analysis_obj)
+                        f2_index = 0
+                        while f2_index < len(loaded_files):
+                            # skip either comparisons to self or reverse and self comparisons depending on parameter
+                            if self.params_obj.compare_batch_1_both_dirs:
+                                if f2_index == skip_index:
+                                    f2_index += 1
+                                    continue
+                            else:
+                                # skip reverse and self comparisons
+                                if f2_index >= f1_index:
+                                    f2_index += 1
+                                    continue
 
-                updated_filelist = []
-                for analysis_obj in loaded_files:
-                    # don't compare the file against itself
-                    skip_index = loaded_files.index(analysis_obj)
-                    f2_index = 0
-                    while f2_index < len(loaded_files):
-                        # skip either comparisons to self or reverse and self comparisons depending on parameter
-                        if self.params_obj.compare_batch_1_both_dirs:
-                            if f2_index == skip_index:
-                                f2_index += 1
-                                continue
-                        else:
-                            # skip reverse and self comparisons
-                            if f2_index >= f1_index:
-                                f2_index += 1
-                                continue
+                            ciu1 = analysis_obj
+                            ciu2 = loaded_files[f2_index]
+                            rmsd = Original_CIU.compare_basic_raw(ciu1, ciu2, self.params_obj, self.output_dir)
 
-                        ciu1 = analysis_obj
-                        ciu2 = loaded_files[f2_index]
-                        rmsd = Original_CIU.compare_basic_raw(ciu1, ciu2, self.params_obj, self.output_dir)
+                            printstring = '{},{},{:.2f}'.format(ciu1.short_filename, ciu2.short_filename, rmsd)
+                            rmsd_print_list.append(printstring)
+                            f2_index += 1
 
-                        printstring = '{},{},{:.2f}'.format(ciu1.short_filename, ciu2.short_filename, rmsd)
-                        rmsd_print_list.append(printstring)
-                        f2_index += 1
+                        filename = save_analysis_obj(analysis_obj, param_dict, outputdir=self.output_dir)
+                        updated_filelist.append(filename)
 
-                    filename = save_analysis_obj(analysis_obj, param_dict, outputdir=self.output_dir)
-                    updated_filelist.append(filename)
+                        f1_index += 1
+                        self.update_progress(loaded_files.index(analysis_obj), len(loaded_files))
+                    self.display_analysis_files(updated_filelist)
 
-                    f1_index += 1
-                    self.update_progress(loaded_files.index(analysis_obj), len(loaded_files))
-                self.display_analysis_files(updated_filelist)
-
-                # print output to csv
-                with open(os.path.join(self.output_dir, 'batch_RMSDs.csv'), 'w') as rmsd_file:
-                    for rmsd_string in rmsd_print_list:
-                        rmsd_file.write(rmsd_string + '\n')
+                    # print output to csv
+                    with open(os.path.join(self.output_dir, 'batch_RMSDs.csv'), 'w') as rmsd_file:
+                        for rmsd_string in rmsd_print_list:
+                            rmsd_file.write(rmsd_string + '\n')
         self.progress_done()
 
     def on_button_smoothing_clicked(self):
@@ -1058,8 +1064,14 @@ class CIUSuite2(object):
             # Once data has been loaded, check it (appropriate number of classes, files, subclasses, etc)
             if check_classif_data(cl_inputs_by_label, subclass_labels):
                 # check axes
-                # todo: add a fail/message here if equalization fails to prevent downstream crashes (?)
-                cl_inputs_by_label, equalized_axes = Raw_Processing.equalize_axes_2d_list_subclass(cl_inputs_by_label)
+                try:
+                    cl_inputs_by_label, equalized_axes = Raw_Processing.equalize_axes_2d_list_subclass(cl_inputs_by_label)
+                except ValueError as err:
+                    # axes equalization failed - don't attempt to classify
+                    messagebox.showerror('Axes Could Not Be Equalized',
+                                         message='{}. \nProblem: {}. Classification canceled. Make sure training data axes have at least some overlap for all files. Press OK to continue'.format(*err.args))
+                    equalized_axes = []
+                    self.progress_done()
 
                 # get classification parameters
                 param_keys = [x for x in self.params_obj.params_dict.keys() if 'classif' in x]
@@ -1142,7 +1154,7 @@ class CIUSuite2(object):
                         Classification.save_lda_and_predictions(scheme, all_transform_data, all_predictions, all_probs, all_filenames, all_combined_filenames, self.output_dir, True)
                         Classification.plot_probabilities(self.params_obj, scheme, all_probs, self.output_dir, unknown_bool=True)
                 else:
-                    messagebox.showerror('Not Enough Replicates', 'Not enough replicates in all subclasses could be generated, so no classification was performed.')
+                    messagebox.showerror('Not Enough Replicates', 'Not enough replicates in all states could be generated, so no classification was performed. Check to make sure the appropriate states and voltages for the chosen classifier are included for each replicate')
         self.progress_done()
 
     def classif_load_from_table(self, subclass_mode):
@@ -1428,8 +1440,8 @@ def parse_subclass_inputs():
     Helper method to handle user input for subclass label strings
     :return: list of strings
     """
-    subclass_string = simpledialog.askstring('Enter Subclass Labels, Separated by Commas',
-                                             'Enter the Labels for each Subclass, separated by commas. NOTE: the labels entered must EXACTLY match a part of the file name for each subclass or the data will not be loaded properly!')
+    subclass_string = simpledialog.askstring('Enter State Labels, Separated by Commas',
+                                             'Enter the Labels for each State, separated by commas. NOTE: the labels entered must EXACTLY match a part of the file name for each state or the data will not be loaded properly!')
     if subclass_string is not None:
         subclass_splits = subclass_string.split(',')
         subclass_labels = []
@@ -1438,7 +1450,7 @@ def parse_subclass_inputs():
     else:
         subclass_labels = []
     if len(subclass_labels) < 2:
-        logger.warning('No (or only 1) subclass labels read from input! Classification will NOT use subclasses')
+        logger.warning('No (or only 1) state labels read from input! Classification will NOT use states')
     return subclass_labels
 
 
@@ -1554,7 +1566,7 @@ def classif_dialogs_run(subclass_labels=None):
             input_list = load_clinputs_subclass(files, subclass_labels, class_label)
             output_dir_file = os.path.dirname(files[0])
             if len(input_list) < 3:
-                messagebox.showerror('Not Enough Subclass Files', 'Not enough replicates could be generated containing all subclasses. Make sure all there are at least 3 CIU files for each subclass and check that the files selected exactly match the entered subclass labels.')
+                messagebox.showerror('Not Enough State Files', 'Not enough replicates could be generated containing all states. Make sure all there are at least 3 CIU files for each state and check that the files selected exactly match the entered state labels.')
                 return [], [], ''
         else:
             # load data files for this class into ClInput containers (with no subclasses)
@@ -1613,7 +1625,7 @@ def load_classif_inputs_from_files(files, class_labels, subclass_labels):
                 all_replicates.append(cl_input)
             except IndexError:
                 # not an even number of replicates in all files - stop once reached max number in smallest subclass
-                logger.info('Not all subclasses had {} replicates. Only {} replicates generated.'.format(rep_index + 1, rep_index))
+                logger.info('Not all states had {} replicates. Only {} replicates generated.'.format(rep_index + 1, rep_index))
                 break
         cl_inputs_by_label.append(all_replicates)
     return cl_inputs_by_label
@@ -1643,7 +1655,7 @@ def load_clinputs_subclass(files, subclass_labels, class_label):
     # reorganize files into individual replicates, each containing all subclasses
     all_replicates = []
     if len(subclass_lists[0][1]) == 0:
-        logger.warning('Subclass {} did not have any datasets! No replicates could be generated.'.format(subclass_lists[0][0]))
+        logger.warning('State {} did not have any datasets! No replicates could be generated.'.format(subclass_lists[0][0]))
     for rep_index in range(len(subclass_lists[0][1])):
         subclass_label = ''
         try:
@@ -1657,7 +1669,7 @@ def load_clinputs_subclass(files, subclass_labels, class_label):
             all_replicates.append(cl_input)
         except IndexError:
             # not an even number of replicates in all files - skip odd numbers
-            logger.info('Subclass {} did not have {} datasets. Only {} replicates generated.'.format(subclass_label, rep_index + 1, rep_index))
+            logger.info('State {} did not have {} datasets. Only {} replicates generated.'.format(subclass_label, rep_index + 1, rep_index))
             break
     return all_replicates
 
@@ -1689,11 +1701,11 @@ def check_classif_data(cl_inputs_by_label, subclass_labels):
                 if not subclass_len == len(subclass_labels):
                     # if '0' not in cl_input.subclass_dict.keys() and subclass_len == 1:
                     # not correct number of subclasses
-                    logger.error('Should have {} subclasses, but replicate had {}. Check input data and try again.'.format(len(cl_input.subclass_dict.keys()), len(subclass_labels)))
+                    logger.error('Should have {} states, but replicate had {}. Check input data and try again.'.format(len(cl_input.subclass_dict.keys()), len(subclass_labels)))
                     return False
                 for subclass_label in cl_input.subclass_dict.keys():
                     if subclass_label not in subclass_labels:
-                        logger.error('Subclass label {} was not supposed to be present! Classification canceled'.format(subclass_label))
+                        logger.error('State label {} was not supposed to be present! Classification canceled'.format(subclass_label))
                         return False
 
         # no errors - return True
@@ -1775,7 +1787,7 @@ def parse_classification_template(template_file):
                 splits = line.rstrip('\n').split(',')
                 class_labels = [x for x in splits[1:] if x is not '']
 
-            elif line.lower().startswith('subclass'):
+            elif line.lower().startswith('subclass') or line.lower().startswith('state'):
                 # special line for subclass labels - remember them too
                 splits = line.rstrip('\n').split(',')
                 subclass_labels = splits[1:]
@@ -1788,11 +1800,17 @@ def parse_classification_template(template_file):
 
             elif line.lower().startswith('folder'):
                 splits = line.rstrip('\n').split(',')
-                folder = splits[1]
-                try:
-                    files = [os.path.join(folder, x) for x in os.listdir(folder) if x.endswith('.ciu')]
-                except FileNotFoundError:
-                    logger.error('Could not find file path specified in classification template: {}'.format(folder))
+                folderlist = splits[1:]
+                files = []
+
+                for folder in folderlist:
+                    if folder is not '':
+                        try:
+                            folder_files = [os.path.join(folder, x) for x in os.listdir(folder) if x.endswith('.ciu')]
+                            files.extend(folder_files)
+                        except FileNotFoundError:
+                            logger.error('Could not find file path specified in classification template: {}'.format(folder))
+                if len(files) == 0:
                     return [], []
                 if len(subclass_labels) == 0:
                     subclass_labels = ['0']
