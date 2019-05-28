@@ -55,9 +55,8 @@ else:
     root_dir = os.path.dirname(__file__)
     program_data_dir = root_dir
 
-# hard_params_file = os.path.join(program_data_dir, 'CIU2_param_info.csv')
-hard_params_file = os.path.join(program_data_dir, 'CIU2_param_info_new.csv')
-
+# hard_params_file = os.path.join(program_data_dir, 'CIU2_param_info_new.csv')
+hard_params_file = os.path.join(program_data_dir, 'CIU2_param_info.csv')
 hard_twimextract_path = os.path.join(program_data_dir, 'TWIMExtract', 'jars', 'TWIMExtract.jar')
 hard_file_path_ui = os.path.join(root_dir, 'UI', 'CIUSuite2.ui')
 hard_crop_ui = os.path.join(root_dir, 'UI', 'Crop_vals.ui')
