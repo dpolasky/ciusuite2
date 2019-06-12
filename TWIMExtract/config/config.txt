@@ -1,0 +1,5 @@
+Raw_Directory,C:\
+Range_Directory,C:\
+Output_Directory,C:\
+Batch_Directory,C:\
+Rule_Directory,C:\

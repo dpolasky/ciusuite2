@@ -1,4 +1,5 @@
 #Param Key,Default value,Parameter NAME,Parameter type,Param lower,Param upper,Param list,Parameter Description
+gui_1_size,auto,GUI size,string,,,auto;small;large,Whether to use large or small GUI (graphical user interface). Auto detects monitor size and chooses small if height is less than 800px. Set to large or small to override the auto setting. RESTART CIUSUITE 2 FOR THE CHANGE TO TAKE EFFECT. 
 smoothing_1_method,2D Savitzky-Golay,Smoothing Method,string,,,2D Savitzky-Golay;1D Savitzky-Golay;None,Method with which to smooth data. 2D Savitzky-Golay is recommended for best performance. 
 smoothing_2_window,5,Smoothing Window Size,int,0,inf,,Size of the filter for the applied smoothing method. Increasing this value can improve performance in noisy data but can result in smearing if increased too much
 smoothing_3_iterations,1,Smoothing Iterations,int,0,inf,,The number of times to sequentially apply smoothing. Increasing this value will improve fitting of data with minimal smearing.

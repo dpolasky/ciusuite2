@@ -59,6 +59,7 @@ else:
 hard_params_file = os.path.join(program_data_dir, 'CIU2_param_info.csv')
 hard_twimextract_path = os.path.join(program_data_dir, 'TWIMExtract', 'jars', 'TWIMExtract.jar')
 hard_file_path_ui = os.path.join(root_dir, 'UI', 'CIUSuite2.ui')
+hard_short_ui = os.path.join(root_dir, 'UI', 'CIUSuite2_short.ui')
 hard_crop_ui = os.path.join(root_dir, 'UI', 'Crop_vals.ui')
 hard_agilent_ext_path = os.path.join(root_dir, os.path.join('Agilent_Extractor', 'MIDAC_CIU_Extractor.exe'))
 hard_tooltips_file = os.path.join(root_dir, 'tooltips.txt')
@@ -81,8 +82,13 @@ class CIUSuite2(object):
         # create a Pygubu builder
         self.builder = builder = pygubu.Builder()
 
-        # load the UI file
-        builder.add_from_file(hard_file_path_ui)
+        # load parameter file
+        self.params_obj = CIU_Params.Parameters()
+        self.params_obj.set_params(CIU_Params.parse_params_file(hard_params_file))
+        self.param_file = hard_params_file
+
+        # initialize GUI
+        self.init_gui_size()
 
         # create widget using provided root (Tk) window
         self.mainwindow = builder.get_object('CIU_app_top')
@@ -110,15 +116,11 @@ class CIUSuite2(object):
             'on_button_gaussian_reconstruction_clicked': self.on_button_gaussian_reconstruct_clicked,
             'on_button_classification_supervised_clicked': self.on_button_classification_supervised_multi_clicked,
             'on_button_classify_unknown_clicked': self.on_button_classify_unknown_subclass_clicked,
-            'on_button_smoothing_clicked': self.on_button_smoothing_clicked
+            'on_button_smoothing_clicked': self.on_button_smoothing_clicked,
+            'on_button_gui_clicked': self.on_button_gui_clicked
         }
         builder.connect_callbacks(callbacks)
         self.initialize_tooltips()
-
-        # load parameter file
-        self.params_obj = CIU_Params.Parameters()
-        self.params_obj.set_params(CIU_Params.parse_params_file(hard_params_file))
-        self.param_file = hard_params_file
 
         # holder for feature information in between user assessment - plan to replace with better solution eventually
         self.temp_feature_holder = None
@@ -151,6 +153,25 @@ class CIUSuite2(object):
         for tip_key, tip_value in tooltip_dict.items():
             SimpleToolTip.create(self.builder.get_object(tip_key), tip_value)
 
+    def init_gui_size(self):
+        """
+        Calculate the appropriate or user specified GUI size and load correct file
+        to the builder.
+        :return: void
+        """
+        # load the UI file, using the short version for short monitors
+        if self.params_obj.gui_1_size == 'small':
+            self.builder.add_from_file(hard_short_ui)
+        elif self.params_obj.gui_1_size == 'large':
+            self.builder.add_from_file(hard_file_path_ui)
+        else:
+            # auto setting
+            win_height = self.tk_root.winfo_screenheight()
+            if win_height < 800:
+                self.builder.add_from_file(hard_short_ui)
+            else:
+                self.builder.add_from_file(hard_file_path_ui)
+
     def on_button_help_clicked(self):
         """
         Open the manual
@@ -164,6 +185,20 @@ class CIUSuite2(object):
         :return: void
         """
         subprocess.Popen(about_file, shell=True)
+
+    def on_button_gui_clicked(self):
+        """
+        Allow user to change the GUI size by altering the appropriate parameter
+        :return: void
+        """
+        keys = [x for x in self.params_obj.params_dict.keys() if 'gui' in x]
+        param_success, param_dict = self.run_param_ui('Set GUI Size', keys)
+        if param_success:
+            # change the default setting to remember the choice when reopening the GUI
+            update_dict = param_dict
+            CIU_Params.update_specific_param_vals(update_dict, hard_params_file)
+
+        self.progress_done()
 
     def on_button_rawfile_clicked(self):
         """

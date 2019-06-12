@@ -90,6 +90,8 @@ class Parameters(object):
         """
         self.params_dict = {}
 
+        self.gui_1_size = None
+
         # Smoothing and processing parameters
         self.smoothing_1_method = None
         self.smoothing_2_window = None

@@ -1,12 +1,12 @@
 <?xml version='1.0' encoding='utf-8'?>
 <interface>
   <object class="tk.Toplevel" id="CIU_app_top">
-    <property name="height">1000</property>
-    <property name="title" translatable="yes">CIUSuite 2, version 2.1</property>
-    <property name="width">200</property>
+    <property name="height">750</property>
+    <property name="title" translatable="yes">CIUSuite 2</property>
+    <property name="width">150</property>
     <child>
       <object class="ttk.Frame" id="Logo_Panel">
-        <property name="height">75</property>
+        <property name="height">35</property>
         <property name="width">730</property>
         <layout>
           <property name="column">0</property>
@@ -15,28 +15,16 @@
           <property name="row">0</property>
         </layout>
         <child>
-          <object class="ttk.Label" id="Logo_Image">
-            <property name="image">logoredo_DP2.png</property>
-            <layout>
-              <property name="column">0</property>
-              <property name="columnspan">3</property>
-              <property name="padx">80</property>
-              <property name="pady">10</property>
-              <property name="propagate">False</property>
-              <property name="row">0</property>
-            </layout>
-          </object>
-        </child>
-        <child>
           <object class="ttk.Button" id="Button_about">
             <property name="command">on_button_about_clicked</property>
             <property name="text" translatable="yes">About</property>
             <layout>
               <property name="column">2</property>
+              <property name="padx">46</property>
               <property name="pady">10</property>
               <property name="propagate">True</property>
               <property name="row">0</property>
-              <property name="sticky">ne</property>
+              <property name="sticky">n</property>
             </layout>
           </object>
         </child>
@@ -54,15 +42,25 @@
           </object>
         </child>
         <child>
+          <object class="ttk.Label" id="Label_1">
+            <property name="font">{Arial} 14 {bold}</property>
+            <property name="text" translatable="yes">	      	            CIUSuite2		    	</property>
+            <layout>
+              <property name="column">1</property>
+              <property name="propagate">True</property>
+              <property name="row">0</property>
+            </layout>
+          </object>
+        </child>
+        <child>
           <object class="ttk.Button" id="Button_gui">
             <property name="command">on_button_gui_clicked</property>
             <property name="text" translatable="yes">Change GUI Size</property>
             <layout>
-              <property name="column">0</property>
-              <property name="pady">10</property>
+              <property name="column">1</property>
               <property name="propagate">True</property>
               <property name="row">0</property>
-              <property name="sticky">n</property>
+              <property name="sticky">w</property>
             </layout>
           </object>
         </child>
@@ -70,11 +68,11 @@
     </child>
     <child>
       <object class="ttk.Frame" id="Frame_Column_1">
-        <property name="height">650</property>
-        <property name="width">300</property>
+        <property name="height">488</property>
+        <property name="width">225</property>
         <layout>
           <property name="column">0</property>
-          <property name="propagate">False</property>
+          <property name="propagate">True</property>
           <property name="row">1</property>
         </layout>
         <child>
@@ -84,7 +82,7 @@
             <property name="width">285</property>
             <layout>
               <property name="column">0</property>
-              <property name="padx">8</property>
+              <property name="padx">3</property>
               <property name="pady">5</property>
               <property name="propagate">False</property>
             </layout>
@@ -154,12 +152,12 @@
         </child>
         <child>
           <object class="ttk.Frame" id="LoadedFiles_Frame">
-            <property name="height">311</property>
+            <property name="height">266</property>
             <property name="relief">ridge</property>
             <property name="width">285</property>
             <layout>
               <property name="column">0</property>
-              <property name="padx">8</property>
+              <property name="padx">3</property>
               <property name="pady">5</property>
               <property name="propagate">False</property>
               <property name="row">1</property>
@@ -180,7 +178,7 @@
               <object class="tk.Text" id="Text_analysis_list">
                 <property name="autoseparators">true</property>
                 <property name="blockcursor">false</property>
-                <property name="height">13</property>
+                <property name="height">10</property>
                 <property name="insertontime">0</property>
                 <property name="insertunfocussed">none</property>
                 <property name="maxundo">0</property>
@@ -301,107 +299,6 @@
             </child>
           </object>
         </child>
-        <child>
-          <object class="ttk.Frame" id="Output_frame">
-            <property name="height">160</property>
-            <property name="relief">ridge</property>
-            <property name="width">285</property>
-            <layout>
-              <property name="column">0</property>
-              <property name="padx">8</property>
-              <property name="pady">5</property>
-              <property name="propagate">False</property>
-              <property name="row">2</property>
-            </layout>
-            <child>
-              <object class="ttk.Label" id="OutputFiles_label">
-                <property name="font">{Arial} 12 {bold}</property>
-                <property name="text" translatable="yes">Output</property>
-                <layout>
-                  <property name="column">0</property>
-                  <property name="columnspan">3</property>
-                  <property name="pady">5</property>
-                  <property name="propagate">True</property>
-                  <property name="row">0</property>
-                </layout>
-              </object>
-            </child>
-            <child>
-              <object class="ttk.Button" id="Button_plot_options">
-                <property name="command">on_button_plot_options_clicked</property>
-                <property name="text" translatable="yes">** Plot Options for ALL Output Plots **</property>
-                <property name="width">20</property>
-                <layout>
-                  <property name="column">0</property>
-                  <property name="ipadx">60</property>
-                  <property name="ipady">2</property>
-                  <property name="padx">0</property>
-                  <property name="pady">0</property>
-                  <property name="propagate">False</property>
-                  <property name="row">4</property>
-                </layout>
-              </object>
-            </child>
-            <child>
-              <object class="ttk.Button" id="Button_change_outputdir">
-                <property name="command">on_button_changedir_clicked</property>
-                <property name="text" translatable="yes">Change Output Directory</property>
-                <property name="width">20</property>
-                <layout>
-                  <property name="column">0</property>
-                  <property name="ipadx">60</property>
-                  <property name="ipady">2</property>
-                  <property name="padx">0</property>
-                  <property name="pady">5</property>
-                  <property name="propagate">False</property>
-                  <property name="row">3</property>
-                </layout>
-              </object>
-            </child>
-            <child>
-              <object class="ttk.Label" id="Label_outputdir">
-                <property name="text" translatable="yes">Current output directory:</property>
-                <layout>
-                  <property name="column">0</property>
-                  <property name="padx">5</property>
-                  <property name="propagate">True</property>
-                  <property name="row">1</property>
-                  <property name="sticky">w</property>
-                </layout>
-              </object>
-            </child>
-            <child>
-              <object class="tk.Text" id="Text_outputdir">
-                <property name="autoseparators">false</property>
-                <property name="blockcursor">false</property>
-                <property name="height">0</property>
-                <property name="insertborderwidth">0</property>
-                <property name="insertofftime">0</property>
-                <property name="insertontime">0</property>
-                <property name="insertunfocussed">none</property>
-                <property name="maxundo">0</property>
-                <property name="padx">1</property>
-                <property name="relief">sunken</property>
-                <property name="setgrid">false</property>
-                <property name="state">disabled</property>
-                <property name="takefocus">false</property>
-                <property name="text" translatable="yes">(No files loaded yet)</property>
-                <property name="undo">false</property>
-                <property name="width">34</property>
-                <property name="wrap">char</property>
-                <layout>
-                  <property name="column">0</property>
-                  <property name="columnspan">1</property>
-                  <property name="padx">3</property>
-                  <property name="pady">5</property>
-                  <property name="propagate">True</property>
-                  <property name="row">2</property>
-                  <property name="sticky">n</property>
-                </layout>
-              </object>
-            </child>
-          </object>
-        </child>
       </object>
     </child>
     <child>
@@ -410,35 +307,33 @@
         <property name="width">225</property>
         <layout>
           <property name="column">1</property>
-          <property name="propagate">False</property>
+          <property name="propagate">True</property>
           <property name="row">1</property>
         </layout>
         <child>
           <object class="ttk.Frame" id="Parameters_frame">
-            <property name="height">444</property>
+            <property name="height">290</property>
             <property name="relief">ridge</property>
             <property name="width">210</property>
             <layout>
               <property name="column">0</property>
               <property name="columnspan">3</property>
               <property name="padx">5</property>
-              <property name="pady">5</property>
+              <property name="pady">3</property>
               <property name="propagate">False</property>
               <property name="row">0</property>
             </layout>
             <child>
               <object class="ttk.Button" id="Button_crop">
                 <property name="command">on_button_crop_clicked</property>
-                <property name="compound">left</property>
-                <property name="image">Crop3.png</property>
-                <property name="text" translatable="yes">     Crop</property>
-                <property name="width">5</property>
+                <property name="text" translatable="yes">Crop</property>
+                <property name="width">18</property>
                 <layout>
                   <property name="column">1</property>
                   <property name="ipadx">27</property>
                   <property name="ipady">5</property>
-                  <property name="padx">30</property>
-                  <property name="pady">3</property>
+                  <property name="padx">0</property>
+                  <property name="pady">1</property>
                   <property name="propagate">False</property>
                   <property name="row">1</property>
                 </layout>
@@ -448,9 +343,8 @@
               <object class="ttk.Button" id="Button_smooth">
                 <property name="command">on_button_smoothing_clicked</property>
                 <property name="compound">left</property>
-                <property name="image">smooth2.png</property>
                 <property name="text" translatable="yes">   Smooth</property>
-                <property name="width">5</property>
+                <property name="width">18</property>
                 <layout>
                   <property name="column">1</property>
                   <property name="ipadx">27</property>
@@ -466,9 +360,8 @@
               <object class="ttk.Button" id="Button_interpolate">
                 <property name="command">on_button_interpolate_clicked</property>
                 <property name="compound">left</property>
-                <property name="image">interpolate1.png</property>
                 <property name="text" translatable="yes">   Interpolate</property>
-                <property name="width">5</property>
+                <property name="width">18</property>
                 <layout>
                   <property name="column">1</property>
                   <property name="ipadx">27</property>
@@ -484,11 +377,11 @@
               <object class="ttk.Button" id="Button_print_params">
                 <property name="command">on_button_printparams_clicked</property>
                 <property name="text" translatable="yes">Print Parameters to Console</property>
-                <property name="width">20</property>
+                <property name="width">18</property>
                 <layout>
                   <property name="column">1</property>
-                  <property name="ipadx">15</property>
-                  <property name="ipady">14</property>
+                  <property name="ipadx">27</property>
+                  <property name="ipady">5</property>
                   <property name="padx">25</property>
                   <property name="pady">3</property>
                   <property name="propagate">False</property>
@@ -513,11 +406,11 @@
               <object class="ttk.Button" id="Button_default_params">
                 <property name="command">on_button_update_param_defaults_clicked</property>
                 <property name="text" translatable="yes">Update Default Parameters</property>
-                <property name="width">20</property>
+                <property name="width">18</property>
                 <layout>
                   <property name="column">1</property>
-                  <property name="ipadx">15</property>
-                  <property name="ipady">14</property>
+                  <property name="ipadx">27</property>
+                  <property name="ipady">5</property>
                   <property name="padx">25</property>
                   <property name="pady">3</property>
                   <property name="propagate">False</property>
@@ -529,10 +422,8 @@
               <object class="ttk.Button" id="Button_restore_raw">
                 <property name="command">on_button_restore_clicked</property>
                 <property name="compound">left</property>
-                <property name="image">restore_original_data.png</property>
-                <property name="text" translatable="yes">    Restore
-Original Data</property>
-                <property name="width">5</property>
+                <property name="text" translatable="yes">Restore Original Data</property>
+                <property name="width">18</property>
                 <layout>
                   <property name="column">1</property>
                   <property name="ipadx">27</property>
@@ -548,14 +439,14 @@ Original Data</property>
         </child>
         <child>
           <object class="ttk.Frame" id="Gaussian_frame">
-            <property name="height">180</property>
+            <property name="height">120</property>
             <property name="relief">ridge</property>
             <property name="width">210</property>
             <layout>
               <property name="column">0</property>
               <property name="columnspan">3</property>
               <property name="padx">5</property>
-              <property name="pady">5</property>
+              <property name="pady">3</property>
               <property name="propagate">False</property>
               <property name="row">1</property>
             </layout>
@@ -563,16 +454,14 @@ Original Data</property>
               <object class="ttk.Button" id="Button_gaussian_fit">
                 <property name="command">on_button_gaussfit_clicked</property>
                 <property name="compound">left</property>
-                <property name="image">gaussian2.png</property>
-                <property name="text" translatable="yes">       Fit 
-  Gaussians</property>
-                <property name="width">5</property>
+                <property name="text" translatable="yes">Fit Gaussians</property>
+                <property name="width">18</property>
                 <layout>
                   <property name="column">1</property>
                   <property name="ipadx">27</property>
                   <property name="ipady">5</property>
-                  <property name="padx">29</property>
-                  <property name="pady">3</property>
+                  <property name="padx">25</property>
+                  <property name="pady">1</property>
                   <property name="propagate">False</property>
                   <property name="row">1</property>
                 </layout>
@@ -582,16 +471,13 @@ Original Data</property>
               <object class="ttk.Button" id="Button_gaussian_reconstruct">
                 <property name="command">on_button_gaussian_reconstruction_clicked</property>
                 <property name="compound">left</property>
-                <property name="image">reconstruct1.png</property>
-                <property name="text" translatable="yes">   Reconstruct
-        From
-   Gaussians</property>
-                <property name="width">5</property>
+                <property name="text" translatable="yes">Reconstruct From Gaussians</property>
+                <property name="width">18</property>
                 <layout>
                   <property name="column">1</property>
                   <property name="ipadx">27</property>
                   <property name="ipady">5</property>
-                  <property name="padx">29</property>
+                  <property name="padx">25</property>
                   <property name="pady">3</property>
                   <property name="propagate">True</property>
                   <property name="row">2</property>
@@ -621,19 +507,19 @@ Original Data</property>
         <property name="width">225</property>
         <layout>
           <property name="column">2</property>
-          <property name="propagate">False</property>
+          <property name="propagate">True</property>
           <property name="row">1</property>
         </layout>
         <child>
           <object class="ttk.Frame" id="Analysis_frame">
-            <property name="height">254</property>
+            <property name="height">160</property>
             <property name="relief">ridge</property>
             <property name="width">210</property>
             <layout>
               <property name="column">0</property>
               <property name="columnspan">3</property>
               <property name="padx">5</property>
-              <property name="pady">5</property>
+              <property name="pady">3</property>
               <property name="propagate">False</property>
               <property name="row">0</property>
             </layout>
@@ -641,15 +527,13 @@ Original Data</property>
               <object class="ttk.Button" id="Button_plot">
                 <property name="command">on_button_oldplot_clicked</property>
                 <property name="compound">left</property>
-                <property name="image">plot2.png</property>
-                <property name="text" translatable="yes">     Plot</property>
-                <property name="width">5</property>
+                <property name="text" translatable="yes">Plot</property>
+                <property name="width">18</property>
                 <layout>
                   <property name="column">1</property>
                   <property name="ipadx">27</property>
                   <property name="ipady">5</property>
-                  <property name="padx">30</property>
-                  <property name="pady">3</property>
+                  <property name="pady">1</property>
                   <property name="propagate">False</property>
                   <property name="row">1</property>
                 </layout>
@@ -659,14 +543,12 @@ Original Data</property>
               <object class="ttk.Button" id="Button_average">
                 <property name="command">on_button_oldavg_clicked</property>
                 <property name="compound">left</property>
-                <property name="image">average2.png</property>
-                <property name="text" translatable="yes">   Average</property>
-                <property name="width">5</property>
+                <property name="text" translatable="yes">Average</property>
+                <property name="width">18</property>
                 <layout>
                   <property name="column">1</property>
                   <property name="ipadx">27</property>
                   <property name="ipady">5</property>
-                  <property name="padx">25</property>
                   <property name="pady">3</property>
                   <property name="propagate">True</property>
                   <property name="row">3</property>
@@ -677,9 +559,8 @@ Original Data</property>
               <object class="ttk.Button" id="Button_compare">
                 <property name="command">on_button_oldcompare_clicked</property>
                 <property name="compound">left</property>
-                <property name="image">compare1.png</property>
                 <property name="text" translatable="yes"> Compare</property>
-                <property name="width">5</property>
+                <property name="width">18</property>
                 <layout>
                   <property name="column">1</property>
                   <property name="ipadx">27</property>
@@ -708,14 +589,14 @@ Original Data</property>
         </child>
         <child>
           <object class="ttk.Frame" id="Classification_fram">
-            <property name="height">180</property>
+            <property name="height">120</property>
             <property name="relief">ridge</property>
             <property name="width">210</property>
             <layout>
               <property name="column">0</property>
               <property name="columnspan">3</property>
               <property name="padx">5</property>
-              <property name="pady">5</property>
+              <property name="pady">3</property>
               <property name="propagate">False</property>
               <property name="row">2</property>
             </layout>
@@ -723,17 +604,14 @@ Original Data</property>
               <object class="ttk.Button" id="Button_build_classification">
                 <property name="command">on_button_classification_supervised_clicked</property>
                 <property name="compound">left</property>
-                <property name="image">build.png</property>
-                <property name="text" translatable="yes">   Build
-   Classification
-   Method</property>
-                <property name="width">5</property>
+                <property name="text" translatable="yes">Build Classification Method</property>
+                <property name="width">18</property>
                 <layout>
                   <property name="column">1</property>
                   <property name="ipadx">27</property>
                   <property name="ipady">5</property>
-                  <property name="padx">30</property>
-                  <property name="pady">3</property>
+                  <property name="padx">25</property>
+                  <property name="pady">1</property>
                   <property name="propagate">False</property>
                   <property name="row">1</property>
                 </layout>
@@ -743,10 +621,8 @@ Original Data</property>
               <object class="ttk.Button" id="Button_classify_unknown">
                 <property name="command">on_button_classify_unknown_clicked</property>
                 <property name="compound">left</property>
-                <property name="image">unknown.png</property>
-                <property name="text" translatable="yes">  Classify
-  Unknown(s)</property>
-                <property name="width">5</property>
+                <property name="text" translatable="yes">Classify Unknown(s)</property>
+                <property name="width">18</property>
                 <layout>
                   <property name="column">1</property>
                   <property name="ipadx">27</property>
@@ -775,14 +651,14 @@ Original Data</property>
         </child>
         <child>
           <object class="ttk.Frame" id="Stability_frame">
-            <property name="height">180</property>
+            <property name="height">120</property>
             <property name="relief">ridge</property>
             <property name="width">210</property>
             <layout>
               <property name="column">0</property>
               <property name="columnspan">3</property>
               <property name="padx">5</property>
-              <property name="pady">5</property>
+              <property name="pady">3</property>
               <property name="propagate">False</property>
               <property name="row">1</property>
             </layout>
@@ -790,16 +666,14 @@ Original Data</property>
               <object class="ttk.Button" id="Button_feature_detect">
                 <property name="command">on_button_feature_detect_clicked</property>
                 <property name="compound">left</property>
-                <property name="image">featdetect3.png</property>
-                <property name="text" translatable="yes">  Feature
- Detection</property>
-                <property name="width">5</property>
+                <property name="text" translatable="yes">Feature Detection</property>
+                <property name="width">18</property>
                 <layout>
                   <property name="column">1</property>
                   <property name="ipadx">27</property>
                   <property name="ipady">5</property>
-                  <property name="padx">29</property>
-                  <property name="pady">3</property>
+                  <property name="padx">25</property>
+                  <property name="pady">1</property>
                   <property name="propagate">False</property>
                   <property name="row">1</property>
                 </layout>
@@ -809,14 +683,12 @@ Original Data</property>
               <object class="ttk.Button" id="Button_ciu50">
                 <property name="command">on_button_ciu50_clicked</property>
                 <property name="compound">left</property>
-                <property name="image">CIU503.png</property>
                 <property name="text" translatable="yes">   CIU50</property>
-                <property name="width">5</property>
+                <property name="width">18</property>
                 <layout>
                   <property name="column">1</property>
                   <property name="ipadx">27</property>
                   <property name="ipady">5</property>
-                  <property name="padx">25</property>
                   <property name="pady">3</property>
                   <property name="propagate">False</property>
                   <property name="row">2</property>
@@ -850,7 +722,7 @@ Original Data</property>
           <property name="column">0</property>
           <property name="columnspan">3</property>
           <property name="propagate">True</property>
-          <property name="row">7</property>
+          <property name="row">8</property>
         </layout>
         <child>
           <object class="ttk.Progressbar" id="Progressbar_main">
@@ -879,6 +751,121 @@ Original Data</property>
               <property name="propagate">True</property>
               <property name="row">2</property>
             </layout>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="ttk.Frame" id="Frame_2">
+        <property name="height">200</property>
+        <property name="width">100</property>
+        <layout>
+          <property name="column">0</property>
+          <property name="columnspan">3</property>
+          <property name="propagate">True</property>
+          <property name="row">7</property>
+        </layout>
+        <child>
+          <object class="ttk.Frame" id="Output_frame">
+            <property name="height">95</property>
+            <property name="relief">ridge</property>
+            <property name="width">730</property>
+            <layout>
+              <property name="column">0</property>
+              <property name="padx">5</property>
+              <property name="pady">3</property>
+              <property name="propagate">False</property>
+              <property name="row">2</property>
+            </layout>
+            <child>
+              <object class="ttk.Label" id="OutputFiles_label">
+                <property name="font">{Arial} 12 {bold}</property>
+                <property name="text" translatable="yes">Output</property>
+                <layout>
+                  <property name="column">0</property>
+                  <property name="columnspan">1</property>
+                  <property name="pady">5</property>
+                  <property name="propagate">True</property>
+                  <property name="row">0</property>
+                  <property name="sticky">e</property>
+                </layout>
+              </object>
+            </child>
+            <child>
+              <object class="ttk.Button" id="Button_plot_options">
+                <property name="command">on_button_plot_options_clicked</property>
+                <property name="text" translatable="yes">** Plot Options for ALL Output Plots **</property>
+                <property name="width">30</property>
+                <layout>
+                  <property name="column">1</property>
+                  <property name="ipadx">60</property>
+                  <property name="ipady">2</property>
+                  <property name="padx">0</property>
+                  <property name="pady">0</property>
+                  <property name="propagate">False</property>
+                  <property name="row">4</property>
+                  <property name="sticky">w</property>
+                </layout>
+              </object>
+            </child>
+            <child>
+              <object class="ttk.Button" id="Button_change_outputdir">
+                <property name="command">on_button_changedir_clicked</property>
+                <property name="text" translatable="yes">Change Output Directory</property>
+                <property name="width">30</property>
+                <layout>
+                  <property name="column">0</property>
+                  <property name="ipadx">60</property>
+                  <property name="ipady">2</property>
+                  <property name="padx">0</property>
+                  <property name="pady">1</property>
+                  <property name="propagate">False</property>
+                  <property name="row">4</property>
+                </layout>
+              </object>
+            </child>
+            <child>
+              <object class="ttk.Label" id="Label_outputdir">
+                <property name="text" translatable="yes">Current output directory:</property>
+                <layout>
+                  <property name="column">0</property>
+                  <property name="padx">5</property>
+                  <property name="propagate">True</property>
+                  <property name="row">6</property>
+                  <property name="sticky">w</property>
+                </layout>
+              </object>
+            </child>
+            <child>
+              <object class="tk.Text" id="Text_outputdir">
+                <property name="autoseparators">false</property>
+                <property name="blockcursor">false</property>
+                <property name="height">0</property>
+                <property name="insertborderwidth">0</property>
+                <property name="insertofftime">0</property>
+                <property name="insertontime">0</property>
+                <property name="insertunfocussed">none</property>
+                <property name="maxundo">0</property>
+                <property name="padx">1</property>
+                <property name="relief">sunken</property>
+                <property name="setgrid">false</property>
+                <property name="state">disabled</property>
+                <property name="takefocus">false</property>
+                <property name="text" translatable="yes">(No files loaded yet)</property>
+                <property name="undo">false</property>
+                <property name="width">70</property>
+                <property name="wrap">char</property>
+                <layout>
+                  <property name="column">0</property>
+                  <property name="columnspan">3</property>
+                  <property name="padx">140</property>
+                  <property name="pady">5</property>
+                  <property name="propagate">True</property>
+                  <property name="row">6</property>
+                  <property name="sticky">ne</property>
+                </layout>
+              </object>
+            </child>
           </object>
         </child>
       </object>
