@@ -1963,7 +1963,7 @@ def init_logs():
 if __name__ == '__main__':
     # Build the GUI and start its mainloop (run) method
     try:
-        with open(guardpath) as guardfile:
+        with open(guardpath, 'w') as guardfile:
             guardfile.write('guarding')
     except IOError:
         pass
