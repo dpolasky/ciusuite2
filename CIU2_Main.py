@@ -18,8 +18,23 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
+
+import sys
+import os
+# Load resource file paths, supporting both live code and code bundled by PyInstaller
+if getattr(sys, 'frozen', False):
+    root_dir = sys._MEIPASS
+    program_data_dir = os.path.join(os.environ['ALLUSERSPROFILE'], 'CIUSuite2')
+else:
+    root_dir = os.path.dirname(__file__)
+    program_data_dir = root_dir
+
+# print loading statement before the slow imports, unless coming from multiprocess
+guardpath = os.path.join(program_data_dir, 'guardfile.txt')
 if __name__ == '__main__':
-    print('Loading CIUSuite 2 modules...')
+    if not os.path.exists(guardpath):
+        print('Loading CIUSuite 2 modules...')
+
 import pygubu
 import tkinter as tk
 from tkinter import filedialog
@@ -28,7 +43,6 @@ from tkinter import messagebox
 import os
 import subprocess
 import pickle
-import sys
 import multiprocessing
 import logging
 from logging.handlers import RotatingFileHandler
@@ -42,18 +56,10 @@ import Classification
 import Raw_Data_Import
 import SimpleToolTip
 
-# Set global matplotlib params for good figure layouts and a non-interactive backend
 import matplotlib
 matplotlib.rcParams.update({'figure.autolayout': True})
 matplotlib.use('Agg')
 
-# Load resource file paths, supporting both live code and code bundled by PyInstaller
-if getattr(sys, 'frozen', False):
-    root_dir = sys._MEIPASS
-    program_data_dir = os.path.join(os.environ['ALLUSERSPROFILE'], 'CIUSuite2')
-else:
-    root_dir = os.path.dirname(__file__)
-    program_data_dir = root_dir
 
 # hard_params_file = os.path.join(program_data_dir, 'CIU2_param_info_new.csv')
 hard_params_file = os.path.join(program_data_dir, 'CIU2_param_info.csv')
@@ -1930,12 +1936,11 @@ def init_logs():
     image creation being displayed on program start.
     :return: logger
     """
-    # logging.basicConfig(level=logging.INFO, filename='ciu2.log')
     mylogger = logging.getLogger('main')
-    mylogger.setLevel(logging.DEBUG)
 
+    if mylogger.hasHandlers():
+        mylogger.handlers.clear()
     # create file handler which logs even debug messages
-    # file_handler = logging.FileHandler(log_file)
     file_handler = RotatingFileHandler(log_file, maxBytes=1 * 1024 * 1024, backupCount=1)
 
     file_handler.setLevel(logging.DEBUG)
@@ -1949,11 +1954,19 @@ def init_logs():
     console_formatter = CIU2ConsoleFormatter()
     console_handler.setFormatter(console_formatter)
     mylogger.addHandler(console_handler)
+
+    mylogger.setLevel(logging.DEBUG)
+    mylogger.propagate = False
     return mylogger
 
 
 if __name__ == '__main__':
     # Build the GUI and start its mainloop (run) method
+    try:
+        with open(guardpath) as guardfile:
+            guardfile.write('guarding')
+    except IOError:
+        pass
     logger = init_logs()
     multiprocessing.freeze_support()
     root = tk.Tk()
@@ -1966,3 +1979,9 @@ if __name__ == '__main__':
     for handler in logger.handlers:
         handler.close()
         logger.removeFilter(handler)
+
+    # remove guard file
+    try:
+        os.remove(guardpath)
+    except IOError:
+        pass
